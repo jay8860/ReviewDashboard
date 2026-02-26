@@ -66,6 +66,23 @@ class Department(Base):
     tasks = relationship("Task", back_populates="department")
     agenda_points = relationship("AgendaPoint", back_populates="department", cascade="all, delete-orphan", order_by="AgendaPoint.order_index")
     meetings = relationship("DepartmentMeeting", back_populates="department", cascade="all, delete-orphan")
+    employees = relationship("Employee", back_populates="department")
+
+# ─── Employee ─────────────────────────────────────────────────────────────────
+
+class Employee(Base):
+    __tablename__ = "employees"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    mobile_number = Column(String, nullable=False, unique=True, index=True)
+    display_username = Column(String, nullable=False, unique=True, index=True)
+    is_active = Column(Boolean, default=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True) # Optional link to department
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="employees")
+    tasks = relationship("Task", back_populates="assigned_employee")
 
 
 # ─── Review Program ───────────────────────────────────────────────────────────
@@ -181,9 +198,13 @@ class Task(Base):
     source = Column(String, default="manual")          # manual | action_point | review
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Employee linking
+    assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
 
     department = relationship("Department", back_populates="tasks")
     action_points = relationship("ActionPoint", back_populates="linked_task")
+    assigned_employee = relationship("Employee", back_populates="tasks")
 
 
 # ─── Department Agenda Point ──────────────────────────────────────────────────

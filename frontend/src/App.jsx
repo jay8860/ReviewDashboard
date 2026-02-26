@@ -7,6 +7,7 @@ import DepartmentDetail from './pages/DepartmentDetail';
 import ReviewDetail from './pages/ReviewDetail';
 import Tasks from './pages/Tasks';
 import Planner from './pages/Planner';
+import Employees from './pages/Employees';
 import ResetPassword from './pages/ResetPassword';
 
 const ProtectedRoute = ({ children, user }) => {
@@ -69,6 +70,11 @@ function App() {
                 <Route path="/planner" element={
                     <ProtectedRoute user={user}>
                         <Planner user={user} onLogout={handleLogout} />
+                    </ProtectedRoute>
+                } />
+                <Route path="/employees" element={
+                    <ProtectedRoute user={user}>
+                        <Employees user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 } />
                 <Route path="*" element={<Navigate to="/" replace />} />

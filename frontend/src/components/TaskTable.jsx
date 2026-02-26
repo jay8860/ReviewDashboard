@@ -79,11 +79,12 @@ const StenoPopup = ({ value, onSave, onClose }) => {
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
 
-const EditableRow = ({ task, onSave, onCancel, departments = [] }) => {
+const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] }) => {
     const [form, setForm] = useState({
         task_number: task.task_number || '',
         description: task.description || '',
         assigned_agency: task.assigned_agency || '',
+        assigned_employee_id: task.assigned_employee_id || '',
         allocated_date: task.allocated_date || '',
         time_given: task.time_given || '',
         deadline_date: task.deadline_date || '',
@@ -109,7 +110,13 @@ const EditableRow = ({ task, onSave, onCancel, departments = [] }) => {
             <td className="px-2 py-2"><div className="text-xs text-slate-400 font-mono">{form.task_number}</div></td>
             <td className="px-2 py-2 min-w-48"><textarea value={form.description} onChange={f('description')} rows={2} className={inputCls + " resize-none"} placeholder="Task description" /></td>
             <td className="px-2 py-2"><textarea value={form.steno_comment} onChange={f('steno_comment')} rows={2} className={inputCls + " resize-none"} placeholder="Comment..." /></td>
-            <td className="px-2 py-2 min-w-32"><input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Agency / Officer" /></td>
+            <td className="px-2 py-2 min-w-32 flex flex-col gap-1">
+                <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={selectCls}>
+                    <option value="">No Employee</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+                <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
+            </td>
             <td className="px-2 py-2"><input type="date" value={form.allocated_date} onChange={f('allocated_date')} className={inputCls} /></td>
             <td className="px-2 py-2"><input value={form.time_given} onChange={f('time_given')} className={inputCls} placeholder="e.g. 30 days" /></td>
             <td className="px-2 py-2"><input type="date" value={form.deadline_date} onChange={f('deadline_date')} className={inputCls} /></td>
@@ -165,6 +172,7 @@ const statusStyle = {
 const TaskTable = ({
     tasks = [],
     departments = [],
+    employees = [],
     onUpdate,
     onDelete,
     isAdmin = false,
@@ -197,6 +205,8 @@ const TaskTable = ({
         const payload = { ...form };
         if (payload.department_id === '') payload.department_id = null;
         else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
+        if (payload.assigned_employee_id === '') payload.assigned_employee_id = null;
+        else if (payload.assigned_employee_id) payload.assigned_employee_id = parseInt(payload.assigned_employee_id);
         await onUpdate(id, payload);
         setEditId(null);
     };
@@ -270,7 +280,7 @@ const TaskTable = ({
                     {sorted.map((task, idx) => {
                         if (editId === task.id) {
                             return (
-                                <EditableRow key={task.id} task={task} departments={departments}
+                                <EditableRow key={task.id} task={task} departments={departments} employees={employees}
                                     onSave={(form) => handleSaveEdit(task.id, form)}
                                     onCancel={() => setEditId(null)} />
                             );
@@ -363,9 +373,16 @@ const TaskTable = ({
                                     </div>
                                 </td>
 
-                                {/* Assigned Agency */}
+                                {/* Assigned Agency / Employee */}
                                 <td className="px-3 py-3 max-w-[130px]">
-                                    <span className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">{task.assigned_agency || '—'}</span>
+                                    {task.assigned_employee_name ? (
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{task.assigned_employee_name}</p>
+                                    ) : (
+                                        <p className="text-xs text-slate-500">—</p>
+                                    )}
+                                    {task.assigned_agency && (
+                                        <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>
+                                    )}
                                 </td>
 
                                 {/* Allocated Date */}

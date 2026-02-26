@@ -7,7 +7,28 @@ import {
     ChevronDown, Trash2, Edit2, CheckSquare
 } from 'lucide-react';
 import Layout from '../components/Layout';
-import StatCard from '../components/StatCard';
+import Layout from '../components/Layout';
+
+const StatPill = ({ icon: Icon, label, value, color }) => {
+    const colorStyles = {
+        indigo: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400',
+        emerald: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400',
+        amber: 'text-amber-700 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400',
+        rose: 'text-rose-700 bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400',
+        orange: 'text-orange-700 bg-orange-50 dark:bg-orange-500/10 dark:text-orange-400'
+    };
+    return (
+        <div className="flex items-center gap-4 bg-white dark:bg-slate-800 px-6 py-4 rounded-full shadow-sm border border-slate-100 dark:border-white/5 flex-1 min-w-[200px]">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${colorStyles[color] || colorStyles.indigo}`}>
+                <Icon size={24} strokeWidth={2.5} />
+            </div>
+            <div className="flex flex-col">
+                <span className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tight">{value}</span>
+                <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-1">{label}</span>
+            </div>
+        </div>
+    );
+};
 import TaskTable from '../components/TaskTable';
 import { api } from '../services/api';
 import { format } from 'date-fns';
@@ -17,14 +38,14 @@ const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
 
 // ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
-const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }) => {
+const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], initial = null }) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const blank = {
         description: '', assigned_agency: '', days_given: '7', deadline_date: '',
         // auto-filled / advanced
         task_number: '', allocated_date: todayStr, time_given: '7 days',
         completion_date: '', steno_comment: '', status: 'Pending', priority: 'Normal',
-        remarks: '', department_id: '', is_pinned: false, is_today: false,
+        remarks: '', department_id: '', assigned_employee_id: '', is_pinned: false, is_today: false,
     };
     const [form, setForm] = useState(blank);
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -45,6 +66,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }
                 priority: initial.priority || 'Normal',
                 remarks: initial.remarks || '',
                 department_id: initial.department_id || '',
+                assigned_employee_id: initial.assigned_employee_id || '',
                 is_pinned: initial.is_pinned || false,
                 is_today: initial.is_today || false,
             });
@@ -101,10 +123,19 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }
                         </div>
 
                         {/* Assigned to */}
-                        <div>
-                            <label className={labelCls}>Assigned To</label>
-                            <input value={form.assigned_agency} onChange={f('assigned_agency')}
-                                placeholder="Officer / Agency name" className={inputCls} />
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelCls}>Assigned Employee</label>
+                                <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={inputCls}>
+                                    <option value="">None</option>
+                                    {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.display_username})</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelCls}>Other Agency</label>
+                                <input value={form.assigned_agency} onChange={f('assigned_agency')}
+                                    placeholder="Ex: PWD, CREDA" className={inputCls} />
+                            </div>
                         </div>
 
                         {/* Days Given + Deadline side by side */}
@@ -295,11 +326,10 @@ const BulkEditPanel = ({ count, onStatusChange, onPriorityChange, onDelete, onCl
 // ── Tab Button ─────────────────────────────────────────────────────────────────
 const Tab = ({ label, icon: Icon, active, onClick, count }) => (
     <button onClick={onClick}
-        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-            active
-                ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-500/20'
-                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'
-        }`}>
+        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${active
+            ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-500/20'
+            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'
+            }`}>
         <Icon size={15} />
         {label}
         {count !== undefined && (
@@ -315,6 +345,7 @@ const Tasks = ({ user, onLogout }) => {
     const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0, important: 0 });
     const [departments, setDepartments] = useState([]);
     const [agencies, setAgencies] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // Filters
@@ -342,16 +373,18 @@ const Tasks = ({ user, onLogout }) => {
             if (tab === 'today') filters.is_today = true;
             if (tab === 'pinned') filters.is_pinned = true;
 
-            const [t, s, d, a] = await Promise.all([
+            const [t, s, d, a, e] = await Promise.all([
                 api.getTasks(filters),
                 api.getTaskStats(),
                 api.getDepartments(),
                 api.getAgencies(),
+                api.getEmployees()
             ]);
             setTasks(tab === 'important' ? t.filter(x => x.priority === 'High' || x.priority === 'Critical') : t);
             setStats(s);
             setDepartments(d);
             setAgencies(a);
+            setEmployees(e);
         } catch (err) {
             console.error('Failed to load tasks', err);
         } finally {
@@ -370,6 +403,8 @@ const Tasks = ({ user, onLogout }) => {
             const payload = { ...form };
             if (payload.department_id === '') payload.department_id = null;
             else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
+            if (payload.assigned_employee_id === '') payload.assigned_employee_id = null;
+            else if (payload.assigned_employee_id) payload.assigned_employee_id = parseInt(payload.assigned_employee_id);
             if (!payload.completion_date) delete payload.completion_date;
             if (editTask) await api.updateTask(editTask.id, payload);
             else await api.createTask(payload);
@@ -442,29 +477,28 @@ const Tasks = ({ user, onLogout }) => {
     return (
         <Layout user={user} onLogout={onLogout}>
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
                     <h1 className="text-4xl font-black dark:text-white tracking-tight">Tasks</h1>
-                    <p className="text-slate-500 dark:text-dark-muted mt-1">Manage and track all assigned tasks</p>
+                    <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">Manage and track all assigned tasks</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
                     <button onClick={exportExcel}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                        className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 text-slate-700 dark:text-white font-bold rounded-full shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-white/10">
                         <FileDown size={16} /> Export
                     </button>
                     {user?.role === 'admin' && (
                         <>
                             <button onClick={() => { setBulkMode(b => !b); setSelectedIds([]); }}
-                                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border font-semibold text-sm transition-colors ${
-                                    bulkMode
-                                        ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-500 dark:text-indigo-300'
-                                        : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
-                                }`}>
+                                className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-full shadow-sm hover:shadow-md transition-all border ${bulkMode
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-500 dark:text-indigo-300'
+                                    : 'bg-white dark:bg-white/5 text-slate-700 dark:text-white border-slate-200 dark:border-white/10'
+                                    }`}>
                                 <List size={16} /> Bulk Edit
                             </button>
                             <button onClick={() => { setEditTask(null); setModalOpen(true); }}
-                                className="flex items-center gap-2 px-5 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors">
-                                <Plus size={18} /> New Task
+                                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-700 text-white font-bold rounded-full shadow-lg shadow-indigo-500/25 hover:bg-indigo-800 transition-all hover:scale-105 transform">
+                                <Plus size={18} strokeWidth={3} /> New Task
                             </button>
                         </>
                     )}
@@ -472,66 +506,58 @@ const Tasks = ({ user, onLogout }) => {
             </div>
 
             {/* Stat Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-                <StatCard title="Total" value={stats.total} icon={ClipboardList} color="indigo" delay={0} onClick={() => { setTab('all'); setFilterStatus(''); }} />
-                <StatCard title="Completed" value={stats.completed} icon={CheckCircle2} color="green" delay={1} onClick={() => { setTab('all'); setFilterStatus('Completed'); }} />
-                <StatCard title="Pending" value={stats.pending} icon={Clock} color="yellow" delay={2} onClick={() => { setTab('all'); setFilterStatus('Pending'); }} />
-                <StatCard title="Overdue" value={stats.overdue} icon={AlertTriangle} color="red" delay={3} onClick={() => { setTab('all'); setFilterStatus('Overdue'); }} />
-                <StatCard title="Important" value={stats.important} icon={Flame} color="orange" delay={4} onClick={() => setTab('important')} />
+            <div className="flex flex-wrap gap-4 mb-8">
+                <StatPill label="Total Tasks" value={stats.total} icon={ClipboardList} color="indigo" />
+                <StatPill label="Completed" value={stats.completed} icon={CheckCircle2} color="emerald" />
+                <StatPill label="Pending" value={stats.pending} icon={Clock} color="amber" />
+                <StatPill label="Overdue" value={stats.overdue} icon={AlertTriangle} color="rose" />
+                <StatPill label="Important" value={stats.important} icon={Flame} color="orange" />
             </div>
 
-            {/* Tabs */}
-            <div className="flex items-center gap-2 mb-5 flex-wrap">
-                <Tab label="All Tasks" icon={ClipboardList} active={tab === 'all'} onClick={() => setTab('all')} count={stats.total} />
-                <Tab label="Today" icon={Pin} active={tab === 'today'} onClick={() => setTab('today')} count={todayCount} />
-                <Tab label="Important" icon={Flame} active={tab === 'important'} onClick={() => setTab('important')} count={importantCount} />
-                <Tab label="Pinned" icon={Pin} active={tab === 'pinned'} onClick={() => setTab('pinned')} count={pinnedCount} />
-            </div>
-
-            {/* Filter Bar */}
-            <div className="glass-card rounded-2xl p-4 mb-5 flex flex-wrap gap-3 items-center">
-                {/* Search */}
-                <div className="relative flex-1 min-w-48">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={handleSearch}
-                        placeholder="Search task #, description, agency... (Enter)"
-                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all" />
+            <div className="mb-6">
+                {/* Tabs */}
+                <div className="flex flex-wrap gap-2 mb-6">
+                    {['all', 'today', 'important', 'pinned'].map(t => (
+                        <button key={t} onClick={() => setTab(t)}
+                            className={`px-5 py-2 text-sm font-bold rounded-full transition-all capitalize flex items-center gap-2 ${tab === t
+                                ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-500/30'
+                                : 'bg-white dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5'}`}>
+                            {t} {t === 'all' && 'Tasks'}
+                        </button>
+                    ))}
                 </div>
 
-                {/* Status filter */}
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
-                    <option value="">All Status</option>
-                    {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                </select>
+                {/* Filter Bar */}
+                <div className="bg-white dark:bg-slate-800 rounded-full p-2 mb-6 flex flex-wrap gap-2 items-center shadow-sm border border-slate-100 dark:border-white/5">
+                    <div className="relative flex-1 min-w-[200px]">
+                        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={handleSearch}
+                            placeholder="Search tasks by number, agency or keyword..."
+                            className="w-full pl-11 pr-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-semibold text-slate-700 dark:text-slate-200 placeholder-slate-400 transition-all" />
+                    </div>
 
-                {/* Agency filter */}
-                <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
-                    <option value="">All Agencies</option>
-                    {agencies.map(a => <option key={a}>{a}</option>)}
-                </select>
+                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                        className="px-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none text-sm font-bold text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer">
+                        <option value="">All Statuses</option>
+                        {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                    </select>
 
-                {/* Dept filter */}
-                <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
-                    <option value="">All Departments</option>
-                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                    <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)}
+                        className="px-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none text-sm font-bold text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer max-w-[150px] truncate">
+                        <option value="">All Agencies</option>
+                        {agencies.map(a => <option key={a}>{a}</option>)}
+                    </select>
 
-                {/* Sort */}
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
-                    <option value="deadline_date">Sort: Deadline</option>
-                    <option value="priority">Sort: Priority</option>
-                    <option value="created_at">Sort: Newest</option>
-                    <option value="allocated_date">Sort: Allocated</option>
-                </select>
+                    <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
+                        className="px-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none text-sm font-bold text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer max-w-[150px] truncate">
+                        <option value="">All Departments</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
 
-                <button onClick={load} title="Refresh"
-                    className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
-                    <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                </button>
+                    <button onClick={load} className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors ml-1" title="Refresh">
+                        <RefreshCw size={18} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
+                    </button>
+                </div>
             </div>
 
             {/* Bulk Edit Panel */}
@@ -580,6 +606,7 @@ const Tasks = ({ user, onLogout }) => {
                     <TaskTable
                         tasks={tasks}
                         departments={departments}
+                        employees={employees}
                         onUpdate={handleUpdate}
                         onDelete={handleDelete}
                         isAdmin={user?.role === 'admin'}
@@ -595,6 +622,7 @@ const Tasks = ({ user, onLogout }) => {
                 onClose={() => { setModalOpen(false); setEditTask(null); }}
                 onSave={handleSave}
                 departments={departments}
+                employees={employees}
                 initial={editTask} />
         </Layout>
     );

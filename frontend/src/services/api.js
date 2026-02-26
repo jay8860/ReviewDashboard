@@ -6,6 +6,7 @@ const DEPT_URL = `${BASE_URL}/api/departments`;
 const REVIEW_URL = `${BASE_URL}/api/reviews`;
 const TASK_URL = `${BASE_URL}/api/tasks`;
 const PLAN_URL = `${BASE_URL}/api/planner`;
+const EMP_URL = `${BASE_URL}/api/employees`;
 
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
@@ -225,6 +226,27 @@ export const api = {
     },
     deletePlannerEvent: async (id) => {
         const res = await axios.delete(`${PLAN_URL}/${id}`);
+        return res.data;
+    },
+
+    // ── Employees ─────────────────────────────────────────────────────────────
+    getEmployees: async (filters = {}) => {
+        const params = new URLSearchParams();
+        if (filters.department_id) params.append('department_id', filters.department_id);
+        if (filters.search) params.append('search', filters.search);
+        const res = await axios.get(`${EMP_URL}/?${params.toString()}`);
+        return res.data;
+    },
+    createEmployee: async (data) => {
+        const res = await axios.post(`${EMP_URL}/`, data);
+        return res.data;
+    },
+    updateEmployee: async (id, data) => {
+        const res = await axios.put(`${EMP_URL}/${id}`, data);
+        return res.data;
+    },
+    deleteEmployee: async (id) => {
+        const res = await axios.delete(`${EMP_URL}/${id}`);
         return res.data;
     },
 };

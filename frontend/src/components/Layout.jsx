@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
     LayoutDashboard, Building2, ClipboardList, Calendar, LogOut,
-    Sun, Moon, Menu, ChevronRight
+    Sun, Moon, Menu, ChevronRight, Users
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -22,6 +22,7 @@ const Layout = ({ children, user, onLogout }) => {
         { icon: Building2, label: 'Departments', path: '/departments' },
         { icon: ClipboardList, label: 'Tasks', path: '/tasks' },
         ...(user?.role === 'admin' ? [
+            { icon: Users, label: 'Employees', path: '/employees' },
             { icon: Calendar, label: 'Planner', path: '/planner' },
         ] : []),
     ];
@@ -65,11 +66,10 @@ const Layout = ({ children, user, onLogout }) => {
                         <button
                             key={item.label}
                             onClick={() => navigate(item.path)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-premium group relative ${
-                                isActive(item.path)
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-premium group relative ${isActive(item.path)
                                     ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-500/25'
                                     : 'text-slate-500 dark:text-dark-muted hover:bg-slate-100 dark:hover:bg-white/5 hover:text-indigo-600 dark:hover:text-indigo-400'
-                            }`}
+                                }`}
                         >
                             <item.icon size={20} className="transition-transform group-hover:scale-110 shrink-0" />
                             {sidebarOpen && <span className="font-semibold text-sm tracking-wide">{item.label}</span>}
@@ -86,9 +86,8 @@ const Layout = ({ children, user, onLogout }) => {
                         <div className="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10">
                             <p className="text-xs font-black uppercase tracking-widest text-slate-400">Logged in as</p>
                             <p className="text-sm font-bold text-slate-700 dark:text-white mt-0.5 capitalize">{user.username}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold mt-1 inline-block ${
-                                user.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
-                            }`}>{user.role}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold mt-1 inline-block ${user.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'
+                                }`}>{user.role}</span>
                         </div>
                     )}
                     <button

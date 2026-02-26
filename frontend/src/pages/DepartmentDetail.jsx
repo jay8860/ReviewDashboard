@@ -5,7 +5,7 @@ import {
     ArrowLeft, Plus, Trash2, Edit2, Calendar, AlertTriangle,
     CheckCircle2, Clock, X, ChevronRight, RefreshCw, BookOpen,
     ListChecks, MessageCircle, Phone, MapPin, Users, Check,
-    ChevronDown, CircleDot, RotateCcw
+    ChevronDown, CircleDot, RotateCcw, FileText
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
@@ -223,12 +223,10 @@ const MeetingCard = ({ meeting, onDelete, isAdmin, deptName }) => {
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-200 transition-colors">
                                     <WAIcon /> Resend WhatsApp
                                 </a>
-                                {isAdmin && (
-                                    <button onClick={() => onDelete(meeting.id)}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
-                                        <Trash2 size={11} /> Delete
-                                    </button>
-                                )}
+                                <button onClick={() => onDelete(meeting.id)}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
+                                    <Trash2 size={11} /> Delete
+                                </button>
                             </div>
                         </div>
                     </motion.div>
@@ -481,12 +479,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Agenda / To Do</h2>
                             <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">{openAgenda.length} open</span>
                         </div>
-                        {user?.role === 'admin' && (
-                            <button onClick={() => setShowAddAgenda(true)}
-                                className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
-                                <Plus size={16} />
-                            </button>
-                        )}
+                        <button onClick={() => setShowAddAgenda(true)}
+                            className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
+                            <Plus size={16} />
+                        </button>
                     </div>
 
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-2">
@@ -519,12 +515,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                         </p>
                                     )}
                                 </div>
-                                {user?.role === 'admin' && (
-                                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-                                        <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
-                                        <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
-                                    </div>
-                                )}
+                                <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                    <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                                    <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -537,12 +531,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <BookOpen size={20} className="text-emerald-500" />
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Targets</h2>
                         </div>
-                        {user?.role === 'admin' && (
-                            <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                                className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
-                                <Plus size={16} />
-                            </button>
-                        )}
+                        <button onClick={() => { setEditProg(null); setProgModal(true); }}
+                            className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
+                            <Plus size={16} />
+                        </button>
                     </div>
 
                     <div className="flex-1 overflow-x-auto custom-scrollbar">
@@ -598,14 +590,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
                         ))}
                         {meetings.length === 0 && <p className="text-slate-400 text-sm py-4">No meetings scheduled</p>}
 
-                        {user?.role === 'admin' && (
-                            <div className="absolute right-4 bottom-4">
-                                <button onClick={() => setMeetingModal(true)}
-                                    className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
-                                    <span>Schedule<br />New<br />Meeting</span>
-                                </button>
-                            </div>
-                        )}
+                        <div className="absolute right-4 bottom-4">
+                            <button onClick={() => setMeetingModal(true)}
+                                className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
+                                <span>Schedule<br />New<br />Meeting</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 

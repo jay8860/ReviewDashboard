@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from database import engine, Base
 import models
 from seed_auth import seed_admin
-from routers import auth, departments, reviews, tasks, planner
+from routers import auth, departments, reviews, tasks, planner, employees
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -37,6 +37,7 @@ app.include_router(departments.router, prefix="/api/departments", tags=["departm
 app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(planner.router, prefix="/api/planner", tags=["planner"])
+app.include_router(employees.router, prefix="/api/employees", tags=["employees"])
 
 # Serve React frontend
 frontend_dist = os.path.join(os.path.dirname(__file__), "static")
