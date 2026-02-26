@@ -7,7 +7,6 @@ import {
     ChevronDown, Trash2, Edit2, CheckSquare
 } from 'lucide-react';
 import Layout from '../components/Layout';
-import Layout from '../components/Layout';
 
 const StatPill = ({ icon: Icon, label, value, color }) => {
     const colorStyles = {
