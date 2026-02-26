@@ -4,6 +4,7 @@ from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
+import re
 
 from database import get_db
 import models
@@ -15,19 +16,32 @@ class TaskCreate(BaseModel):
     task_number: Optional[str] = None
     description: Optional[str] = None
     assigned_agency: Optional[str] = None
+    allocated_date: Optional[date] = None
+    time_given: Optional[str] = None
     deadline_date: Optional[date] = None
+    completion_date: Optional[str] = None
     status: Optional[str] = "Pending"
     priority: Optional[str] = "Normal"
+    is_pinned: Optional[bool] = False
+    is_today: Optional[bool] = False
+    steno_comment: Optional[str] = None
     remarks: Optional[str] = None
     department_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
+    task_number: Optional[str] = None
     description: Optional[str] = None
     assigned_agency: Optional[str] = None
+    allocated_date: Optional[date] = None
+    time_given: Optional[str] = None
     deadline_date: Optional[date] = None
+    completion_date: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    is_today: Optional[bool] = None
+    steno_comment: Optional[str] = None
     remarks: Optional[str] = None
     department_id: Optional[int] = None
 
@@ -36,20 +50,75 @@ class BulkUpdateRequest(BaseModel):
     updates: List[dict]
 
 
+def generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
+    prefix = "TSK"
+    if assigned_agency:
+        letters = re.sub(r'[^A-Za-z]', '', assigned_agency)
+        if len(letters) >= 3:
+            prefix = letters[:3].upper()
+        elif len(letters) > 0:
+            prefix = letters.upper().ljust(3, 'X')
+    elif department_id:
+        dept = db.query(models.Department).filter(models.Department.id == department_id).first()
+        if dept:
+            short = dept.short_name or dept.name
+            letters = re.sub(r'[^A-Za-z]', '', short)
+            if len(letters) >= 3:
+                prefix = letters[:3].upper()
+
+    existing = db.query(models.Task).filter(
+        models.Task.task_number.like(f"{prefix}-%")
+    ).all()
+    used_nums = set()
+    for t in existing:
+        m = re.match(rf'^{re.escape(prefix)}-(\d+)$', t.task_number or '')
+        if m:
+            used_nums.add(int(m.group(1)))
+    seq = 1
+    while seq in used_nums and seq <= 999:
+        seq += 1
+    return f"{prefix}-{str(seq).zfill(3)}"
+
+
+def task_to_dict(t: models.Task) -> dict:
+    return {
+        "id": t.id,
+        "task_number": t.task_number,
+        "description": t.description,
+        "assigned_agency": t.assigned_agency,
+        "allocated_date": str(t.allocated_date) if t.allocated_date else None,
+        "time_given": t.time_given,
+        "deadline_date": str(t.deadline_date) if t.deadline_date else None,
+        "completion_date": t.completion_date,
+        "status": t.status,
+        "priority": t.priority,
+        "is_pinned": t.is_pinned or False,
+        "is_today": t.is_today or False,
+        "steno_comment": t.steno_comment,
+        "remarks": t.remarks,
+        "department_id": t.department_id,
+        "source": t.source,
+        "created_at": str(t.created_at)
+    }
+
+
 @router.get("/")
 def get_tasks(
     department_id: Optional[int] = None,
     agency: Optional[str] = None,
     status: Optional[str] = None,
+    priority: Optional[str] = None,
+    is_today: Optional[bool] = None,
+    is_pinned: Optional[bool] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
     db: Session = Depends(get_db)
 ):
-    # Auto-refresh overdue
     today = date.today()
     db.query(models.Task).filter(
         models.Task.deadline_date < today,
-        models.Task.status.in_(["Pending", "In Progress"])
+        models.Task.status.in_(["Pending", "In Progress"]),
+        models.Task.completion_date == None
     ).update({"status": "Overdue"}, synchronize_session=False)
     db.commit()
 
@@ -59,83 +128,79 @@ def get_tasks(
     if agency:
         q = q.filter(models.Task.assigned_agency == agency)
     if status:
-        q = q.filter(models.Task.status == status)
+        statuses = [s.strip() for s in status.split(',')]
+        q = q.filter(models.Task.status.in_(statuses))
+    if priority:
+        q = q.filter(models.Task.priority == priority)
+    if is_today is not None:
+        q = q.filter(models.Task.is_today == is_today)
+    if is_pinned is not None:
+        q = q.filter(models.Task.is_pinned == is_pinned)
     if search:
         q = q.filter(or_(
             models.Task.task_number.ilike(f"%{search}%"),
             models.Task.description.ilike(f"%{search}%"),
-            models.Task.assigned_agency.ilike(f"%{search}%")
+            models.Task.assigned_agency.ilike(f"%{search}%"),
+            models.Task.steno_comment.ilike(f"%{search}%"),
         ))
+
     if sort_by == "deadline_date":
         q = q.order_by(models.Task.deadline_date.asc().nullslast())
     elif sort_by == "priority":
         from sqlalchemy import case
-        priority_order = case(
-            {"Critical": 0, "High": 1, "Normal": 2, "Low": 3},
-            value=models.Task.priority
-        )
+        priority_order = case({"Critical": 0, "High": 1, "Normal": 2, "Low": 3}, value=models.Task.priority)
         q = q.order_by(priority_order)
     elif sort_by == "created_at":
         q = q.order_by(models.Task.created_at.desc())
+    elif sort_by == "allocated_date":
+        q = q.order_by(models.Task.allocated_date.desc().nullslast())
 
-    tasks = q.all()
-    result = []
-    for t in tasks:
-        result.append({
-            "id": t.id,
-            "task_number": t.task_number,
-            "description": t.description,
-            "assigned_agency": t.assigned_agency,
-            "deadline_date": str(t.deadline_date) if t.deadline_date else None,
-            "status": t.status,
-            "priority": t.priority,
-            "remarks": t.remarks,
-            "department_id": t.department_id,
-            "source": t.source,
-            "created_at": str(t.created_at)
-        })
-    return result
+    return [task_to_dict(t) for t in q.all()]
 
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    today = date.today()
     total = db.query(func.count(models.Task.id)).scalar()
-    completed = db.query(func.count(models.Task.id)).filter(models.Task.status == "Completed").scalar()
-    pending = db.query(func.count(models.Task.id)).filter(models.Task.status == "Pending").scalar()
-    overdue = db.query(func.count(models.Task.id)).filter(models.Task.status == "Overdue").scalar()
-    in_progress = db.query(func.count(models.Task.id)).filter(models.Task.status == "In Progress").scalar()
-
-    by_agency = db.query(
-        models.Task.assigned_agency, func.count(models.Task.id)
-    ).group_by(models.Task.assigned_agency).all()
-
-    by_department = db.query(
-        models.Department.name, func.count(models.Task.id)
-    ).join(models.Task, models.Task.department_id == models.Department.id, isouter=True)\
-     .group_by(models.Department.name).all()
-
+    completed = db.query(func.count(models.Task.id)).filter(
+        or_(models.Task.status == "Completed", models.Task.completion_date != None)
+    ).scalar()
+    pending = db.query(func.count(models.Task.id)).filter(
+        models.Task.status == "Pending", models.Task.completion_date == None
+    ).scalar()
+    overdue = db.query(func.count(models.Task.id)).filter(
+        models.Task.status == "Overdue", models.Task.completion_date == None
+    ).scalar()
+    important = db.query(func.count(models.Task.id)).filter(
+        models.Task.priority.in_(["High", "Critical"]), models.Task.completion_date == None
+    ).scalar()
+    by_agency = db.query(models.Task.assigned_agency, func.count(models.Task.id)).group_by(models.Task.assigned_agency).all()
     return {
-        "total": total,
-        "completed": completed,
-        "pending": pending,
-        "overdue": overdue,
-        "in_progress": in_progress,
+        "total": total, "completed": completed, "pending": pending,
+        "overdue": overdue, "important": important,
         "by_agency": [{"agency": r[0] or "Unassigned", "count": r[1]} for r in by_agency],
-        "by_department": [{"department": r[0], "count": r[1]} for r in by_department]
     }
+
+
+@router.get("/agencies")
+def get_agencies(db: Session = Depends(get_db)):
+    rows = db.query(models.Task.assigned_agency).filter(models.Task.assigned_agency != None).distinct().all()
+    return sorted([r[0] for r in rows if r[0]])
 
 
 @router.post("/")
 def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     task_data = data.dict()
     if not task_data.get("task_number"):
-        task_data["task_number"] = f"T-{int(datetime.utcnow().timestamp())}"
+        task_data["task_number"] = generate_task_number(db, task_data.get("assigned_agency"), task_data.get("department_id"))
+    if not task_data.get("allocated_date"):
+        task_data["allocated_date"] = date.today()
+    if task_data.get("completion_date"):
+        task_data["status"] = "Completed"
     task = models.Task(**task_data)
     db.add(task)
     db.commit()
     db.refresh(task)
-    return task
+    return task_to_dict(task)
 
 
 @router.put("/bulk/update")
@@ -148,6 +213,8 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
             for k, v in item.items():
                 if k != "id" and hasattr(task, k):
                     setattr(task, k, v)
+            if item.get("completion_date"):
+                task.status = "Completed"
             updated.append(task_id)
     db.commit()
     return {"updated": updated}
@@ -160,9 +227,11 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
     for k, v in data.dict(exclude_none=True).items():
         setattr(task, k, v)
+    if data.completion_date:
+        task.status = "Completed"
     db.commit()
     db.refresh(task)
-    return task
+    return task_to_dict(task)
 
 
 @router.delete("/{task_id}")

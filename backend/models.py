@@ -161,15 +161,21 @@ class Task(Base):
     __tablename__ = "tasks"
     id = Column(Integer, primary_key=True, index=True)
     task_number = Column(String, unique=True, index=True)
-    description = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)          # Task name / description
     assigned_agency = Column(String, nullable=True)
+    allocated_date = Column(Date, nullable=True)       # Date task was assigned
+    time_given = Column(String, nullable=True)         # e.g. "7 days", "30 days"
     deadline_date = Column(Date, nullable=True)
+    completion_date = Column(String, nullable=True)    # Completion notes / date string
     status = Column(String, default=TaskStatus.pending)
     priority = Column(String, default=TaskPriority.normal)
+    is_pinned = Column(Boolean, default=False)         # Pinned to today
+    is_today = Column(Boolean, default=False)          # Flagged as today's task
+    steno_comment = Column(Text, nullable=True)        # Steno / secretary comment
     remarks = Column(Text, nullable=True)
-    # New: Link to department
+    # Link to department
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-    # New: Source tracking
+    # Source tracking
     source = Column(String, default="manual")          # manual | action_point | review
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

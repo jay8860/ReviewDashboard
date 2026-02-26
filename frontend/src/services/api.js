@@ -141,11 +141,17 @@ export const api = {
         if (filters.status) params.append('status', filters.status);
         if (filters.search) params.append('search', filters.search);
         if (filters.sortBy) params.append('sort_by', filters.sortBy);
+        if (filters.is_today !== undefined) params.append('is_today', filters.is_today);
+        if (filters.is_pinned !== undefined) params.append('is_pinned', filters.is_pinned);
         const res = await axios.get(`${TASK_URL}/?${params.toString()}`);
         return res.data;
     },
     getTaskStats: async () => {
         const res = await axios.get(`${TASK_URL}/stats`);
+        return res.data;
+    },
+    getAgencies: async () => {
+        const res = await axios.get(`${TASK_URL}/agencies`);
         return res.data;
     },
     createTask: async (data) => {
