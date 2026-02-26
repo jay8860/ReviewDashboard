@@ -119,11 +119,10 @@ const Overview = ({ user, onLogout }) => {
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`mb-8 p-5 rounded-2xl border flex items-start gap-4 ${
-                        criticalDepts.length > 0
+                    className={`mb-8 p-5 rounded-2xl border flex items-start gap-4 ${criticalDepts.length > 0
                             ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20'
                             : 'bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/20'
-                    }`}
+                        }`}
                 >
                     <AlertTriangle size={22} className={criticalDepts.length > 0 ? 'text-rose-500 mt-0.5 shrink-0' : 'text-amber-500 mt-0.5 shrink-0'} />
                     <div>
@@ -176,43 +175,88 @@ const Overview = ({ user, onLogout }) => {
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {departments.map((dept, i) => (
-                                <motion.div
-                                    key={dept.id}
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.05 }}
-                                    onClick={() => navigate(`/departments/${dept.id}`)}
-                                    className="glass-card rounded-2xl p-5 cursor-pointer hover:shadow-premium transition-premium group"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorMap[dept.color] || colorMap.indigo} flex items-center justify-center shrink-0 shadow-lg`}>
-                                            <span className="text-white font-bold text-sm">
-                                                {dept.short_name || dept.name.slice(0, 2).toUpperCase()}
-                                            </span>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between gap-2 mb-2">
-                                                <p className="font-bold text-slate-800 dark:text-white truncate">{dept.name}</p>
-                                                <ReviewDebtBadge status={dept.review_health?.status} />
-                                            </div>
-                                            <HealthBar score={dept.review_health?.score || 0} />
-                                            <div className="flex gap-4 mt-1.5 text-xs text-slate-400">
-                                                <span>{dept.program_count} program{dept.program_count !== 1 ? 's' : ''}</span>
-                                                {dept.review_health?.overdue_reviews > 0 && (
-                                                    <span className="text-rose-500 font-semibold">
-                                                        {dept.review_health.overdue_reviews} overdue review{dept.review_health.overdue_reviews > 1 ? 's' : ''}
+                            {departments.map((dept, i) => {
+                                // Extract past and future sessions for this department
+                                // We'll look at the review programs to gather sessions
+                                const allDeptSessions = recentSessions.filter(s => s.department_name === dept.name);
+                                const pastSessions = allDeptSessions.filter(s => new Date(s.scheduled_date) <= new Date()).sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date));
+                                const futureSessions = allDeptSessions.filter(s => new Date(s.scheduled_date) > new Date()).sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
+
+                                return (
+                                    <motion.div
+                                        key={dept.id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.05 }}
+                                        className="glass-card rounded-2xl overflow-hidden shadow-premium hover:shadow-premium-lg transition-premium group"
+                                    >
+                                        <div className="p-4 border-b border-slate-100 dark:border-white/5 cursor-pointer flex items-center justify-between hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => navigate(`/departments/${dept.id}`)}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorMap[dept.color] || colorMap.indigo} flex items-center justify-center shrink-0 shadow-lg`}>
+                                                    <span className="text-white font-bold text-sm">
+                                                        {dept.short_name || dept.name.slice(0, 2).toUpperCase()}
                                                     </span>
-                                                )}
-                                                {dept.open_tasks > 0 && (
-                                                    <span>{dept.open_tasks} open task{dept.open_tasks !== 1 ? 's' : ''}</span>
-                                                )}
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-black text-slate-800 dark:text-white text-lg group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{dept.name}</h3>
+                                                    {dept.review_health?.days_since_last_review !== undefined && dept.review_health?.days_since_last_review !== null && (
+                                                        <p className="text-xs text-slate-400">(Review last : {dept.review_health.days_since_last_review} days)</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                        <ArrowRight size={16} className="text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
-                                    </div>
-                                </motion.div>
-                            ))}
+
+                                        <div className="bg-slate-50/50 dark:bg-dark-card/30 flex w-full border-t border-slate-100 dark:border-white/5 text-sm divide-x divide-slate-200 dark:divide-white/10">
+                                            <div className="font-black text-slate-700 dark:text-slate-300 py-3 px-4 w-32 shrink-0 flex items-center text-xs uppercase tracking-wider bg-white dark:bg-white/5">
+                                                Reviews done
+                                            </div>
+                                            <div className="flex-1 flex overflow-x-auto custom-scrollbar">
+                                                {pastSessions.slice(0, 3).map((session, idx) => (
+                                                    <div
+                                                        key={session.id}
+                                                        className="px-4 py-3 font-bold text-slate-800 dark:text-white hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer border-r border-slate-200 dark:border-white/10 shrink-0 flex items-center justify-center min-w-[100px] transition-colors"
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/reviews/${session.id}`); }}
+                                                    >
+                                                        {format(new Date(session.scheduled_date), 'dd/MM/yy')}
+                                                    </div>
+                                                ))}
+                                                {futureSessions.slice(0, 1).map(session => (
+                                                    <div
+                                                        key={session.id}
+                                                        className="px-4 py-3 font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 cursor-pointer border-r border-slate-200 dark:border-white/10 shrink-0 flex items-center justify-center min-w-[100px] transition-colors"
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/reviews/${session.id}`); }}
+                                                    >
+                                                        {format(new Date(session.scheduled_date), 'dd/MM/yy')} →
+                                                    </div>
+                                                ))}
+                                                <div className="flex-1 min-w-[20px]"></div>
+                                            </div>
+                                            <div className="py-2 px-4 shrink-0 flex items-center justify-center bg-white dark:bg-white/5">
+                                                <div className="text-center">
+                                                    <p className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">Next review</p>
+                                                    <p className="font-bold text-slate-800 dark:text-white">
+                                                        {dept.review_health?.next_scheduled ? format(new Date(dept.review_health.next_scheduled), 'dd/MM/yy') : '--'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Sub-row for health / targets if needed to match sketch (Health parallel to Reviews done) */}
+                                        <div className="bg-slate-50/50 dark:bg-dark-card/30 flex w-full border-t border-slate-200 dark:border-white/10 text-sm divide-x divide-slate-200 dark:divide-white/10">
+                                            <div className="font-black text-slate-700 dark:text-slate-300 py-3 px-4 w-32 shrink-0 flex items-center text-xs uppercase tracking-wider bg-white dark:bg-white/5">
+                                                Health
+                                            </div>
+                                            <div className="flex-1 flex items-center px-4 py-3">
+                                                <div className="w-full max-w-sm flex items-center gap-3">
+                                                    <HealthBar score={dept.review_health?.score || 0} />
+                                                    <ReviewDebtBadge status={dept.review_health?.status} />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </motion.div>
+                                )
+                            })}
                         </div>
                     )}
                 </div>
@@ -271,11 +315,10 @@ const Overview = ({ user, onLogout }) => {
                                         onClick={() => navigate(`/reviews/${session.id}`)}
                                         className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors group"
                                     >
-                                        <div className={`w-2 h-2 rounded-full shrink-0 ${
-                                            session.status === 'Completed' ? 'bg-emerald-500' :
-                                            session.status === 'Scheduled' ? 'bg-indigo-500' :
-                                            session.status === 'Missed' ? 'bg-rose-500' : 'bg-slate-300'
-                                        }`} />
+                                        <div className={`w-2 h-2 rounded-full shrink-0 ${session.status === 'Completed' ? 'bg-emerald-500' :
+                                                session.status === 'Scheduled' ? 'bg-indigo-500' :
+                                                    session.status === 'Missed' ? 'bg-rose-500' : 'bg-slate-300'
+                                            }`} />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-slate-700 dark:text-white truncate">
                                                 {session.program_name}

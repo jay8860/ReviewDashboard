@@ -470,246 +470,184 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* ── LEFT: Agenda + Meetings ───────────────────────────────── */}
-                <div className="lg:col-span-1 space-y-6">
+            {/* New Grid Layout matching Sketch 2 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                    {/* ── Agenda Panel ─────────────────────────────────────── */}
-                    <div className="glass-card rounded-3xl overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
-                            <div className="flex items-center gap-2">
-                                <ListChecks size={17} className="text-indigo-500" />
-                                <h2 className="font-black text-slate-800 dark:text-white">Meeting Agenda</h2>
-                                <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">{openAgenda.length} open</span>
-                            </div>
-                            {user?.role === 'admin' && (
-                                <button onClick={() => setShowAddAgenda(true)}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-700 text-white text-xs font-bold hover:bg-indigo-800 transition-colors">
-                                    <Plus size={12} /> Add
-                                </button>
-                            )}
+                {/* ── TOP LEFT: Agenda / To Do ───────────────────────────────── */}
+                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[400px]">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-center gap-2">
+                            <ListChecks size={20} className="text-indigo-500" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Agenda / To Do</h2>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">{openAgenda.length} open</span>
                         </div>
-
-                        <div className="p-4 space-y-2">
-                            {/* Quick add inline */}
-                            <AnimatePresence>
-                                {showAddAgenda && (
-                                    <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-                                        <QuickAddAgenda onAdd={handleAddAgenda} onCancel={() => setShowAddAgenda(false)} />
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-
-                            {agenda.length === 0 && !showAddAgenda && (
-                                <div className="text-center py-8">
-                                    <ListChecks size={32} className="text-slate-200 mx-auto mb-2" />
-                                    <p className="text-sm text-slate-400">No agenda points yet</p>
-                                    {user?.role === 'admin' && (
-                                        <button onClick={() => setShowAddAgenda(true)} className="mt-3 text-xs text-indigo-600 font-semibold hover:underline">+ Add first agenda point</button>
-                                    )}
-                                </div>
-                            )}
-
-                            {agenda.map((ap, i) => (
-                                <motion.div key={ap.id}
-                                    initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                                    className={`group flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors hover:bg-slate-50 dark:hover:bg-white/5 ${ap.status === 'Done' ? 'opacity-60' : ''}`}>
-
-                                    {/* Status toggle button */}
-                                    <button onClick={() => handleToggleAgendaStatus(ap)}
-                                        title={`Status: ${ap.status} — click to cycle`}
-                                        className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                                            ap.status === 'Done' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                                            ap.status === 'Deferred' ? 'bg-slate-300 border-slate-300 text-white' :
-                                            'border-slate-300 hover:border-indigo-400'
-                                        }`}>
-                                        {ap.status === 'Done' && <Check size={10} />}
-                                        {ap.status === 'Deferred' && <RotateCcw size={9} />}
-                                    </button>
-
-                                    <div className="flex-1 min-w-0">
-                                        {editingAgendaId === ap.id ? (
-                                            <input autoFocus value={editingAgendaText}
-                                                onChange={e => setEditingAgendaText(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') handleSaveAgendaEdit(ap); if (e.key === 'Escape') setEditingAgendaId(null); }}
-                                                onBlur={() => handleSaveAgendaEdit(ap)}
-                                                className="w-full text-sm px-2 py-1 rounded-lg border border-indigo-300 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-                                        ) : (
-                                            <>
-                                                <p className={`text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug ${ap.status === 'Done' ? 'line-through' : ''}`}>{ap.title}</p>
-                                                {ap.details && <p className="text-xs text-slate-400 mt-0.5">{ap.details}</p>}
-                                            </>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center gap-0.5 shrink-0">
-                                        <AgendaBadge status={ap.status} />
-                                        {user?.role === 'admin' && (
-                                            <>
-                                                <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }}
-                                                    className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all">
-                                                    <Edit2 size={11} />
-                                                </button>
-                                                <button onClick={() => handleDeleteAgenda(ap.id)}
-                                                    className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all">
-                                                    <Trash2 size={11} />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
-
-                        {/* Schedule Meeting CTA */}
                         {user?.role === 'admin' && (
-                            <div className="px-4 pb-4">
-                                <button onClick={() => setMeetingModal(true)}
-                                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold text-sm shadow-lg hover:from-indigo-700 hover:to-violet-700 transition-all">
-                                    <Calendar size={15} /> Schedule Meeting with this Agenda
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ── Past Meetings ─────────────────────────────────────── */}
-                    <div className="glass-card rounded-3xl overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
-                            <div className="flex items-center gap-2">
-                                <Calendar size={16} className="text-violet-500" />
-                                <h2 className="font-black text-slate-800 dark:text-white">Meetings</h2>
-                                <span className="text-xs bg-violet-100 text-violet-700 font-black px-2 py-0.5 rounded-full">{meetings.length}</span>
-                            </div>
-                        </div>
-                        <div className="p-4 space-y-2">
-                            {meetings.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <Calendar size={32} className="text-slate-200 mx-auto mb-2" />
-                                    <p className="text-sm text-slate-400">No meetings scheduled yet</p>
-                                </div>
-                            ) : meetings.map(m => (
-                                <MeetingCard key={m.id} meeting={m} onDelete={handleDeleteMeeting} isAdmin={user?.role === 'admin'} deptName={dept.name} />
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── RIGHT: Review Programs ────────────────────────────────── */}
-                <div className="lg:col-span-2 space-y-5">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-xl font-black dark:text-white">Review Programs</h2>
-                        {user?.role === 'admin' && (
-                            <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors">
-                                <Plus size={15} /> Add Program
+                            <button onClick={() => setShowAddAgenda(true)}
+                                className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
+                                <Plus size={16} />
                             </button>
                         )}
                     </div>
 
-                    {dept.programs?.length === 0 ? (
-                        <div className="glass-card rounded-3xl p-16 text-center">
-                            <BookOpen size={48} className="text-slate-200 mx-auto mb-4" />
-                            <p className="text-lg font-black text-slate-400">No review programs yet</p>
-                            <p className="text-slate-400 mt-1 mb-6 text-sm">Add programs to track structured reviews</p>
-                            {user?.role === 'admin' && (
-                                <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                                    className="px-6 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg">
-                                    <Plus size={16} className="inline mr-2" /> Add Program
-                                </button>
+                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-2">
+                        <AnimatePresence>
+                            {showAddAgenda && (
+                                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                                    <QuickAddAgenda onAdd={handleAddAgenda} onCancel={() => setShowAddAgenda(false)} />
+                                </motion.div>
                             )}
+                        </AnimatePresence>
+
+                        {agenda.length === 0 && !showAddAgenda && (
+                            <div className="text-center py-8">
+                                <p className="text-sm text-slate-400">No agenda points yet</p>
+                            </div>
+                        )}
+
+                        {agenda.map((ap, i) => (
+                            <div key={ap.id} className="group flex items-start gap-3 py-2 border-b border-slate-100 dark:border-white/5 last:border-0">
+                                <span className="font-bold text-slate-400 w-5">{i + 1}.</span>
+                                <div className="flex-1">
+                                    {editingAgendaId === ap.id ? (
+                                        <input autoFocus value={editingAgendaText} onChange={e => setEditingAgendaText(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') handleSaveAgendaEdit(ap); if (e.key === 'Escape') setEditingAgendaId(null); }}
+                                            onBlur={() => handleSaveAgendaEdit(ap)}
+                                            className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white" />
+                                    ) : (
+                                        <p className={`text-sm font-semibold text-slate-700 dark:text-slate-200 ${ap.status === 'Done' ? 'line-through opacity-50' : ''}`}>
+                                            {ap.title}
+                                        </p>
+                                    )}
+                                </div>
+                                {user?.role === 'admin' && (
+                                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                        <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                                        <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── TOP RIGHT: Targets (Programs) ────────────────────────── */}
+                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[400px]">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-center gap-2">
+                            <BookOpen size={20} className="text-emerald-500" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Targets</h2>
                         </div>
-                    ) : (
-                        dept.programs.map((prog, i) => {
-                            const progSessions = sessions
-                                .filter(s => s.program_id === prog.id)
-                                .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date));
+                        {user?.role === 'admin' && (
+                            <button onClick={() => { setEditProg(null); setProgModal(true); }}
+                                className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
+                                <Plus size={16} />
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs uppercase bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3 font-black">Program</th>
+                                    <th className="px-4 py-3 font-black text-center whitespace-nowrap">Achieved<br />(as on date)</th>
+                                    <th className="px-4 py-3 font-black text-center">Target</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                {dept.programs?.length === 0 ? (
+                                    <tr><td colSpan="3" className="text-center py-8 text-slate-400">No programs defined</td></tr>
+                                ) : (
+                                    dept.programs?.map((prog, i) => (
+                                        <tr key={prog.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => { setEditProg(prog); setProgModal(true); }}>
+                                            <td className="px-4 py-4 font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                                                <span className="text-slate-400 font-bold">{i + 1}.</span>
+                                                {prog.name}
+                                            </td>
+                                            <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                                {/* Placeholder for "Achieved" - derived from checklist or tasks in a real app */}
+                                                --
+                                            </td>
+                                            <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5">
+                                                {/* Placeholder for "Target" */}
+                                                --
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* ── BOTTOM LEFT: Meetings ─────────────────────────────────── */}
+                <div className="glass-card rounded-3xl overflow-hidden min-h-[250px] flex flex-col">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-center gap-2">
+                            <Calendar size={20} className="text-violet-500" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
+                        </div>
+                    </div>
+                    <div className="p-4 flex-1 flex flex-col gap-3 relative">
+                        {meetings.slice(0, 3).map((m, i) => (
+                            <div key={m.id} className="flex items-center gap-3 py-1">
+                                <span className="font-bold text-slate-400 w-5">{i + 1}.</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-200">{format(new Date(m.scheduled_date), 'dd/MM/yyyy')}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">{m.status}</span>
+                            </div>
+                        ))}
+                        {meetings.length === 0 && <p className="text-slate-400 text-sm py-4">No meetings scheduled</p>}
+
+                        {user?.role === 'admin' && (
+                            <div className="absolute right-4 bottom-4">
+                                <button onClick={() => setMeetingModal(true)}
+                                    className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
+                                    <span>Schedule<br />New<br />Meeting</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── BOTTOM RIGHT: Last Meeting Minutes ───────────────────── */}
+                <div className="glass-card rounded-3xl overflow-hidden min-h-[250px] relative">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-center gap-2">
+                            <FileText size={20} className="text-amber-500" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Last Meeting Minutes</h2>
+                        </div>
+                    </div>
+
+                    <div className="p-5">
+                        {sessions.length > 0 && sessions.filter(s => s.status === 'Completed').length > 0 ? (() => {
+                            const lastMeeting = sessions.filter(s => s.status === 'Completed').sort((a, b) => new Date(b.actual_date || b.scheduled_date) - new Date(a.actual_date || a.scheduled_date))[0];
+                            const noteLines = (lastMeeting.notes || "No notes recorded.").split('\n').filter(l => l.trim().length > 0);
 
                             return (
-                                <motion.div key={prog.id}
-                                    initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: i * 0.06 }}
-                                    className="glass-card rounded-3xl overflow-hidden">
-                                    <div className="p-5 border-b border-slate-100 dark:border-white/10">
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-3 flex-wrap">
-                                                    <h3 className="text-lg font-black dark:text-white">{prog.name}</h3>
-                                                    <DebtBadge status={prog.debt_status} />
-                                                </div>
-                                                {prog.description && <p className="text-sm text-slate-400 mt-1">{prog.description}</p>}
-                                                <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-400">
-                                                    <span>Every {prog.review_frequency_days} days</span>
-                                                    {prog.last_review && <span>Last: {format(parseISO(prog.last_review), 'd MMM yyyy')}</span>}
-                                                    {prog.days_since_last_review !== null && prog.days_since_last_review !== undefined && (
-                                                        <span className={prog.debt_status === 'overdue' ? 'text-rose-500 font-semibold' : prog.debt_status === 'warning' ? 'text-amber-500 font-semibold' : ''}>
-                                                            {prog.days_since_last_review}d ago
-                                                        </span>
-                                                    )}
-                                                    {prog.next_scheduled && <span className="text-indigo-500 font-semibold">Next: {format(parseISO(prog.next_scheduled), 'd MMM yyyy')}</span>}
-                                                </div>
+                                <>
+                                    <div className="space-y-3 mb-16">
+                                        {noteLines.slice(0, 2).map((line, idx) => (
+                                            <div key={idx} className="flex items-start gap-2">
+                                                <span className="font-bold text-slate-400 w-4">{idx + 1}.</span>
+                                                <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2">{line}</p>
                                             </div>
-                                            <div className="flex gap-2 shrink-0">
-                                                {user?.role === 'admin' && (
-                                                    <>
-                                                        <button onClick={() => { setSchedulingProgId(prog.id); setSchedReviewModal(true); }}
-                                                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold hover:bg-indigo-100 transition-colors">
-                                                            <Calendar size={13} /> Schedule
-                                                        </button>
-                                                        <button onClick={() => { setEditProg(prog); setProgModal(true); }}
-                                                            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-600 transition-colors">
-                                                            <Edit2 size={14} />
-                                                        </button>
-                                                        <button onClick={() => handleDeleteProgram(prog.id)}
-                                                            className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
+                                        ))}
+                                        {noteLines.length === 0 && <p className="text-sm text-slate-400">No notes recorded.</p>}
                                     </div>
-
-                                    {/* Sessions */}
-                                    <div className="p-4">
-                                        {progSessions.length === 0 ? (
-                                            <p className="text-center text-sm text-slate-400 py-3">No review sessions yet.</p>
-                                        ) : (
-                                            <div className="space-y-1.5">
-                                                {progSessions.slice(0, 4).map(session => (
-                                                    <div key={session.id}
-                                                        onClick={() => navigate(`/reviews/${session.id}`)}
-                                                        className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors group">
-                                                        <div className={`w-2 h-2 rounded-full shrink-0 ${
-                                                            session.status === 'Completed' ? 'bg-emerald-500' :
-                                                            session.status === 'Scheduled' ? 'bg-indigo-500' :
-                                                            session.status === 'Missed' ? 'bg-rose-500' : 'bg-slate-300'
-                                                        }`} />
-                                                        <span className="text-sm font-semibold text-slate-700 dark:text-white flex-1">
-                                                            {format(parseISO(session.scheduled_date), 'd MMMM yyyy')}
-                                                        </span>
-                                                        {session.venue && <span className="text-xs text-slate-400">· {session.venue}</span>}
-                                                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                                            session.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                                                            session.status === 'Scheduled' ? 'bg-indigo-100 text-indigo-700' :
-                                                            session.status === 'Missed' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
-                                                        }`}>{session.status}</span>
-                                                        <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400" />
-                                                    </div>
-                                                ))}
-                                                {progSessions.length > 4 && (
-                                                    <button onClick={() => navigate(`/reviews/${progSessions[0].id}`)}
-                                                        className="w-full text-center text-xs text-indigo-600 font-semibold py-2 hover:underline">
-                                                        +{progSessions.length - 4} more sessions
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </motion.div>
+                                    <button
+                                        onClick={() => navigate(`/reviews/${lastMeeting.id}`)}
+                                        className="absolute bottom-5 right-5 px-6 py-2.5 rounded-full border-2 border-amber-400 text-amber-600 dark:text-amber-400 font-black hover:bg-amber-50 dark:hover:bg-amber-400/10 transition-colors"
+                                    >
+                                        Details
+                                    </button>
+                                </>
                             );
-                        })
-                    )}
+                        })() : (
+                            <p className="text-slate-400 text-sm">No completed meetings found to show minutes.</p>
+                        )}
+                    </div>
                 </div>
+
             </div>
 
             {/* Modals */}

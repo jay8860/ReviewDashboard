@@ -251,216 +251,232 @@ const ReviewDetail = ({ user, onLogout }) => {
                 )}
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-8">
-                {/* Left: Action Points + Checklist */}
-                <div className="lg:col-span-2 space-y-8">
-                    {/* Action Points */}
-                    <div className="glass-card rounded-3xl overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <ClipboardList size={20} className="text-indigo-600" />
-                                <h2 className="text-xl font-black dark:text-white">Action Points</h2>
-                                {openAPs.length > 0 && (
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                                        {openAPs.length} open
-                                    </span>
-                                )}
-                            </div>
-                            {user?.role === 'admin' && (
-                                <button onClick={() => { setEditAP(null); setApModal(true); }}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold hover:bg-indigo-100 transition-colors">
-                                    <Plus size={14} /> Add
-                                </button>
+            <div className="space-y-8">
+                {/* Action Points Array (Full width) */}
+                <div className="glass-card rounded-3xl overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <ClipboardList size={20} className="text-indigo-600" />
+                            <h2 className="text-xl font-black dark:text-white">Action Points</h2>
+                            {openAPs.length > 0 && (
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                    {openAPs.length} open
+                                </span>
                             )}
                         </div>
-
-                        {session.action_points?.length === 0 ? (
-                            <div className="p-10 text-center text-slate-400 text-sm">
-                                No action points recorded yet. Add them during or after the review.
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-slate-100 dark:divide-white/10">
-                                {session.action_points.map(ap => (
-                                    <div key={ap.id} className="p-5 group hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors">
-                                        <div className="flex items-start gap-3">
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-semibold dark:text-white mb-1.5 ${ap.status === 'Closed' ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                                                    {ap.description}
-                                                </p>
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${apStatusColor[ap.status]}`}>{ap.status}</span>
-                                                    {ap.assigned_to && <span className="text-xs text-slate-400">→ {ap.assigned_to}</span>}
-                                                    {ap.due_date && <span className="text-xs text-slate-400">by {format(parseISO(ap.due_date), 'd MMM yyyy')}</span>}
-                                                    {ap.priority !== 'Normal' && (
-                                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded border ${priorityColor[ap.priority]}`}>{ap.priority}</span>
-                                                    )}
-                                                    {ap.linked_task_id && (
-                                                        <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-                                                            <CheckCircle2 size={12} /> Task linked
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {user?.role === 'admin' && (
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                    {/* Status quick-toggle */}
-                                                    <select value={ap.status}
-                                                        onChange={e => handleUpdateAP(ap.id, { status: e.target.value })}
-                                                        className="text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-600 focus:outline-none">
-                                                        {AP_STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                                                    </select>
-                                                    {!ap.linked_task_id && (
-                                                        <button onClick={() => handleCreateTask(ap.id)} disabled={creatingTask === ap.id}
-                                                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-xs font-semibold hover:bg-indigo-100 transition-colors"
-                                                            title="Convert to Task">
-                                                            {creatingTask === ap.id ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
-                                                            Task
-                                                        </button>
-                                                    )}
-                                                    <button onClick={() => { setEditAP(ap); setApModal(true); }}
-                                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-600 transition-colors">
-                                                        <Edit2 size={13} />
-                                                    </button>
-                                                    <button onClick={() => handleDeleteAP(ap.id)}
-                                                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                        {user?.role === 'admin' && (
+                            <button onClick={() => { setEditAP(null); setApModal(true); }}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-sm font-semibold hover:bg-indigo-100 transition-colors">
+                                <Plus size={14} /> Add
+                            </button>
                         )}
                     </div>
 
-                    {/* Checklist */}
-                    {session.checklist?.length > 0 && (
-                        <div className="glass-card rounded-3xl overflow-hidden">
-                            <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <CheckSquare size={20} className="text-indigo-600" />
-                                    <h2 className="text-xl font-black dark:text-white">Review Checklist</h2>
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
-                                        {checkedItems}/{totalItems}
-                                    </span>
-                                </div>
-                                {/* Progress bar */}
-                                <div className="w-24 h-2 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: totalItems > 0 ? `${(checkedItems / totalItems) * 100}%` : '0%' }}
-                                        transition={{ duration: 0.8, ease: 'circOut' }}
-                                        className="h-full bg-indigo-600 rounded-full"
-                                    />
-                                </div>
-                            </div>
-                            <div className="divide-y divide-slate-100 dark:divide-white/10">
-                                {session.checklist.map(item => (
-                                    <div key={item.id}
-                                        onClick={() => user?.role === 'admin' && handleChecklistToggle(item)}
-                                        className={`flex items-start gap-3 p-5 transition-colors ${user?.role === 'admin' ? 'cursor-pointer hover:bg-slate-50/50 dark:hover:bg-white/5' : ''}`}>
-                                        {item.is_checked
-                                            ? <CheckSquare size={18} className="text-indigo-600 shrink-0 mt-0.5" />
-                                            : <Square size={18} className="text-slate-300 shrink-0 mt-0.5" />
-                                        }
-                                        <div>
-                                            <p className={`text-sm font-semibold ${item.is_checked ? 'line-through text-slate-400' : 'text-slate-700 dark:text-white'}`}>
-                                                {item.title}
-                                            </p>
-                                            {item.description && (
-                                                <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>
+                    {session.action_points?.length === 0 ? (
+                        <div className="p-10 text-center text-slate-400 text-sm">
+                            No action points recorded yet. Add them during or after the review.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs uppercase bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                                    <tr>
+                                        <th className="px-4 py-3 font-black text-center w-16">Sr.No.</th>
+                                        <th className="px-4 py-3 font-black">Agenda / Action Point</th>
+                                        <th className="px-4 py-3 font-black whitespace-nowrap">Timeline</th>
+                                        <th className="px-4 py-3 font-black">Remarks</th>
+                                        <th className="px-4 py-3 font-black text-center">Status</th>
+                                        {user?.role === 'admin' && <th className="px-4 py-3 font-black text-right">Actions</th>}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                                    {session.action_points.map((ap, idx) => (
+                                        <tr key={ap.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group">
+                                            <td className="px-4 py-4 font-bold text-slate-400 text-center">{idx + 1}</td>
+                                            <td className="px-4 py-4">
+                                                <p className={`font-semibold dark:text-white ${ap.status === 'Closed' ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                                                    {ap.description}
+                                                </p>
+                                                {ap.assigned_to && <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-semibold">Assignee: {ap.assigned_to}</p>}
+                                                {ap.linked_task_id && (
+                                                    <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1 mt-1">
+                                                        <CheckCircle2 size={12} /> Task linked
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-4 font-medium text-slate-600 dark:text-slate-300">
+                                                {ap.due_date ? format(parseISO(ap.due_date), 'd MMM yyyy') : '--'}
+                                            </td>
+                                            <td className="px-4 py-4 text-slate-500 dark:text-slate-400 italic text-xs max-w-[200px] truncate" title={ap.remarks || ''}>
+                                                {ap.remarks || '--'}
+                                            </td>
+                                            <td className="px-4 py-4 text-center">
+                                                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${apStatusColor[ap.status]}`}>
+                                                    {ap.status}
+                                                </span>
+                                            </td>
+                                            {user?.role === 'admin' && (
+                                                <td className="px-4 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <select value={ap.status}
+                                                            onChange={e => handleUpdateAP(ap.id, { status: e.target.value })}
+                                                            className="text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-600 focus:outline-none cursor-pointer hover:border-indigo-300">
+                                                            {AP_STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                                                        </select>
+                                                        {!ap.linked_task_id && (
+                                                            <button onClick={() => handleCreateTask(ap.id)} disabled={creatingTask === ap.id}
+                                                                className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 transition-colors"
+                                                                title="Convert to Task">
+                                                                {creatingTask === ap.id ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => { setEditAP(ap); setApModal(true); }}
+                                                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-600 transition-colors">
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteAP(ap.id)}
+                                                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>
 
-                {/* Right: Notes & Info */}
-                <div className="space-y-6">
-                    {/* Meeting Notes */}
-                    <div className="glass-card rounded-3xl p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <FileText size={18} className="text-indigo-600" />
-                                <h3 className="font-black text-slate-800 dark:text-white">Meeting Notes</h3>
+                {/* Checklist */}
+                {session.checklist?.length > 0 && (
+                    <div className="glass-card rounded-3xl overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <CheckSquare size={20} className="text-indigo-600" />
+                                <h2 className="text-xl font-black dark:text-white">Review Checklist</h2>
+                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                                    {checkedItems}/{totalItems}
+                                </span>
+                            </div>
+                            {/* Progress bar */}
+                            <div className="w-24 h-2 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                                <motion.div
+                                    initial={{ width: 0 }}
+                                    animate={{ width: totalItems > 0 ? `${(checkedItems / totalItems) * 100}%` : '0%' }}
+                                    transition={{ duration: 0.8, ease: 'circOut' }}
+                                    className="h-full bg-indigo-600 rounded-full"
+                                />
+                            </div>
+                        </div>
+                        <div className="divide-y divide-slate-100 dark:divide-white/10">
+                            {session.checklist.map(item => (
+                                <div key={item.id}
+                                    onClick={() => user?.role === 'admin' && handleChecklistToggle(item)}
+                                    className={`flex items-start gap-3 p-5 transition-colors ${user?.role === 'admin' ? 'cursor-pointer hover:bg-slate-50/50 dark:hover:bg-white/5' : ''}`}>
+                                    {item.is_checked
+                                        ? <CheckSquare size={18} className="text-indigo-600 shrink-0 mt-0.5" />
+                                        : <Square size={18} className="text-slate-300 shrink-0 mt-0.5" />
+                                    }
+                                    <div>
+                                        <p className={`text-sm font-semibold ${item.is_checked ? 'line-through text-slate-400' : 'text-slate-700 dark:text-white'}`}>
+                                            {item.title}
+                                        </p>
+                                        {item.description && (
+                                            <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {/* Bottom Section: Notes & Summary on left, Checklist & Info on right */}
+                <div className="grid lg:grid-cols-2 gap-8">
+                    {/* Left Column */}
+                    <div className="space-y-6">
+                        {/* Meeting Notes */}
+                        <div className="glass-card rounded-3xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <FileText size={18} className="text-indigo-600" />
+                                    <h3 className="font-black text-slate-800 dark:text-white">Meeting Notes</h3>
+                                </div>
+                                {user?.role === 'admin' && (
+                                    <button onClick={() => notesEditing ? saveNotes() : setNotesEditing(true)}
+                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${notesEditing ? 'bg-indigo-700 text-white' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
+                                        {notesEditing ? 'Save' : 'Edit'}
+                                    </button>
+                                )}
+                            </div>
+                            {notesEditing ? (
+                                <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                                    rows={6} placeholder="Write meeting notes, decisions, discussions..."
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none transition-all" />
+                            ) : (
+                                <p className={`text-sm leading-relaxed ${notes ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}>
+                                    {notes || 'No notes yet. Click Edit to add meeting notes.'}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Pre-meeting Brief / Summary */}
+                        <div className="glass-card rounded-3xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <AlertCircle size={18} className="text-indigo-600" />
+                                    <h3 className="font-black text-slate-800 dark:text-white">Brief / Summary</h3>
+                                </div>
+                                {user?.role === 'admin' && notesEditing && (
+                                    <span className="text-xs text-slate-400">Edit above to save both</span>
+                                )}
+                            </div>
+                            {notesEditing ? (
+                                <textarea value={summary} onChange={e => setSummary(e.target.value)}
+                                    rows={4} placeholder="Pre-meeting brief or post-session summary..."
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none transition-all" />
+                            ) : (
+                                <p className={`text-sm leading-relaxed ${summary ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}>
+                                    {summary || 'No summary yet.'}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Quick Info */}
+                        <div className="glass-card rounded-3xl p-6">
+                            <h3 className="font-black text-slate-800 dark:text-white mb-4">Session Info</h3>
+                            <div className="space-y-3 text-sm">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Total Action Points</span>
+                                    <span className="font-bold dark:text-white">{session.action_points?.length || 0}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Open</span>
+                                    <span className="font-bold text-amber-600">{openAPs.length}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Tasks Linked</span>
+                                    <span className="font-bold text-emerald-600">
+                                        {session.action_points?.filter(ap => ap.linked_task_id).length || 0}
+                                    </span>
+                                </div>
+                                {session.actual_date && (
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Held On</span>
+                                        <span className="font-bold dark:text-white">
+                                            {format(parseISO(session.actual_date), 'd MMM yyyy')}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                             {user?.role === 'admin' && (
-                                <button onClick={() => notesEditing ? saveNotes() : setNotesEditing(true)}
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${notesEditing ? 'bg-indigo-700 text-white' : 'bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
-                                    {notesEditing ? 'Save' : 'Edit'}
+                                <button onClick={() => navigate('/tasks')}
+                                    className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold text-sm hover:bg-indigo-100 transition-colors">
+                                    <ExternalLink size={14} /> View All Tasks
                                 </button>
                             )}
                         </div>
-                        {notesEditing ? (
-                            <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                                rows={6} placeholder="Write meeting notes, decisions, discussions..."
-                                className="w-full px-3 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none transition-all" />
-                        ) : (
-                            <p className={`text-sm leading-relaxed ${notes ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}>
-                                {notes || 'No notes yet. Click Edit to add meeting notes.'}
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Pre-meeting Brief / Summary */}
-                    <div className="glass-card rounded-3xl p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <AlertCircle size={18} className="text-indigo-600" />
-                                <h3 className="font-black text-slate-800 dark:text-white">Brief / Summary</h3>
-                            </div>
-                            {user?.role === 'admin' && notesEditing && (
-                                <span className="text-xs text-slate-400">Edit above to save both</span>
-                            )}
-                        </div>
-                        {notesEditing ? (
-                            <textarea value={summary} onChange={e => setSummary(e.target.value)}
-                                rows={4} placeholder="Pre-meeting brief or post-session summary..."
-                                className="w-full px-3 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none transition-all" />
-                        ) : (
-                            <p className={`text-sm leading-relaxed ${summary ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}>
-                                {summary || 'No summary yet.'}
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Quick Info */}
-                    <div className="glass-card rounded-3xl p-6">
-                        <h3 className="font-black text-slate-800 dark:text-white mb-4">Session Info</h3>
-                        <div className="space-y-3 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-slate-400">Total Action Points</span>
-                                <span className="font-bold dark:text-white">{session.action_points?.length || 0}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-400">Open</span>
-                                <span className="font-bold text-amber-600">{openAPs.length}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-400">Tasks Linked</span>
-                                <span className="font-bold text-emerald-600">
-                                    {session.action_points?.filter(ap => ap.linked_task_id).length || 0}
-                                </span>
-                            </div>
-                            {session.actual_date && (
-                                <div className="flex justify-between">
-                                    <span className="text-slate-400">Held On</span>
-                                    <span className="font-bold dark:text-white">
-                                        {format(parseISO(session.actual_date), 'd MMM yyyy')}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                        {user?.role === 'admin' && (
-                            <button onClick={() => navigate('/tasks')}
-                                className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold text-sm hover:bg-indigo-100 transition-colors">
-                                <ExternalLink size={14} /> View All Tasks
-                            </button>
-                        )}
                     </div>
                 </div>
             </div>
