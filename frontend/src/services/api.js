@@ -55,6 +55,42 @@ export const api = {
         return res.data;
     },
 
+    // ── Agenda Points ─────────────────────────────────────────────────────────
+    getAgendaPoints: async (deptId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/agenda`);
+        return res.data;
+    },
+    createAgendaPoint: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/agenda`, data);
+        return res.data;
+    },
+    updateAgendaPoint: async (deptId, apId, data) => {
+        const res = await axios.put(`${DEPT_URL}/${deptId}/agenda/${apId}`, data);
+        return res.data;
+    },
+    deleteAgendaPoint: async (deptId, apId) => {
+        const res = await axios.delete(`${DEPT_URL}/${deptId}/agenda/${apId}`);
+        return res.data;
+    },
+
+    // ── Department Meetings ────────────────────────────────────────────────────
+    getMeetings: async (deptId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/meetings`);
+        return res.data;
+    },
+    createMeeting: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/meetings`, data);
+        return res.data;
+    },
+    updateMeeting: async (deptId, meetingId, data) => {
+        const res = await axios.put(`${DEPT_URL}/${deptId}/meetings/${meetingId}`, data);
+        return res.data;
+    },
+    deleteMeeting: async (deptId, meetingId) => {
+        const res = await axios.delete(`${DEPT_URL}/${deptId}/meetings/${meetingId}`);
+        return res.data;
+    },
+
     // ── Review Programs ───────────────────────────────────────────────────────
     getPrograms: async (departmentId = null) => {
         const params = departmentId ? `?department_id=${departmentId}` : '';

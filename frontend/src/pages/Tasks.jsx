@@ -16,39 +16,65 @@ import * as XLSX from 'xlsx';
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
 
-// ── Add / Edit Task Modal ──────────────────────────────────────────────────────
+// ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
 const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }) => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
     const blank = {
-        task_number: '', description: '', assigned_agency: '',
-        allocated_date: format(new Date(), 'yyyy-MM-dd'), time_given: '',
-        deadline_date: '', completion_date: '', steno_comment: '',
-        status: 'Pending', priority: 'Normal', remarks: '', department_id: '', is_pinned: false, is_today: false,
+        description: '', assigned_agency: '', days_given: '7', deadline_date: '',
+        // auto-filled / advanced
+        task_number: '', allocated_date: todayStr, time_given: '7 days',
+        completion_date: '', steno_comment: '', status: 'Pending', priority: 'Normal',
+        remarks: '', department_id: '', is_pinned: false, is_today: false,
     };
     const [form, setForm] = useState(blank);
+    const [showAdvanced, setShowAdvanced] = useState(false);
 
     useEffect(() => {
-        setForm(initial ? {
-            task_number: initial.task_number || '',
-            description: initial.description || '',
-            assigned_agency: initial.assigned_agency || '',
-            allocated_date: initial.allocated_date || format(new Date(), 'yyyy-MM-dd'),
-            time_given: initial.time_given || '',
-            deadline_date: initial.deadline_date || '',
-            completion_date: initial.completion_date || '',
-            steno_comment: initial.steno_comment || '',
-            status: initial.status || 'Pending',
-            priority: initial.priority || 'Normal',
-            remarks: initial.remarks || '',
-            department_id: initial.department_id || '',
-            is_pinned: initial.is_pinned || false,
-            is_today: initial.is_today || false,
-        } : blank);
+        if (initial) {
+            setForm({
+                task_number: initial.task_number || '',
+                description: initial.description || '',
+                assigned_agency: initial.assigned_agency || '',
+                days_given: initial.time_given ? initial.time_given.replace(/\D/g, '') : '7',
+                deadline_date: initial.deadline_date || '',
+                allocated_date: initial.allocated_date || todayStr,
+                time_given: initial.time_given || '7 days',
+                completion_date: initial.completion_date || '',
+                steno_comment: initial.steno_comment || '',
+                status: initial.status || 'Pending',
+                priority: initial.priority || 'Normal',
+                remarks: initial.remarks || '',
+                department_id: initial.department_id || '',
+                is_pinned: initial.is_pinned || false,
+                is_today: initial.is_today || false,
+            });
+            setShowAdvanced(false);
+        } else {
+            setForm(blank);
+            setShowAdvanced(false);
+        }
     }, [initial, isOpen]);
 
     if (!isOpen) return null;
 
     const f = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
     const fc = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.checked }));
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const payload = { ...form };
+        // Auto-set time_given from days_given
+        if (form.days_given && !initial) payload.time_given = `${form.days_given} days`;
+        // Auto-set deadline if days given but no deadline
+        if (form.days_given && !form.deadline_date && !initial) {
+            const dl = new Date();
+            dl.setDate(dl.getDate() + parseInt(form.days_given || 7));
+            payload.deadline_date = dl.toISOString().split('T')[0];
+        }
+        // Always set allocated_date to today for new tasks
+        if (!initial) payload.allocated_date = todayStr;
+        onSave(payload);
+    };
 
     const inputCls = "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all text-sm";
     const labelCls = "block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5";
@@ -57,111 +83,121 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-2xl shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar">
+                    className="glass-card rounded-3xl p-8 w-full max-w-lg shadow-premium-lg max-h-[90vh] overflow-y-auto custom-scrollbar">
                     <div className="flex items-center justify-between mb-6">
                         <h2 className="text-2xl font-black dark:text-white">{initial ? 'Edit' : 'New'} Task</h2>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
                     </div>
 
-                    <form onSubmit={e => { e.preventDefault(); onSave(form); }} className="space-y-4">
-                        {/* Row 1: Task # + Department */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelCls}>Task Number</label>
-                                <input value={form.task_number} onChange={f('task_number')} placeholder="Auto-generated if blank" className={inputCls} />
-                            </div>
-                            <div>
-                                <label className={labelCls}>Department</label>
-                                <select value={form.department_id} onChange={f('department_id')} className={inputCls}>
-                                    <option value="">None</option>
-                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                </select>
-                            </div>
-                        </div>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        {/* ── CORE FIELDS (always visible) ── */}
 
-                        {/* Description */}
+                        {/* Task Description */}
                         <div>
-                            <label className={labelCls}>Task Description *</label>
-                            <textarea value={form.description} onChange={f('description')} rows={3}
-                                placeholder="Describe the task clearly..."
-                                className={inputCls + " resize-none"} required />
-                        </div>
-
-                        {/* Assigned Agency */}
-                        <div>
-                            <label className={labelCls}>Assigned Agency / Officer</label>
-                            <input value={form.assigned_agency} onChange={f('assigned_agency')}
-                                placeholder="e.g. District Education Officer, DMF Nodal Agency"
-                                className={inputCls} />
-                        </div>
-
-                        {/* Row: Alloc Date + Time Given */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelCls}>Allocation Date</label>
-                                <input type="date" value={form.allocated_date} onChange={f('allocated_date')} className={inputCls} />
-                            </div>
-                            <div>
-                                <label className={labelCls}>Time Given</label>
-                                <input value={form.time_given} onChange={f('time_given')} placeholder="e.g. 30 days, 2 weeks" className={inputCls} />
-                            </div>
-                        </div>
-
-                        {/* Row: Deadline + Priority */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelCls}>Deadline</label>
-                                <input type="date" value={form.deadline_date} onChange={f('deadline_date')} className={inputCls} />
-                            </div>
-                            <div>
-                                <label className={labelCls}>Priority</label>
-                                <select value={form.priority} onChange={f('priority')} className={inputCls}>
-                                    {PRIORITY_OPTIONS.map(p => <option key={p}>{p}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Status (edit mode only) */}
-                        {initial && (
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className={labelCls}>Status</label>
-                                    <select value={form.status} onChange={f('status')} className={inputCls}>
-                                        {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className={labelCls}>Completion Date</label>
-                                    <input type="date" value={form.completion_date} onChange={f('completion_date')} className={inputCls} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Steno Comment */}
-                        <div>
-                            <label className={labelCls}>Steno / Secretary Comment</label>
-                            <textarea value={form.steno_comment} onChange={f('steno_comment')} rows={2}
-                                placeholder="Follow-up notes for steno..."
+                            <label className={labelCls}>Task / Work *</label>
+                            <textarea required autoFocus value={form.description} onChange={f('description')} rows={2}
+                                placeholder="What needs to be done?"
                                 className={inputCls + " resize-none"} />
                         </div>
 
-                        {/* Remarks */}
+                        {/* Assigned to */}
                         <div>
-                            <label className={labelCls}>Remarks</label>
-                            <input value={form.remarks} onChange={f('remarks')} placeholder="Optional remarks" className={inputCls} />
+                            <label className={labelCls}>Assigned To</label>
+                            <input value={form.assigned_agency} onChange={f('assigned_agency')}
+                                placeholder="Officer / Agency name" className={inputCls} />
                         </div>
 
-                        {/* Checkboxes */}
-                        <div className="flex gap-6 pt-1">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" checked={form.is_pinned} onChange={fc('is_pinned')} className="w-4 h-4 rounded text-indigo-600" />
-                                <span className="text-sm text-slate-600 dark:text-slate-300 font-semibold">📌 Pin Task</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" checked={form.is_today} onChange={fc('is_today')} className="w-4 h-4 rounded text-indigo-600" />
-                                <span className="text-sm text-slate-600 dark:text-slate-300 font-semibold">📅 Today's Task</span>
-                            </label>
+                        {/* Days Given + Deadline side by side */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelCls}>Days Given</label>
+                                <input type="number" min={1} value={form.days_given} onChange={f('days_given')}
+                                    placeholder="7" className={inputCls} />
+                                <p className="text-[10px] text-slate-400 mt-1">Default: 7 days</p>
+                            </div>
+                            <div>
+                                <label className={labelCls}>Deadline Date</label>
+                                <input type="date" value={form.deadline_date} onChange={f('deadline_date')} className={inputCls} />
+                                <p className="text-[10px] text-slate-400 mt-1">Auto-set if blank</p>
+                            </div>
                         </div>
+
+                        {/* Status (edit only, core) */}
+                        {initial && (
+                            <div>
+                                <label className={labelCls}>Status</label>
+                                <select value={form.status} onChange={f('status')} className={inputCls}>
+                                    {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                                </select>
+                            </div>
+                        )}
+
+                        {/* ── MORE OPTIONS ── */}
+                        <button type="button" onClick={() => setShowAdvanced(s => !s)}
+                            className="flex items-center gap-2 text-xs text-indigo-600 font-bold hover:text-indigo-700 transition-colors py-1">
+                            <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                            {showAdvanced ? 'Hide' : 'More'} options
+                        </button>
+
+                        <AnimatePresence>
+                            {showAdvanced && (
+                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden space-y-4">
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className={labelCls}>Priority</label>
+                                            <select value={form.priority} onChange={f('priority')} className={inputCls}>
+                                                {PRIORITY_OPTIONS.map(p => <option key={p}>{p}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Department</label>
+                                            <select value={form.department_id} onChange={f('department_id')} className={inputCls}>
+                                                <option value="">None</option>
+                                                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className={labelCls}>Steno / Follow-up Note</label>
+                                        <textarea value={form.steno_comment} onChange={f('steno_comment')} rows={2}
+                                            placeholder="Notes for secretary/steno..."
+                                            className={inputCls + " resize-none"} />
+                                    </div>
+
+                                    <div>
+                                        <label className={labelCls}>Remarks</label>
+                                        <input value={form.remarks} onChange={f('remarks')} placeholder="Any additional remarks" className={inputCls} />
+                                    </div>
+
+                                    {initial && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className={labelCls}>Completion Date</label>
+                                                <input type="date" value={form.completion_date} onChange={f('completion_date')} className={inputCls} />
+                                            </div>
+                                            <div>
+                                                <label className={labelCls}>Task #</label>
+                                                <input value={form.task_number} onChange={f('task_number')} className={inputCls} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-5">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="checkbox" checked={form.is_pinned} onChange={fc('is_pinned')} className="w-4 h-4 rounded text-indigo-600" />
+                                            <span className="text-sm text-slate-600 dark:text-slate-300 font-semibold">📌 Pin</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="checkbox" checked={form.is_today} onChange={fc('is_today')} className="w-4 h-4 rounded text-indigo-600" />
+                                            <span className="text-sm text-slate-600 dark:text-slate-300 font-semibold">📅 Today</span>
+                                        </label>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         {/* Buttons */}
                         <div className="flex gap-3 pt-2">
@@ -171,7 +207,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], initial = null }
                             </button>
                             <button type="submit"
                                 className="flex-1 py-3 rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-500/20">
-                                {initial ? 'Save Changes' : 'Create Task'}
+                                {initial ? 'Save' : 'Create Task'}
                             </button>
                         </div>
                     </form>

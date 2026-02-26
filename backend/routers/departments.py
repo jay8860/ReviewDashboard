@@ -4,6 +4,7 @@ from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, timedelta
+import json
 
 from database import get_db
 import models
@@ -200,5 +201,184 @@ def delete_department(dept_id: int, db: Session = Depends(get_db)):
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
     db.delete(dept)
+    db.commit()
+    return {"message": "Deleted"}
+
+
+# ─── Agenda Points ─────────────────────────────────────────────────────────────
+
+class AgendaPointCreate(BaseModel):
+    title: str
+    details: Optional[str] = None
+    status: Optional[str] = "Open"
+    order_index: Optional[int] = 0
+
+
+class AgendaPointUpdate(BaseModel):
+    title: Optional[str] = None
+    details: Optional[str] = None
+    status: Optional[str] = None
+    order_index: Optional[int] = None
+
+
+@router.get("/{dept_id}/agenda")
+def get_agenda(dept_id: int, db: Session = Depends(get_db)):
+    return db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.department_id == dept_id
+    ).order_by(models.AgendaPoint.order_index, models.AgendaPoint.created_at).all()
+
+
+@router.post("/{dept_id}/agenda")
+def create_agenda_point(dept_id: int, data: AgendaPointCreate, db: Session = Depends(get_db)):
+    ap = models.AgendaPoint(department_id=dept_id, **data.dict())
+    db.add(ap)
+    db.commit()
+    db.refresh(ap)
+    return ap
+
+
+@router.put("/{dept_id}/agenda/{ap_id}")
+def update_agenda_point(dept_id: int, ap_id: int, data: AgendaPointUpdate, db: Session = Depends(get_db)):
+    ap = db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.id == ap_id,
+        models.AgendaPoint.department_id == dept_id
+    ).first()
+    if not ap:
+        raise HTTPException(status_code=404, detail="Agenda point not found")
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(ap, k, v)
+    db.commit()
+    db.refresh(ap)
+    return ap
+
+
+@router.delete("/{dept_id}/agenda/{ap_id}")
+def delete_agenda_point(dept_id: int, ap_id: int, db: Session = Depends(get_db)):
+    ap = db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.id == ap_id,
+        models.AgendaPoint.department_id == dept_id
+    ).first()
+    if not ap:
+        raise HTTPException(status_code=404, detail="Agenda point not found")
+    db.delete(ap)
+    db.commit()
+    return {"message": "Deleted"}
+
+
+# ─── Department Meetings ───────────────────────────────────────────────────────
+
+class MeetingCreate(BaseModel):
+    scheduled_date: date
+    venue: Optional[str] = None
+    attendees: Optional[str] = None
+    notes: Optional[str] = None
+    officer_phone: Optional[str] = None
+    # Will auto-snapshot open agenda points if not provided
+    agenda_snapshot: Optional[str] = None
+
+
+class MeetingUpdate(BaseModel):
+    scheduled_date: Optional[date] = None
+    venue: Optional[str] = None
+    attendees: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    officer_phone: Optional[str] = None
+
+
+@router.get("/{dept_id}/meetings")
+def get_meetings(dept_id: int, db: Session = Depends(get_db)):
+    meetings = db.query(models.DepartmentMeeting).filter(
+        models.DepartmentMeeting.department_id == dept_id
+    ).order_by(models.DepartmentMeeting.scheduled_date.desc()).all()
+
+    result = []
+    for m in meetings:
+        snapshot = []
+        if m.agenda_snapshot:
+            try:
+                snapshot = json.loads(m.agenda_snapshot)
+            except Exception:
+                snapshot = []
+        result.append({
+            "id": m.id,
+            "department_id": m.department_id,
+            "scheduled_date": str(m.scheduled_date),
+            "venue": m.venue,
+            "attendees": m.attendees,
+            "notes": m.notes,
+            "status": m.status,
+            "officer_phone": m.officer_phone,
+            "agenda_snapshot": snapshot,
+            "created_at": m.created_at,
+        })
+    return result
+
+
+@router.post("/{dept_id}/meetings")
+def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_db)):
+    # Auto-snapshot current open agenda points
+    if not data.agenda_snapshot:
+        open_points = db.query(models.AgendaPoint).filter(
+            models.AgendaPoint.department_id == dept_id,
+            models.AgendaPoint.status == "Open"
+        ).order_by(models.AgendaPoint.order_index).all()
+        snapshot = json.dumps([{"title": ap.title, "details": ap.details} for ap in open_points])
+    else:
+        snapshot = data.agenda_snapshot
+
+    meeting = models.DepartmentMeeting(
+        department_id=dept_id,
+        scheduled_date=data.scheduled_date,
+        venue=data.venue,
+        attendees=data.attendees,
+        notes=data.notes,
+        officer_phone=data.officer_phone,
+        agenda_snapshot=snapshot,
+    )
+    db.add(meeting)
+    db.commit()
+    db.refresh(meeting)
+
+    # Parse snapshot for response
+    parsed_snapshot = json.loads(snapshot) if snapshot else []
+    return {
+        "id": meeting.id,
+        "department_id": meeting.department_id,
+        "scheduled_date": str(meeting.scheduled_date),
+        "venue": meeting.venue,
+        "attendees": meeting.attendees,
+        "notes": meeting.notes,
+        "status": meeting.status,
+        "officer_phone": meeting.officer_phone,
+        "agenda_snapshot": parsed_snapshot,
+        "created_at": meeting.created_at,
+    }
+
+
+@router.put("/{dept_id}/meetings/{meeting_id}")
+def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Session = Depends(get_db)):
+    meeting = db.query(models.DepartmentMeeting).filter(
+        models.DepartmentMeeting.id == meeting_id,
+        models.DepartmentMeeting.department_id == dept_id
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    for k, v in data.dict(exclude_none=True).items():
+        setattr(meeting, k, v)
+    db.commit()
+    db.refresh(meeting)
+    return {"message": "Updated"}
+
+
+@router.delete("/{dept_id}/meetings/{meeting_id}")
+def delete_meeting(dept_id: int, meeting_id: int, db: Session = Depends(get_db)):
+    meeting = db.query(models.DepartmentMeeting).filter(
+        models.DepartmentMeeting.id == meeting_id,
+        models.DepartmentMeeting.department_id == dept_id
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    db.delete(meeting)
     db.commit()
     return {"message": "Deleted"}

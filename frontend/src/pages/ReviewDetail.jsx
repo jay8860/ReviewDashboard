@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, CheckSquare, Square, Plus, Trash2, Edit2,
     X, ExternalLink, ClipboardList, AlertCircle, CheckCircle2,
-    Calendar, Users, MapPin, FileText, Zap, RefreshCw
+    Calendar, Users, MapPin, FileText, Zap, RefreshCw, ChevronDown
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
@@ -28,67 +28,73 @@ const apStatusColor = {
     Deferred: 'bg-slate-100 text-slate-500',
 };
 
-// ── Add Action Point Modal ─────────────────────────────────────────────────────
+// ── Add Action Point Modal — minimal: just description + assigned to ────────────
 const APModal = ({ isOpen, onClose, onSave, sessionId, initial = null }) => {
-    const today = new Date().toISOString().split('T')[0];
     const [form, setForm] = useState({ description: '', assigned_to: '', due_date: '', priority: 'Normal', remarks: '' });
+    const [showMore, setShowMore] = useState(false);
+
     useEffect(() => {
         if (initial) setForm({ description: initial.description, assigned_to: initial.assigned_to || '', due_date: initial.due_date || '', priority: initial.priority || 'Normal', remarks: initial.remarks || '' });
         else setForm({ description: '', assigned_to: '', due_date: '', priority: 'Normal', remarks: '' });
+        setShowMore(false);
     }, [initial, isOpen]);
 
     if (!isOpen) return null;
+
+    const inputCls = "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all text-sm";
+
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-lg shadow-premium-lg">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">{initial ? 'Edit' : 'New'} Action Point</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                    className="glass-card rounded-3xl p-7 w-full max-w-md shadow-premium-lg">
+                    <div className="flex items-center justify-between mb-5">
+                        <h2 className="text-xl font-black dark:text-white">{initial ? 'Edit' : 'Add'} Action Point</h2>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
-                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, session_id: sessionId }); }} className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Action Point *</label>
-                            <textarea required value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                                rows={3} placeholder="Describe the action to be taken..."
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all resize-none" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Assigned To</label>
-                                <input value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
-                                    placeholder="Officer name"
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Due Date</label>
-                                <input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Priority</label>
-                            <div className="flex gap-2">
-                                {PRIORITY_OPTIONS.map(p => (
-                                    <button type="button" key={p} onClick={() => setForm({ ...form, priority: p })}
-                                        className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.priority === p ? priorityColor[p] : 'bg-slate-50 dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'}`}>
-                                        {p}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Remarks</label>
-                            <input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })}
-                                placeholder="Optional remarks"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
-                        </div>
-                        <div className="flex gap-3 pt-2">
+                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, session_id: sessionId }); }} className="space-y-3">
+                        {/* Core: just the action */}
+                        <textarea required autoFocus value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+                            rows={2} placeholder="What action needs to be taken? *"
+                            className={inputCls + " resize-none"} />
+                        <input value={form.assigned_to} onChange={e => setForm({ ...form, assigned_to: e.target.value })}
+                            placeholder="Assign to (officer / department)"
+                            className={inputCls} />
+
+                        {/* More options toggle */}
+                        <button type="button" onClick={() => setShowMore(s => !s)}
+                            className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold hover:text-indigo-700 py-0.5">
+                            <ChevronDown size={12} className={`transition-transform ${showMore ? 'rotate-180' : ''}`} />
+                            {showMore ? 'Less' : 'More'} options
+                        </button>
+
+                        <AnimatePresence>
+                            {showMore && (
+                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden space-y-3">
+                                    <input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })}
+                                        className={inputCls} />
+                                    <div className="flex gap-2">
+                                        {PRIORITY_OPTIONS.map(p => (
+                                            <button type="button" key={p} onClick={() => setForm({ ...form, priority: p })}
+                                                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${form.priority === p ? priorityColor[p] : 'bg-slate-50 dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'}`}>
+                                                {p}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })}
+                                        placeholder="Remarks" className={inputCls} />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <div className="flex gap-3 pt-1">
                             <button type="button" onClick={onClose}
-                                className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 font-semibold hover:bg-slate-50 transition-colors">Cancel</button>
+                                className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 font-semibold hover:bg-slate-50 transition-colors text-sm">
+                                Cancel
+                            </button>
                             <button type="submit"
-                                className="flex-1 py-3 rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-500/20">
+                                className="flex-1 py-3 rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-500/20 text-sm">
                                 {initial ? 'Save' : 'Add'}
                             </button>
                         </div>

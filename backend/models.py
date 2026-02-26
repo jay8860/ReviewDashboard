@@ -64,6 +64,8 @@ class Department(Base):
 
     review_programs = relationship("ReviewProgram", back_populates="department", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="department")
+    agenda_points = relationship("AgendaPoint", back_populates="department", cascade="all, delete-orphan", order_by="AgendaPoint.order_index")
+    meetings = relationship("DepartmentMeeting", back_populates="department", cascade="all, delete-orphan")
 
 
 # ─── Review Program ───────────────────────────────────────────────────────────
@@ -182,6 +184,43 @@ class Task(Base):
 
     department = relationship("Department", back_populates="tasks")
     action_points = relationship("ActionPoint", back_populates="linked_task")
+
+
+# ─── Department Agenda Point ──────────────────────────────────────────────────
+# Agenda points live at the Department level, independent of any meeting/session
+
+class AgendaPoint(Base):
+    __tablename__ = "agenda_points"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    title = Column(String, nullable=False)             # Short agenda title
+    details = Column(Text, nullable=True)              # Optional notes/details
+    status = Column(String, default="Open")            # Open | Done | Deferred
+    order_index = Column(Integer, default=0)           # For manual ordering
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="agenda_points")
+
+
+# ─── Department Meeting ───────────────────────────────────────────────────────
+# A meeting scheduled directly for a department (not via review program)
+
+class DepartmentMeeting(Base):
+    __tablename__ = "department_meetings"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    scheduled_date = Column(Date, nullable=False)
+    venue = Column(String, nullable=True)
+    attendees = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    # Snapshot of agenda points at time of meeting (JSON list of titles)
+    agenda_snapshot = Column(Text, nullable=True)       # JSON: [{"title": "...", "details": "..."}]
+    status = Column(String, default="Scheduled")        # Scheduled | Done | Cancelled
+    officer_phone = Column(String, nullable=True)       # WhatsApp number of concerned officer
+    created_at = Column(DateTime, server_default=func.now())
+
+    department = relationship("Department", back_populates="meetings")
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────
