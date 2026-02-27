@@ -6,6 +6,7 @@ import {
     AlertTriangle, CheckCircle2, Clock, BookOpen
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 
 const COLORS = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'teal', 'orange'];
@@ -128,6 +129,8 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null }) => {
 
 const Departments = ({ user, onLogout }) => {
     const navigate = useNavigate();
+    const toast = useToast();
+    const isAdmin = user?.role === 'admin';
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
@@ -148,21 +151,26 @@ const Departments = ({ user, onLogout }) => {
         try {
             if (editDept) {
                 await api.updateDepartment(editDept.id, form);
+                toast.success('Department updated');
             } else {
                 await api.createDepartment(form);
+                toast.success('Department created');
             }
             setModalOpen(false);
             setEditDept(null);
             load();
         } catch (e) {
-            alert('Error saving department');
+            toast.error('Error saving department');
         }
     };
 
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this department and all its programs/sessions?')) return;
-        await api.deleteDepartment(id);
-        load();
+        try {
+            await api.deleteDepartment(id);
+            toast.success('Department deleted');
+            load();
+        } catch { toast.error('Failed to delete department'); }
     };
 
     return (
@@ -172,12 +180,14 @@ const Departments = ({ user, onLogout }) => {
                     <h1 className="text-4xl font-black dark:text-white tracking-tight">Departments</h1>
                     <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">Manage departments and their review programs</p>
                 </div>
-                <button
-                    onClick={() => { setEditDept(null); setModalOpen(true); }}
-                    className="flex items-center gap-2 px-6 py-3 bg-indigo-700 text-white rounded-full font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-all hover:scale-105"
-                >
-                    <Plus size={18} strokeWidth={3} /> New Department
-                </button>
+                {isAdmin && (
+                    <button
+                        onClick={() => { setEditDept(null); setModalOpen(true); }}
+                        className="flex items-center gap-2 px-6 py-3 bg-indigo-700 text-white rounded-full font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-all hover:scale-105"
+                    >
+                        <Plus size={18} strokeWidth={3} /> New Department
+                    </button>
+                )}
             </div>
 
             {loading ? (
@@ -189,10 +199,12 @@ const Departments = ({ user, onLogout }) => {
                     <Building2 size={56} className="text-slate-200 mx-auto mb-4" />
                     <p className="text-xl font-black text-slate-400">No departments yet</p>
                     <p className="text-slate-400 mt-1 mb-6">Add your first department to get started</p>
-                    <button onClick={() => { setEditDept(null); setModalOpen(true); }}
-                        className="px-6 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg">
-                        <Plus size={16} className="inline mr-2" /> Add Department
-                    </button>
+                    {isAdmin && (
+                        <button onClick={() => { setEditDept(null); setModalOpen(true); }}
+                            className="px-6 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg">
+                            <Plus size={16} className="inline mr-2" /> Add Department
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -213,16 +225,18 @@ const Departments = ({ user, onLogout }) => {
                                             {dept.short_name || dept.name.slice(0, 2).toUpperCase()}
                                         </span>
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => { setEditDept(dept); setModalOpen(true); }}
-                                            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-600 transition-colors">
-                                            <Edit2 size={15} />
-                                        </button>
-                                        <button onClick={() => handleDelete(dept.id)}
-                                            className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
-                                            <Trash2 size={15} />
-                                        </button>
-                                    </div>
+                                    {isAdmin && (
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => { setEditDept(dept); setModalOpen(true); }}
+                                                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-600 transition-colors">
+                                                <Edit2 size={15} />
+                                            </button>
+                                            <button onClick={() => handleDelete(dept.id)}
+                                                className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <h3 className="font-black text-lg text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
@@ -256,12 +270,14 @@ const Departments = ({ user, onLogout }) => {
                 </div>
             )}
 
-            <DeptModal
-                isOpen={modalOpen}
-                onClose={() => { setModalOpen(false); setEditDept(null); }}
-                onSave={handleSave}
-                initial={editDept}
-            />
+            {isAdmin && (
+                <DeptModal
+                    isOpen={modalOpen}
+                    onClose={() => { setModalOpen(false); setEditDept(null); }}
+                    onSave={handleSave}
+                    initial={editDept}
+                />
+            )}
         </Layout>
     );
 };

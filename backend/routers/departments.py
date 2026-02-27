@@ -90,6 +90,28 @@ def get_departments(db: Session = Depends(get_db)):
     result = []
     for dept in departments:
         health = compute_review_health(dept, today)
+        # Compute days_since_last_review for overview display
+        all_completed = []
+        for prog in dept.review_programs:
+            if prog.is_active:
+                for s in prog.review_sessions:
+                    if s.status == "Completed" and s.actual_date:
+                        all_completed.append(s.actual_date)
+        if all_completed:
+            last_date = max(all_completed)
+            health["days_since_last_review"] = (today - last_date).days
+            health["next_scheduled"] = None
+            # Find next scheduled session
+            upcoming = []
+            for prog in dept.review_programs:
+                for s in prog.review_sessions:
+                    if s.status == "Scheduled" and s.scheduled_date >= today:
+                        upcoming.append(s.scheduled_date)
+            if upcoming:
+                health["next_scheduled"] = str(min(upcoming))
+        else:
+            health["days_since_last_review"] = None
+            health["next_scheduled"] = None
         # Count open tasks
         open_tasks = db.query(func.count(models.Task.id)).filter(
             models.Task.department_id == dept.id,

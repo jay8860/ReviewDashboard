@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
@@ -12,6 +12,12 @@ import ResetPassword from './pages/ResetPassword';
 
 const ProtectedRoute = ({ children, user }) => {
     if (!user) return <Navigate to="/login" replace />;
+    return children;
+};
+
+const AdminRoute = ({ children, user }) => {
+    if (!user) return <Navigate to="/login" replace />;
+    if (user.role !== 'admin') return <Navigate to="/" replace />;
     return children;
 };
 
@@ -68,14 +74,14 @@ function App() {
                     </ProtectedRoute>
                 } />
                 <Route path="/planner" element={
-                    <ProtectedRoute user={user}>
+                    <AdminRoute user={user}>
                         <Planner user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </AdminRoute>
                 } />
                 <Route path="/employees" element={
-                    <ProtectedRoute user={user}>
+                    <AdminRoute user={user}>
                         <Employees user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </AdminRoute>
                 } />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

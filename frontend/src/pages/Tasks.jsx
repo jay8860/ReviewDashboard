@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
+import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
@@ -103,14 +104,23 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-lg shadow-premium-lg max-h-[90vh] overflow-y-auto custom-scrollbar">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">{initial ? 'Edit' : 'New'} Task</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-lg shadow-premium-lg max-h-[90vh] overflow-y-auto custom-scrollbar overflow-hidden">
+                    {/* Modal Header */}
+                    <div className="px-8 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white dark:from-indigo-500/5 dark:to-transparent sticky top-0 z-10 backdrop-blur-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                                <ClipboardList size={16} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">{initial ? 'Edit' : 'New'} Task</h2>
+                                <p className="text-xs text-slate-400">{initial ? 'Update task details' : 'Add a new task to track'}</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form onSubmit={handleSubmit} className="space-y-6 p-8">
                         {/* ── CORE FIELDS ── */}
                         <div className="space-y-5">
                             <div>
@@ -337,6 +347,7 @@ const Tab = ({ label, icon: Icon, active, onClick, count }) => (
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 const Tasks = ({ user, onLogout }) => {
+    const toast = useToast();
     const [searchParams] = useSearchParams();
     const [tasks, setTasks] = useState([]);
     const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0, important: 0 });
@@ -389,7 +400,7 @@ const Tasks = ({ user, onLogout }) => {
         }
     }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
 
-    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab]);
+    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
 
     const handleSearch = (e) => {
         if (e.key === 'Enter') load();
@@ -406,47 +417,70 @@ const Tasks = ({ user, onLogout }) => {
             if (!payload.deadline_date) payload.deadline_date = null;
             if (!payload.allocated_date) payload.allocated_date = null;
 
-            if (editTask) await api.updateTask(editTask.id, payload);
-            else await api.createTask(payload);
+            if (editTask) {
+                await api.updateTask(editTask.id, payload);
+                toast.success('Task updated successfully');
+            } else {
+                await api.createTask(payload);
+                toast.success('Task created successfully');
+            }
             setModalOpen(false);
             setEditTask(null);
             load();
         } catch (err) {
-            alert('Error saving task: ' + (err?.response?.data?.detail || err.message));
+            toast.error('Error saving task: ' + (err?.response?.data?.detail || err.message));
         }
     };
 
     const handleUpdate = async (id, patch) => {
-        await api.updateTask(id, patch);
-        load();
+        try {
+            await api.updateTask(id, patch);
+            load();
+        } catch {
+            toast.error('Failed to update task');
+        }
     };
 
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this task?')) return;
-        await api.deleteTask(id);
-        load();
+        try {
+            await api.deleteTask(id);
+            toast.success('Task deleted');
+            load();
+        } catch {
+            toast.error('Failed to delete task');
+        }
     };
 
     // Bulk actions
     const handleBulkStatus = async (status) => {
-        const updates = selectedIds.map(id => ({ id, status, ...(status === 'Completed' ? { completion_date: new Date().toISOString().split('T')[0] } : {}) }));
-        await api.bulkUpdateTasks(updates);
-        setSelectedIds([]);
-        load();
+        try {
+            const updates = selectedIds.map(id => ({ id, status, ...(status === 'Completed' ? { completion_date: new Date().toISOString().split('T')[0] } : {}) }));
+            await api.bulkUpdateTasks(updates);
+            toast.success(`${selectedIds.length} tasks marked ${status}`);
+            setSelectedIds([]);
+            load();
+        } catch { toast.error('Bulk update failed'); }
     };
 
     const handleBulkPriority = async (priority) => {
-        const updates = selectedIds.map(id => ({ id, priority }));
-        await api.bulkUpdateTasks(updates);
-        setSelectedIds([]);
-        load();
+        try {
+            const updates = selectedIds.map(id => ({ id, priority }));
+            await api.bulkUpdateTasks(updates);
+            toast.success(`Priority set to ${priority} for ${selectedIds.length} tasks`);
+            setSelectedIds([]);
+            load();
+        } catch { toast.error('Bulk update failed'); }
     };
 
     const handleBulkDelete = async () => {
         if (!window.confirm(`Delete ${selectedIds.length} tasks?`)) return;
-        await Promise.all(selectedIds.map(id => api.deleteTask(id)));
-        setSelectedIds([]);
-        load();
+        try {
+            await Promise.all(selectedIds.map(id => api.deleteTask(id)));
+            toast.success(`${selectedIds.length} tasks deleted`);
+            setSelectedIds([]);
+            load();
+        } catch { toast.error('Bulk delete failed'); }
     };
 
     const exportExcel = () => {

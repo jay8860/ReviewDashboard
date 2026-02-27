@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Plus, Edit2, Trash2, Search, RefreshCw, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
+import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 
 const EmployeeModal = ({ isOpen, onClose, onSave, departments, initial }) => {
@@ -92,6 +93,7 @@ const EmployeeModal = ({ isOpen, onClose, onSave, departments, initial }) => {
 };
 
 const Employees = ({ user, onLogout }) => {
+    const toast = useToast();
     const [employees, setEmployees] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -125,14 +127,14 @@ const Employees = ({ user, onLogout }) => {
             if (payload.department_id === '') payload.department_id = null;
             else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
 
-            if (editEmp) await api.updateEmployee(editEmp.id, payload);
-            else await api.createEmployee(payload);
+            if (editEmp) { await api.updateEmployee(editEmp.id, payload); toast.success('Employee updated'); }
+            else { await api.createEmployee(payload); toast.success('Employee added'); }
 
             setModalOpen(false);
             setEditEmp(null);
             loadData();
         } catch (err) {
-            alert('Error saving employee: ' + (err?.response?.data?.detail || err.message));
+            toast.error('Error saving employee: ' + (err?.response?.data?.detail || err.message));
         }
     };
 
@@ -140,9 +142,10 @@ const Employees = ({ user, onLogout }) => {
         if (!window.confirm("Are you sure you want to delete this employee?")) return;
         try {
             await api.deleteEmployee(id);
+            toast.success('Employee deleted');
             loadData();
         } catch (err) {
-            alert('Error deleting employee');
+            toast.error('Error deleting employee');
         }
     };
 

@@ -5,9 +5,10 @@ import {
     ArrowLeft, Plus, Trash2, Edit2, Calendar, AlertTriangle,
     CheckCircle2, Clock, X, ChevronRight, RefreshCw, BookOpen,
     ListChecks, MessageCircle, Phone, MapPin, Users, Check,
-    ChevronDown, CircleDot, RotateCcw, FileText
+    ChevronDown, CircleDot, RotateCcw, FileText, CalendarCheck
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { format, parseISO } from 'date-fns';
 
@@ -84,12 +85,21 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-lg shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">Schedule Meeting</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-lg shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar overflow-hidden">
+                    <div className="px-7 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                <Calendar size={16} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">Schedule Meeting</h2>
+                                <p className="text-xs text-slate-400">{deptName}</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
+                    <div className="p-7">
 
                     <form onSubmit={e => { e.preventDefault(); onSave(form); }} className="space-y-4">
                         <div>
@@ -157,6 +167,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                             <p className="text-xs text-center text-slate-400">Add officer phone to send directly, or click to open WhatsApp and choose contact</p>
                         )}
                     </form>
+                    </div>
                 </motion.div>
             </div>
         </AnimatePresence>
@@ -223,10 +234,12 @@ const MeetingCard = ({ meeting, onDelete, isAdmin, deptName }) => {
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-200 transition-colors">
                                     <WAIcon /> Resend WhatsApp
                                 </a>
-                                <button onClick={() => onDelete(meeting.id)}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
-                                    <Trash2 size={11} /> Delete
-                                </button>
+                                {isAdmin && (
+                                    <button onClick={() => onDelete(meeting.id)}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
+                                        <Trash2 size={11} /> Delete
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </motion.div>
@@ -254,13 +267,21 @@ const ProgramModal = ({ isOpen, onClose, onSave, departmentId, initial = null })
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-md shadow-premium-lg">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">{initial ? 'Edit' : 'New'} Review Program</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-md shadow-premium-lg overflow-hidden">
+                    <div className="px-7 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white dark:from-indigo-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                                <BookOpen size={15} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">{initial ? 'Edit' : 'New'} Review Program</h2>
+                                <p className="text-xs text-slate-400">Define targets and schedule</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
-                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, department_id: departmentId }); }} className="space-y-4">
+                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, department_id: departmentId }); }} className="space-y-4 p-7">
                         <div>
                             <label className={labelCls}>Program Name *</label>
                             <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
@@ -310,13 +331,21 @@ const ScheduleReviewModal = ({ isOpen, onClose, onSave, programId }) => {
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-md shadow-premium-lg">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">Schedule Review Session</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-md shadow-premium-lg overflow-hidden">
+                    <div className="px-7 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-violet-50 to-white dark:from-violet-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
+                                <CalendarCheck size={15} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">Schedule Review Session</h2>
+                                <p className="text-xs text-slate-400">Set date, venue and attendees</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
-                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, program_id: programId }); }} className="space-y-4">
+                    <form onSubmit={e => { e.preventDefault(); onSave({ ...form, program_id: programId }); }} className="space-y-4 p-7">
                         <div>
                             <label className={labelCls}>Date *</label>
                             <input required type="date" value={form.scheduled_date}
@@ -334,7 +363,7 @@ const ScheduleReviewModal = ({ isOpen, onClose, onSave, programId }) => {
                         </div>
                         <div className="flex gap-3 pt-2">
                             <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-50 transition-colors">Cancel</button>
-                            <button type="submit" className="flex-1 py-3 rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-500/20">Schedule</button>
+                            <button type="submit" className="flex-1 py-3 rounded-xl bg-violet-700 text-white font-bold hover:bg-violet-800 transition-colors shadow-lg shadow-violet-500/20">Schedule Review</button>
                         </div>
                     </form>
                 </motion.div>
@@ -354,6 +383,8 @@ const DebtBadge = ({ status }) => {
 const DepartmentDetail = ({ user, onLogout }) => {
     const { deptId } = useParams();
     const navigate = useNavigate();
+    const toast = useToast();
+    const isAdmin = user?.role === 'admin';
     const deptIdInt = parseInt(deptId);
 
     const [dept, setDept] = useState(null);
@@ -396,6 +427,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     // ── Agenda handlers ──────────────────────────────────────────────────────
     const handleAddAgenda = async ({ title, details }) => {
+        if (!isAdmin) return;
         await api.createAgendaPoint(deptIdInt, { title, details, order_index: agenda.length });
         setShowAddAgenda(false);
         const fresh = await api.getAgendaPoints(deptIdInt);
@@ -403,18 +435,22 @@ const DepartmentDetail = ({ user, onLogout }) => {
     };
 
     const handleToggleAgendaStatus = async (ap) => {
+        if (!isAdmin) return;
         const next = ap.status === 'Open' ? 'Done' : ap.status === 'Done' ? 'Deferred' : 'Open';
         await api.updateAgendaPoint(deptIdInt, ap.id, { status: next });
         setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, status: next } : a));
     };
 
     const handleDeleteAgenda = async (apId) => {
+        if (!isAdmin) return;
         if (!window.confirm('Remove this agenda point?')) return;
         await api.deleteAgendaPoint(deptIdInt, apId);
         setAgenda(prev => prev.filter(a => a.id !== apId));
+        toast.success('Agenda point removed');
     };
 
     const handleSaveAgendaEdit = async (ap) => {
+        if (!isAdmin) return;
         if (!editingAgendaText.trim()) return;
         await api.updateAgendaPoint(deptIdInt, ap.id, { title: editingAgendaText.trim() });
         setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, title: editingAgendaText.trim() } : a));
@@ -423,35 +459,51 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     // ── Meeting handlers ─────────────────────────────────────────────────────
     const handleScheduleMeeting = async (form) => {
-        await api.createMeeting(deptIdInt, form);
-        setMeetingModal(false);
-        const fresh = await api.getMeetings(deptIdInt);
-        setMeetings(fresh);
+        if (!isAdmin) return;
+        try {
+            await api.createMeeting(deptIdInt, form);
+            setMeetingModal(false);
+            const fresh = await api.getMeetings(deptIdInt);
+            setMeetings(fresh);
+            toast.success('Meeting scheduled successfully');
+        } catch { toast.error('Failed to schedule meeting'); }
     };
 
     const handleDeleteMeeting = async (id) => {
+        if (!isAdmin) return;
         if (!window.confirm('Delete this meeting?')) return;
-        await api.deleteMeeting(deptIdInt, id);
-        setMeetings(prev => prev.filter(m => m.id !== id));
+        try {
+            await api.deleteMeeting(deptIdInt, id);
+            setMeetings(prev => prev.filter(m => m.id !== id));
+            toast.success('Meeting deleted');
+        } catch { toast.error('Failed to delete meeting'); }
     };
 
     // ── Program handlers ─────────────────────────────────────────────────────
     const handleSaveProgram = async (form) => {
+        if (!isAdmin) return;
         try {
-            if (editProg) await api.updateProgram(editProg.id, form);
-            else await api.createProgram(form);
+            if (editProg) { await api.updateProgram(editProg.id, form); toast.success('Program updated'); }
+            else { await api.createProgram(form); toast.success('Review program created'); }
             setProgModal(false); setEditProg(null); load();
-        } catch { alert('Error saving program'); }
+        } catch { toast.error('Error saving program'); }
     };
 
     const handleDeleteProgram = async (id) => {
+        if (!isAdmin) return;
         if (!window.confirm('Delete this program and all its sessions?')) return;
-        await api.deleteProgram(id); load();
+        try { await api.deleteProgram(id); toast.success('Program deleted'); load(); }
+        catch { toast.error('Failed to delete program'); }
     };
 
     const handleScheduleReview = async (form) => {
-        try { await api.createSession(form); setSchedReviewModal(false); load(); }
-        catch { alert('Error scheduling review'); }
+        if (!isAdmin) return;
+        try {
+            await api.createSession(form);
+            setSchedReviewModal(false);
+            toast.success('Review session scheduled! It will now appear on the Overview board.');
+            load();
+        } catch { toast.error('Error scheduling review'); }
     };
 
     if (loading) return (
@@ -497,15 +549,17 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Agenda / To Do</h2>
                             <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">{openAgenda.length} open</span>
                         </div>
-                        <button onClick={() => setShowAddAgenda(true)}
-                            className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
-                            <Plus size={16} />
-                        </button>
+                        {isAdmin && (
+                            <button onClick={() => setShowAddAgenda(true)}
+                                className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
+                                <Plus size={16} />
+                            </button>
+                        )}
                     </div>
 
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-2">
                         <AnimatePresence>
-                            {showAddAgenda && (
+                            {isAdmin && showAddAgenda && (
                                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                                     <QuickAddAgenda onAdd={handleAddAgenda} onCancel={() => setShowAddAgenda(false)} />
                                 </motion.div>
@@ -522,7 +576,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <div key={ap.id} className="group flex items-start gap-3 py-2 border-b border-slate-100 dark:border-white/5 last:border-0">
                                 <span className="font-bold text-slate-400 w-5">{i + 1}.</span>
                                 <div className="flex-1">
-                                    {editingAgendaId === ap.id ? (
+                                    {isAdmin && editingAgendaId === ap.id ? (
                                         <input autoFocus value={editingAgendaText} onChange={e => setEditingAgendaText(e.target.value)}
                                             onKeyDown={e => { if (e.key === 'Enter') handleSaveAgendaEdit(ap); if (e.key === 'Escape') setEditingAgendaId(null); }}
                                             onBlur={() => handleSaveAgendaEdit(ap)}
@@ -533,10 +587,13 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                         </p>
                                     )}
                                 </div>
-                                <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-                                    <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
-                                    <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
-                                </div>
+                                {isAdmin && (
+                                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                        <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                                        <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
+                                        <button onClick={() => handleDeleteAgenda(ap.id)} className="p-1 text-rose-400 hover:bg-rose-50 rounded"><Trash2 size={14} /></button>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -549,10 +606,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <BookOpen size={20} className="text-emerald-500" />
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Targets</h2>
                         </div>
-                        <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                            className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
-                            <Plus size={16} />
-                        </button>
+                        {isAdmin && (
+                            <button onClick={() => { setEditProg(null); setProgModal(true); }}
+                                className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
+                                <Plus size={16} />
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex-1 overflow-x-auto custom-scrollbar">
@@ -562,6 +621,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                     <th className="px-4 py-3 font-black">Program</th>
                                     <th className="px-4 py-3 font-black text-center whitespace-nowrap">Achieved<br />(as on date)</th>
                                     <th className="px-4 py-3 font-black text-center">Target</th>
+                                    <th className="px-4 py-3 font-black text-center"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -569,16 +629,24 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                     <tr><td colSpan="3" className="text-center py-8 text-slate-400">No programs defined</td></tr>
                                 ) : (
                                     dept.programs?.map((prog, i) => (
-                                        <tr key={prog.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => { setEditProg(prog); setProgModal(true); }}>
-                                            <td className="px-4 py-4 font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                                        <tr key={prog.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group cursor-pointer">
+                                            <td className="px-4 py-4 font-semibold text-slate-800 dark:text-white flex items-center gap-2" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
                                                 <span className="text-slate-400 font-bold">{i + 1}.</span>
                                                 {prog.name}
                                             </td>
-                                            <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                            <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
                                                 {prog.achieved_value || '--'}
                                             </td>
-                                            <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5">
+                                            <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
                                                 {prog.target_value || '--'}
+                                            </td>
+                                            <td className="px-4 py-4 text-center">
+                                                {isAdmin && (
+                                                    <button onClick={(e) => { e.stopPropagation(); setSchedulingProgId(prog.id); setSchedReviewModal(true); }}
+                                                        className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        + Review
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))
@@ -606,12 +674,14 @@ const DepartmentDetail = ({ user, onLogout }) => {
                         ))}
                         {meetings.length === 0 && <p className="text-slate-400 text-sm py-4">No meetings scheduled</p>}
 
-                        <div className="absolute right-4 bottom-4">
-                            <button onClick={() => setMeetingModal(true)}
-                                className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
-                                <span>Schedule<br />New<br />Meeting</span>
-                            </button>
-                        </div>
+                        {isAdmin && (
+                            <div className="absolute right-4 bottom-4">
+                                <button onClick={() => setMeetingModal(true)}
+                                    className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
+                                    <span>Schedule<br />New<br />Meeting</span>
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -657,12 +727,16 @@ const DepartmentDetail = ({ user, onLogout }) => {
             </div>
 
             {/* Modals */}
-            <ProgramModal isOpen={progModal} onClose={() => { setProgModal(false); setEditProg(null); }}
-                onSave={handleSaveProgram} departmentId={deptIdInt} initial={editProg} />
-            <ScheduleReviewModal isOpen={schedReviewModal} onClose={() => setSchedReviewModal(false)}
-                onSave={handleScheduleReview} programId={schedulingProgId} />
-            <ScheduleMeetingModal isOpen={meetingModal} onClose={() => setMeetingModal(false)}
-                onSave={handleScheduleMeeting} agenda={agenda} deptName={dept.name} />
+            {isAdmin && (
+                <>
+                    <ProgramModal isOpen={progModal} onClose={() => { setProgModal(false); setEditProg(null); }}
+                        onSave={handleSaveProgram} departmentId={deptIdInt} initial={editProg} />
+                    <ScheduleReviewModal isOpen={schedReviewModal} onClose={() => setSchedReviewModal(false)}
+                        onSave={handleScheduleReview} programId={schedulingProgId} />
+                    <ScheduleMeetingModal isOpen={meetingModal} onClose={() => setMeetingModal(false)}
+                        onSave={handleScheduleMeeting} agenda={agenda} deptName={dept.name} />
+                </>
+            )}
         </Layout>
     );
 };

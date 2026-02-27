@@ -152,7 +152,13 @@ def get_tasks(
         q = q.order_by(models.Task.deadline_date.asc().nullslast())
     elif sort_by == "priority":
         from sqlalchemy import case
-        priority_order = case({"Critical": 0, "High": 1, "Normal": 2, "Low": 3}, value=models.Task.priority)
+        priority_order = case(
+            (models.Task.priority == "Critical", 0),
+            (models.Task.priority == "High", 1),
+            (models.Task.priority == "Normal", 2),
+            (models.Task.priority == "Low", 3),
+            else_=4
+        )
         q = q.order_by(priority_order)
     elif sort_by == "created_at":
         q = q.order_by(models.Task.created_at.desc())
