@@ -161,6 +161,8 @@ def get_department(dept_id: int, db: Session = Depends(get_db)):
             "name": prog.name,
             "description": prog.description,
             "review_frequency_days": prog.review_frequency_days,
+            "target_value": prog.target_value,
+            "achieved_value": prog.achieved_value,
             "last_review": last_review,
             "days_since_last_review": days_since,
             "next_due": next_due,

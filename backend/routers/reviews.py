@@ -17,12 +17,16 @@ class ProgramCreate(BaseModel):
     name: str
     description: Optional[str] = None
     review_frequency_days: Optional[int] = 15
+    target_value: Optional[str] = None
+    achieved_value: Optional[str] = None
 
 
 class ProgramUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     review_frequency_days: Optional[int] = None
+    target_value: Optional[str] = None
+    achieved_value: Optional[str] = None
     is_active: Optional[bool] = None
 
 

@@ -238,10 +238,16 @@ const MeetingCard = ({ meeting, onDelete, isAdmin, deptName }) => {
 
 // ── Program Modal ──────────────────────────────────────────────────────────────
 const ProgramModal = ({ isOpen, onClose, onSave, departmentId, initial = null }) => {
-    const [form, setForm] = useState({ name: '', description: '', review_frequency_days: 15 });
+    const [form, setForm] = useState({ name: '', description: '', review_frequency_days: 15, target_value: '', achieved_value: '' });
     useEffect(() => {
-        if (initial) setForm({ name: initial.name, description: initial.description || '', review_frequency_days: initial.review_frequency_days });
-        else setForm({ name: '', description: '', review_frequency_days: 15 });
+        if (initial) setForm({
+            name: initial.name,
+            description: initial.description || '',
+            review_frequency_days: initial.review_frequency_days,
+            target_value: initial.target_value || '',
+            achieved_value: initial.achieved_value || ''
+        });
+        else setForm({ name: '', description: '', review_frequency_days: 15, target_value: '', achieved_value: '' });
     }, [initial, isOpen]);
 
     if (!isOpen) return null;
@@ -265,6 +271,18 @@ const ProgramModal = ({ isOpen, onClose, onSave, departmentId, initial = null })
                             <input type="number" min={1} max={365} value={form.review_frequency_days}
                                 onChange={e => setForm({ ...form, review_frequency_days: parseInt(e.target.value) })}
                                 className={inputCls} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className={labelCls}>Target Value</label>
+                                <input value={form.target_value} onChange={e => setForm({ ...form, target_value: e.target.value })}
+                                    placeholder="e.g. 10 Lakhs" className={inputCls} />
+                            </div>
+                            <div>
+                                <label className={labelCls}>Achieved Value</label>
+                                <input value={form.achieved_value} onChange={e => setForm({ ...form, achieved_value: e.target.value })}
+                                    placeholder="e.g. 2 Lakhs" className={inputCls} />
+                            </div>
                         </div>
                         <div>
                             <label className={labelCls}>Description</label>
@@ -557,12 +575,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                                 {prog.name}
                                             </td>
                                             <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400">
-                                                {/* Placeholder for "Achieved" - derived from checklist or tasks in a real app */}
-                                                --
+                                                {prog.achieved_value || '--'}
                                             </td>
                                             <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5">
-                                                {/* Placeholder for "Target" */}
-                                                --
+                                                {prog.target_value || '--'}
                                             </td>
                                         </tr>
                                     ))

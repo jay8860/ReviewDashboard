@@ -94,6 +94,8 @@ class ReviewProgram(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     review_frequency_days = Column(Integer, default=15)   # Expected cadence in days
+    target_value = Column(String, nullable=True)          # E.g. "100%", "50 Lakhs"
+    achieved_value = Column(String, nullable=True)        # E.g. "45%", "20 Lakhs"
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
 
