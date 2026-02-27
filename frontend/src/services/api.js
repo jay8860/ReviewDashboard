@@ -180,6 +180,7 @@ export const api = {
         if (filters.sortBy) params.append('sort_by', filters.sortBy);
         if (filters.is_today !== undefined) params.append('is_today', filters.is_today);
         if (filters.is_pinned !== undefined) params.append('is_pinned', filters.is_pinned);
+        params.append('t', Date.now());
         const res = await axios.get(`${TASK_URL}/?${params.toString()}`);
         return res.data;
     },
@@ -234,6 +235,7 @@ export const api = {
         const params = new URLSearchParams();
         if (filters.department_id) params.append('department_id', filters.department_id);
         if (filters.search) params.append('search', filters.search);
+        params.append('t', Date.now());
         const res = await axios.get(`${EMP_URL}/?${params.toString()}`);
         return res.data;
     },

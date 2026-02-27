@@ -1,0 +1,1 @@
+[{"id":1,"name":"Test Employee","mobile_number":"9876543210","display_username":"testemp","is_active":true,"department_id":null,"department_name":null,"created_at":"2026-02-27 04:38:31"},{"id":2,"name":"API Test User","mobile_number":"5551234567","display_username":"apitest","is_active":true,"department_id":null,"department_name":null,"created_at":"2026-02-27 04:38:50"}]
