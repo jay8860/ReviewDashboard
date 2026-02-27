@@ -15,7 +15,16 @@ except Exception as e:
 
 # Priority: Environment Variable (for Railway/Prod) > Local Persistent SQLite (in data folder)
 raw_database_url = os.getenv("DATABASE_URL")
+is_railway_runtime = any(
+    os.getenv(k) for k in ("RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID")
+)
+
 if not raw_database_url:
+    if is_railway_runtime:
+        raise RuntimeError(
+            "DATABASE_URL is not set in Railway. "
+            "Refusing to use local SQLite in production because it causes non-persistent/inconsistent data."
+        )
     print("⚠️  DATABASE_URL not set. Using local SQLite at backend/data/tasks.db")
 
 SQLALCHEMY_DATABASE_URL = raw_database_url or f"sqlite:///{os.path.join(DATA_DIR, 'tasks.db')}"
