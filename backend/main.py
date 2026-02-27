@@ -4,13 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from database import engine, Base
+from database import engine, Base, apply_non_destructive_migrations
 import models
 from seed_auth import seed_admin
 from routers import auth, departments, reviews, tasks, planner, employees
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+apply_non_destructive_migrations()
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 
