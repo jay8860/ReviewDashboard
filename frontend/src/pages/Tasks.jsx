@@ -4,9 +4,13 @@ import { useSearchParams } from 'react-router-dom';
 import {
     ClipboardList, Plus, X, Search, RefreshCw, FileDown,
     CheckCircle2, Clock, AlertTriangle, Flame, Pin, List,
-    ChevronDown, Trash2, Edit2, CheckSquare
+    ChevronDown, Trash2, Edit2, CheckSquare, Check, ChevronRight
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import TaskTable from '../components/TaskTable';
+import { api } from '../services/api';
+import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 const StatPill = ({ icon: Icon, label, value, color }) => {
     const colorStyles = {
@@ -28,10 +32,6 @@ const StatPill = ({ icon: Icon, label, value, color }) => {
         </div>
     );
 };
-import TaskTable from '../components/TaskTable';
-import { api } from '../services/api';
-import { format } from 'date-fns';
-import * as XLSX from 'xlsx';
 
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
