@@ -234,12 +234,10 @@ const MeetingCard = ({ meeting, onDelete, isAdmin, deptName }) => {
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold hover:bg-emerald-200 transition-colors">
                                     <WAIcon /> Resend WhatsApp
                                 </a>
-                                {isAdmin && (
-                                    <button onClick={() => onDelete(meeting.id)}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
-                                        <Trash2 size={11} /> Delete
-                                    </button>
-                                )}
+                                <button onClick={() => onDelete(meeting.id)}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-xs font-semibold hover:bg-rose-100 transition-colors">
+                                    <Trash2 size={11} /> Delete
+                                </button>
                             </div>
                         </div>
                     </motion.div>
@@ -384,7 +382,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
     const { deptId } = useParams();
     const navigate = useNavigate();
     const toast = useToast();
-    const isAdmin = user?.role === 'admin';
     const deptIdInt = parseInt(deptId);
 
     const [dept, setDept] = useState(null);
@@ -427,7 +424,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     // ── Agenda handlers ──────────────────────────────────────────────────────
     const handleAddAgenda = async ({ title, details }) => {
-        if (!isAdmin) return;
         await api.createAgendaPoint(deptIdInt, { title, details, order_index: agenda.length });
         setShowAddAgenda(false);
         const fresh = await api.getAgendaPoints(deptIdInt);
@@ -435,14 +431,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
     };
 
     const handleToggleAgendaStatus = async (ap) => {
-        if (!isAdmin) return;
         const next = ap.status === 'Open' ? 'Done' : ap.status === 'Done' ? 'Deferred' : 'Open';
         await api.updateAgendaPoint(deptIdInt, ap.id, { status: next });
         setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, status: next } : a));
     };
 
     const handleDeleteAgenda = async (apId) => {
-        if (!isAdmin) return;
         if (!window.confirm('Remove this agenda point?')) return;
         await api.deleteAgendaPoint(deptIdInt, apId);
         setAgenda(prev => prev.filter(a => a.id !== apId));
@@ -450,7 +444,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
     };
 
     const handleSaveAgendaEdit = async (ap) => {
-        if (!isAdmin) return;
         if (!editingAgendaText.trim()) return;
         await api.updateAgendaPoint(deptIdInt, ap.id, { title: editingAgendaText.trim() });
         setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, title: editingAgendaText.trim() } : a));
@@ -459,7 +452,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     // ── Meeting handlers ─────────────────────────────────────────────────────
     const handleScheduleMeeting = async (form) => {
-        if (!isAdmin) return;
         try {
             await api.createMeeting(deptIdInt, form);
             setMeetingModal(false);
@@ -470,7 +462,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
     };
 
     const handleDeleteMeeting = async (id) => {
-        if (!isAdmin) return;
         if (!window.confirm('Delete this meeting?')) return;
         try {
             await api.deleteMeeting(deptIdInt, id);
@@ -481,7 +472,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     // ── Program handlers ─────────────────────────────────────────────────────
     const handleSaveProgram = async (form) => {
-        if (!isAdmin) return;
         try {
             if (editProg) { await api.updateProgram(editProg.id, form); toast.success('Program updated'); }
             else { await api.createProgram(form); toast.success('Review program created'); }
@@ -490,14 +480,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
     };
 
     const handleDeleteProgram = async (id) => {
-        if (!isAdmin) return;
         if (!window.confirm('Delete this program and all its sessions?')) return;
         try { await api.deleteProgram(id); toast.success('Program deleted'); load(); }
         catch { toast.error('Failed to delete program'); }
     };
 
     const handleScheduleReview = async (form) => {
-        if (!isAdmin) return;
         try {
             await api.createSession(form);
             setSchedReviewModal(false);
@@ -549,17 +537,15 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Agenda / To Do</h2>
                             <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">{openAgenda.length} open</span>
                         </div>
-                        {isAdmin && (
-                            <button onClick={() => setShowAddAgenda(true)}
-                                className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
-                                <Plus size={16} />
-                            </button>
-                        )}
+                        <button onClick={() => setShowAddAgenda(true)}
+                            className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-800/30 transition-colors">
+                            <Plus size={16} />
+                        </button>
                     </div>
 
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-2">
                         <AnimatePresence>
-                            {isAdmin && showAddAgenda && (
+                            {showAddAgenda && (
                                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
                                     <QuickAddAgenda onAdd={handleAddAgenda} onCancel={() => setShowAddAgenda(false)} />
                                 </motion.div>
@@ -576,7 +562,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <div key={ap.id} className="group flex items-start gap-3 py-2 border-b border-slate-100 dark:border-white/5 last:border-0">
                                 <span className="font-bold text-slate-400 w-5">{i + 1}.</span>
                                 <div className="flex-1">
-                                    {isAdmin && editingAgendaId === ap.id ? (
+                                    {editingAgendaId === ap.id ? (
                                         <input autoFocus value={editingAgendaText} onChange={e => setEditingAgendaText(e.target.value)}
                                             onKeyDown={e => { if (e.key === 'Enter') handleSaveAgendaEdit(ap); if (e.key === 'Escape') setEditingAgendaId(null); }}
                                             onBlur={() => handleSaveAgendaEdit(ap)}
@@ -587,13 +573,11 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                         </p>
                                     )}
                                 </div>
-                                {isAdmin && (
-                                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
-                                        <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
-                                        <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
-                                        <button onClick={() => handleDeleteAgenda(ap.id)} className="p-1 text-rose-400 hover:bg-rose-50 rounded"><Trash2 size={14} /></button>
-                                    </div>
-                                )}
+                                <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                                    <button onClick={() => handleToggleAgendaStatus(ap)} className="p-1 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                                    <button onClick={() => { setEditingAgendaId(ap.id); setEditingAgendaText(ap.title); }} className="p-1 text-indigo-500 hover:bg-indigo-50 rounded"><Edit2 size={14} /></button>
+                                    <button onClick={() => handleDeleteAgenda(ap.id)} className="p-1 text-rose-400 hover:bg-rose-50 rounded"><Trash2 size={14} /></button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -606,12 +590,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             <BookOpen size={20} className="text-emerald-500" />
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Targets</h2>
                         </div>
-                        {isAdmin && (
-                            <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                                className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
-                                <Plus size={16} />
-                            </button>
-                        )}
+                        <button onClick={() => { setEditProg(null); setProgModal(true); }}
+                            className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
+                            <Plus size={16} />
+                        </button>
                     </div>
 
                     <div className="flex-1 overflow-x-auto custom-scrollbar">
@@ -630,23 +612,21 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                 ) : (
                                     dept.programs?.map((prog, i) => (
                                         <tr key={prog.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group cursor-pointer">
-                                            <td className="px-4 py-4 font-semibold text-slate-800 dark:text-white flex items-center gap-2" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
+                                            <td className="px-4 py-4 font-semibold text-slate-800 dark:text-white flex items-center gap-2" onClick={() => { setEditProg(prog); setProgModal(true); }}>
                                                 <span className="text-slate-400 font-bold">{i + 1}.</span>
                                                 {prog.name}
                                             </td>
-                                            <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
+                                            <td className="px-4 py-4 text-center font-bold text-emerald-600 dark:text-emerald-400" onClick={() => { setEditProg(prog); setProgModal(true); }}>
                                                 {prog.achieved_value || '--'}
                                             </td>
-                                            <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5" onClick={() => { if (isAdmin) { setEditProg(prog); setProgModal(true); } }}>
+                                            <td className="px-4 py-4 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5" onClick={() => { setEditProg(prog); setProgModal(true); }}>
                                                 {prog.target_value || '--'}
                                             </td>
                                             <td className="px-4 py-4 text-center">
-                                                {isAdmin && (
-                                                    <button onClick={(e) => { e.stopPropagation(); setSchedulingProgId(prog.id); setSchedReviewModal(true); }}
-                                                        className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        + Review
-                                                    </button>
-                                                )}
+                                                <button onClick={(e) => { e.stopPropagation(); setSchedulingProgId(prog.id); setSchedReviewModal(true); }}
+                                                    className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    + Review
+                                                </button>
                                             </td>
                                         </tr>
                                     ))
@@ -674,14 +654,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
                         ))}
                         {meetings.length === 0 && <p className="text-slate-400 text-sm py-4">No meetings scheduled</p>}
 
-                        {isAdmin && (
-                            <div className="absolute right-4 bottom-4">
-                                <button onClick={() => setMeetingModal(true)}
-                                    className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
-                                    <span>Schedule<br />New<br />Meeting</span>
-                                </button>
-                            </div>
-                        )}
+                        <div className="absolute right-4 bottom-4">
+                            <button onClick={() => setMeetingModal(true)}
+                                className="flex flex-col items-center justify-center p-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg transition-all font-black text-sm text-center leading-tight hover:scale-105 active:scale-95">
+                                <span>Schedule<br />New<br />Meeting</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -727,16 +705,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
             </div>
 
             {/* Modals */}
-            {isAdmin && (
-                <>
-                    <ProgramModal isOpen={progModal} onClose={() => { setProgModal(false); setEditProg(null); }}
-                        onSave={handleSaveProgram} departmentId={deptIdInt} initial={editProg} />
-                    <ScheduleReviewModal isOpen={schedReviewModal} onClose={() => setSchedReviewModal(false)}
-                        onSave={handleScheduleReview} programId={schedulingProgId} />
-                    <ScheduleMeetingModal isOpen={meetingModal} onClose={() => setMeetingModal(false)}
-                        onSave={handleScheduleMeeting} agenda={agenda} deptName={dept.name} />
-                </>
-            )}
+            <ProgramModal isOpen={progModal} onClose={() => { setProgModal(false); setEditProg(null); }}
+                onSave={handleSaveProgram} departmentId={deptIdInt} initial={editProg} />
+            <ScheduleReviewModal isOpen={schedReviewModal} onClose={() => setSchedReviewModal(false)}
+                onSave={handleScheduleReview} programId={schedulingProgId} />
+            <ScheduleMeetingModal isOpen={meetingModal} onClose={() => setMeetingModal(false)}
+                onSave={handleScheduleMeeting} agenda={agenda} deptName={dept.name} />
         </Layout>
     );
 };
