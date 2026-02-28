@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from database import engine, Base, apply_non_destructive_migrations
 import models
 from seed_auth import seed_admin
+from seed_departments import seed_departments_and_agenda
 from routers import auth, departments, reviews, tasks, planner, employees
 
 # Create all tables
@@ -29,6 +30,7 @@ from database import SessionLocal
 db = SessionLocal()
 try:
     seed_admin(db)
+    seed_departments_and_agenda(db)
 finally:
     db.close()
 
