@@ -10,6 +10,7 @@ import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
+import TaskSuggestionsEditor from '../components/TaskSuggestionsEditor';
 
 const DEFAULT_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"];
 
@@ -214,6 +215,14 @@ const MeetingWorkspace = ({ user, onLogout }) => {
         a.download = `meeting-${meetingIdInt}-action-table.csv`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const generateMeetingTaskSuggestions = async () => {
+        return api.suggestTasksFromMeetingWorkspace(deptIdInt, meetingIdInt, {});
+    };
+
+    const confirmTaskSuggestions = async (suggestions) => {
+        return api.confirmTaskSuggestions(deptIdInt, { suggestions });
     };
 
     if (loading) {
@@ -484,6 +493,14 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                                 )}
                             </div>
                         </div>
+
+                        <TaskSuggestionsEditor
+                            title="Task Suggestions From Meeting Notes"
+                            subtitle="Generate tasks from MOM, action grid, and meeting documents. Edit rows before creating tasks."
+                            generateLabel="Suggest From Meeting"
+                            onGenerate={generateMeetingTaskSuggestions}
+                            onConfirmCreate={confirmTaskSuggestions}
+                        />
 
                         <DocumentAnalysisPanel
                             deptId={deptIdInt}

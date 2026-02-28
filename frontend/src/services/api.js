@@ -69,6 +69,10 @@ export const api = {
         const res = await axios.post(`${DEPT_URL}/${deptId}/documents/${docId}/analyze`, data);
         return res.data;
     },
+    suggestTasksFromDepartmentDocument: async (deptId, docId, data = {}) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/documents/${docId}/task-suggestions`, data);
+        return res.data;
+    },
     getDepartmentDocument: async (deptId, docId) => {
         const res = await axios.get(`${DEPT_URL}/${deptId}/documents/${docId}`);
         return res.data;
@@ -130,6 +134,10 @@ export const api = {
         const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/analyze`, data);
         return res.data;
     },
+    suggestTasksFromMeetingDocument: async (deptId, meetingId, docId, data = {}) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/task-suggestions`, data);
+        return res.data;
+    },
     getMeetingDocument: async (deptId, meetingId, docId) => {
         const res = await axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}`);
         return res.data;
@@ -149,6 +157,14 @@ export const api = {
     },
     updateDataGrid: async (deptId, data) => {
         const res = await axios.put(`${DEPT_URL}/${deptId}/datagrid`, data);
+        return res.data;
+    },
+    suggestTasksFromMeetingWorkspace: async (deptId, meetingId, data = {}) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/task-suggestions`, data);
+        return res.data;
+    },
+    confirmTaskSuggestions: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/task-suggestions/confirm`, data);
         return res.data;
     },
 

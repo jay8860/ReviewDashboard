@@ -8,6 +8,7 @@ import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import MarkdownAnalysis from '../components/MarkdownAnalysis';
+import TaskSuggestionsEditor from '../components/TaskSuggestionsEditor';
 
 const formatSize = (bytes = 0) => {
     if (!bytes) return '0 B';
@@ -115,6 +116,18 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
         }
     };
 
+    const generateTaskSuggestions = async () => {
+        if (!doc) return { suggestions: [] };
+        if (isMeetingScope) {
+            return api.suggestTasksFromMeetingDocument(deptIdInt, meetingIdInt, doc.id, {});
+        }
+        return api.suggestTasksFromDepartmentDocument(deptIdInt, doc.id, {});
+    };
+
+    const confirmTaskSuggestions = async (suggestions) => {
+        return api.confirmTaskSuggestions(deptIdInt, { suggestions });
+    };
+
     const backPath = isMeetingScope
         ? `/departments/${deptIdInt}/meetings/${meetingIdInt}`
         : `/departments/${deptIdInt}`;
@@ -208,6 +221,14 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                         )}
                     </div>
                 </div>
+
+                <TaskSuggestionsEditor
+                    title="Task Suggestions From This Analysis"
+                    subtitle="Generate actionable tasks from this document analysis, edit as needed, then confirm creation."
+                    generateLabel="Suggest Tasks"
+                    onGenerate={generateTaskSuggestions}
+                    onConfirmCreate={confirmTaskSuggestions}
+                />
             </div>
         </Layout>
     );

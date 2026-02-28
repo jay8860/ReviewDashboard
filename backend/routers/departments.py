@@ -7,6 +7,7 @@ from typing import Optional, List
 from datetime import date, datetime, timedelta
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from services.document_ai import (
     SUPPORTED_EXTENSIONS,
     extract_text_from_document,
     analyze_with_gemini,
+    generate_task_suggestions_with_gemini,
 )
 
 router = APIRouter()
@@ -100,6 +102,195 @@ def _get_meeting_or_404(db: Session, dept_id: int, meeting_id: int) -> models.De
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return meeting
+
+
+def _normalize_task_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (value or "").lower())).strip()
+
+
+def _normalize_priority(value: Optional[str]) -> str:
+    val = (value or "").strip().lower()
+    if val in {"critical", "crit", "p0"}:
+        return "Critical"
+    if val in {"high", "p1"}:
+        return "High"
+    if val in {"low", "p3"}:
+        return "Low"
+    return "Normal"
+
+
+def _task_to_dict(task: models.Task) -> dict:
+    return {
+        "id": task.id,
+        "task_number": task.task_number,
+        "description": task.description,
+        "assigned_agency": task.assigned_agency,
+        "allocated_date": str(task.allocated_date) if task.allocated_date else None,
+        "time_given": task.time_given,
+        "deadline_date": str(task.deadline_date) if task.deadline_date else None,
+        "completion_date": task.completion_date,
+        "status": task.status,
+        "priority": task.priority,
+        "is_pinned": task.is_pinned or False,
+        "is_today": task.is_today or False,
+        "steno_comment": task.steno_comment,
+        "remarks": task.remarks,
+        "department_id": task.department_id,
+        "source": task.source,
+        "assigned_employee_id": task.assigned_employee_id,
+        "assigned_employee_name": task.assigned_employee.name if task.assigned_employee else None,
+        "created_at": str(task.created_at) if task.created_at else None,
+    }
+
+
+def _generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
+    prefix = "TSK"
+    if assigned_agency:
+        letters = re.sub(r"[^A-Za-z]", "", assigned_agency)
+        if len(letters) >= 3:
+            prefix = letters[:3].upper()
+        elif letters:
+            prefix = letters.upper().ljust(3, "X")
+    elif department_id:
+        dept = db.query(models.Department).filter(models.Department.id == department_id).first()
+        if dept:
+            short = dept.short_name or dept.name
+            letters = re.sub(r"[^A-Za-z]", "", short or "")
+            if len(letters) >= 3:
+                prefix = letters[:3].upper()
+
+    existing = db.query(models.Task).filter(models.Task.task_number.like(f"{prefix}-%")).all()
+    used_nums = set()
+    for item in existing:
+        match = re.match(rf"^{re.escape(prefix)}-(\d+)$", item.task_number or "")
+        if match:
+            used_nums.add(int(match.group(1)))
+    seq = 1
+    while seq in used_nums and seq <= 999:
+        seq += 1
+    return f"{prefix}-{str(seq).zfill(3)}"
+
+
+def _clip_text(parts: List[str], limit: int = 24000) -> str:
+    out = []
+    total = 0
+    for part in parts:
+        chunk = (part or "").strip()
+        if not chunk:
+            continue
+        chunk_len = len(chunk)
+        if total + chunk_len > limit:
+            remaining = max(0, limit - total)
+            if remaining > 0:
+                out.append(chunk[:remaining])
+            break
+        out.append(chunk)
+        total += chunk_len + 2
+    return "\n\n".join(out)
+
+
+def _annotate_duplicates(dept_id: int, suggestions: List[dict], db: Session) -> List[dict]:
+    open_tasks = db.query(models.Task).filter(
+        models.Task.department_id == dept_id,
+        models.Task.status != "Completed"
+    ).all()
+
+    task_index = []
+    for task in open_tasks:
+        norm = _normalize_task_text(task.description or "")
+        if not norm:
+            continue
+        task_index.append((task.id, norm, task.description or ""))
+
+    enriched = []
+    for suggestion in suggestions:
+        desc = suggestion.get("description") or ""
+        norm_desc = _normalize_task_text(desc)
+        duplicate_id = None
+        duplicate_reason = None
+
+        if norm_desc:
+            for task_id, norm_task, raw_task in task_index:
+                if norm_desc == norm_task:
+                    duplicate_id = task_id
+                    duplicate_reason = f"Exact match with open task: {raw_task}"
+                    break
+                if len(norm_desc) >= 24 and (norm_desc in norm_task or norm_task in norm_desc):
+                    duplicate_id = task_id
+                    duplicate_reason = f"Potential overlap with open task: {raw_task}"
+                    break
+
+        enriched.append({
+            **suggestion,
+            "duplicate_of_task_id": duplicate_id,
+            "duplicate_reason": duplicate_reason,
+        })
+    return enriched
+
+
+def _build_document_task_source(doc: models.DocumentAttachment) -> str:
+    chunks = [f"Document: {doc.original_filename}"]
+    if doc.analysis_output:
+        chunks.append("AI analysis output:\n" + doc.analysis_output[:18000])
+    else:
+        extracted = (doc.extracted_text or "").strip()
+        if not extracted and doc.file_path and doc.file_extension:
+            extracted, _ = extract_text_from_document(doc.file_path, doc.file_extension)
+        chunks.append("Extracted content:\n" + (extracted or "")[:18000])
+    return _clip_text(chunks, limit=22000)
+
+
+def _build_meeting_task_source(
+    meeting: models.DepartmentMeeting,
+    meeting_docs: List[models.DocumentAttachment],
+) -> str:
+    chunks = [
+        f"Meeting date: {meeting.scheduled_date}",
+        f"Venue: {meeting.venue or 'N/A'}",
+        f"Attendees: {meeting.attendees or 'N/A'}",
+        f"Status: {meeting.status or 'Scheduled'}",
+    ]
+
+    agenda_snapshot = _safe_json_list(meeting.agenda_snapshot, [])
+    if agenda_snapshot:
+        agenda_lines = []
+        for idx, item in enumerate(agenda_snapshot, start=1):
+            if isinstance(item, dict):
+                title = item.get("title") or f"Agenda {idx}"
+                details = item.get("details") or ""
+            else:
+                title = str(item)
+                details = ""
+            agenda_lines.append(f"{idx}. {title} {('- ' + details) if details else ''}".strip())
+        chunks.append("Agenda snapshot:\n" + "\n".join(agenda_lines))
+
+    if meeting.notes:
+        chunks.append("Meeting notes:\n" + meeting.notes[:9000])
+
+    columns = _safe_json_list(meeting.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS)
+    rows = _safe_json_list(meeting.action_table_rows, [])
+    if rows:
+        table_lines = []
+        for row_idx, row in enumerate(rows, start=1):
+            pairs = []
+            for col_idx, col in enumerate(columns):
+                value = row[col_idx] if col_idx < len(row) else ""
+                if str(value).strip():
+                    pairs.append(f"{col}: {value}")
+            if pairs:
+                table_lines.append(f"Row {row_idx}: " + " | ".join(pairs))
+        if table_lines:
+            chunks.append("Action table entries:\n" + "\n".join(table_lines[:120]))
+
+    analyzed_docs = [d for d in meeting_docs if (d.analysis_output or "").strip()]
+    if analyzed_docs:
+        doc_lines = []
+        for idx, doc in enumerate(analyzed_docs[:3], start=1):
+            doc_lines.append(f"Document {idx}: {doc.original_filename}")
+            doc_lines.append((doc.analysis_output or "")[:5000])
+        chunks.append("Meeting document analyses:\n" + "\n".join(doc_lines))
+
+    return _clip_text(chunks, limit=24000)
 
 
 class DepartmentCreate(BaseModel):
@@ -595,6 +786,26 @@ class DocumentAnalyzeRequest(BaseModel):
     prompt: Optional[str] = None      # required for custom
 
 
+class TaskSuggestionGenerateRequest(BaseModel):
+    focus_prompt: Optional[str] = None
+    max_suggestions: Optional[int] = 12
+
+
+class TaskSuggestionItem(BaseModel):
+    description: str
+    assigned_agency: Optional[str] = None
+    deadline_date: Optional[date] = None
+    priority: Optional[str] = "Normal"
+    time_given: Optional[str] = None
+    remarks: Optional[str] = None
+    source_snippet: Optional[str] = None
+    selected: Optional[bool] = True
+
+
+class TaskSuggestionConfirmRequest(BaseModel):
+    suggestions: List[TaskSuggestionItem]
+
+
 @router.get("/{dept_id}/documents")
 def list_department_documents(dept_id: int, db: Session = Depends(get_db)):
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
@@ -715,6 +926,44 @@ def delete_department_document(dept_id: int, doc_id: int, db: Session = Depends(
     return {"message": "Deleted"}
 
 
+@router.post("/{dept_id}/documents/{doc_id}/task-suggestions")
+def suggest_tasks_from_department_document(
+    dept_id: int,
+    doc_id: int,
+    data: TaskSuggestionGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None),
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        source_text = _build_document_task_source(doc)
+        suggestions = generate_task_suggestions_with_gemini(
+            source_name=f"Document: {doc.original_filename}",
+            source_text=source_text,
+            department_name=dept.name,
+            focus_prompt=data.focus_prompt,
+        )
+        max_items = max(1, min(int(data.max_suggestions or 12), 25))
+        suggestions = _annotate_duplicates(dept_id, suggestions[:max_items], db)
+        return {
+            "source_type": "document",
+            "source_name": doc.original_filename,
+            "suggestions": suggestions,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
+
+
 @router.get("/{dept_id}/meetings/{meeting_id}/documents")
 def list_meeting_documents(dept_id: int, meeting_id: int, db: Session = Depends(get_db)):
     _get_meeting_or_404(db, dept_id, meeting_id)
@@ -833,3 +1082,131 @@ def delete_meeting_document(dept_id: int, meeting_id: int, doc_id: int, db: Sess
     db.delete(doc)
     db.commit()
     return {"message": "Deleted"}
+
+
+@router.post("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}/task-suggestions")
+def suggest_tasks_from_meeting_document(
+    dept_id: int,
+    meeting_id: int,
+    doc_id: int,
+    data: TaskSuggestionGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id,
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        source_text = _build_document_task_source(doc)
+        suggestions = generate_task_suggestions_with_gemini(
+            source_name=f"Meeting document: {doc.original_filename}",
+            source_text=source_text,
+            department_name=dept.name,
+            focus_prompt=data.focus_prompt,
+        )
+        max_items = max(1, min(int(data.max_suggestions or 12), 25))
+        suggestions = _annotate_duplicates(dept_id, suggestions[:max_items], db)
+        return {
+            "source_type": "meeting_document",
+            "source_name": doc.original_filename,
+            "suggestions": suggestions,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
+
+
+@router.post("/{dept_id}/meetings/{meeting_id}/task-suggestions")
+def suggest_tasks_from_meeting_workspace(
+    dept_id: int,
+    meeting_id: int,
+    data: TaskSuggestionGenerateRequest,
+    db: Session = Depends(get_db),
+):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    meeting = _get_meeting_or_404(db, dept_id, meeting_id)
+
+    meeting_docs = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).order_by(models.DocumentAttachment.created_at.desc()).all()
+
+    try:
+        source_text = _build_meeting_task_source(meeting, meeting_docs)
+        suggestions = generate_task_suggestions_with_gemini(
+            source_name=f"Meeting workspace ({meeting.scheduled_date})",
+            source_text=source_text,
+            department_name=dept.name,
+            focus_prompt=data.focus_prompt,
+        )
+        max_items = max(1, min(int(data.max_suggestions or 12), 25))
+        suggestions = _annotate_duplicates(dept_id, suggestions[:max_items], db)
+        return {
+            "source_type": "meeting",
+            "source_name": f"{dept.name} meeting on {meeting.scheduled_date}",
+            "suggestions": suggestions,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
+
+
+@router.post("/{dept_id}/task-suggestions/confirm")
+def confirm_task_suggestions(
+    dept_id: int,
+    data: TaskSuggestionConfirmRequest,
+    db: Session = Depends(get_db),
+):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    created = []
+    skipped = []
+    for idx, item in enumerate(data.suggestions):
+        if item.selected is False:
+            skipped.append({"index": idx, "reason": "Not selected"})
+            continue
+        description = (item.description or "").strip()
+        if len(description) < 6:
+            skipped.append({"index": idx, "reason": "Description too short"})
+            continue
+
+        task = models.Task(
+            task_number=_generate_task_number(db, item.assigned_agency, dept_id),
+            description=description,
+            assigned_agency=(item.assigned_agency or None),
+            allocated_date=date.today(),
+            time_given=(item.time_given or None),
+            deadline_date=item.deadline_date,
+            status="Pending",
+            priority=_normalize_priority(item.priority),
+            remarks=(item.remarks or None),
+            steno_comment=(item.source_snippet or None),
+            department_id=dept_id,
+            source="ai_suggestion",
+        )
+        db.add(task)
+        db.flush()
+        created.append(task)
+
+    db.commit()
+    for task in created:
+        db.refresh(task)
+
+    return {
+        "created_count": len(created),
+        "skipped_count": len(skipped),
+        "created": [_task_to_dict(t) for t in created],
+        "skipped": skipped,
+    }

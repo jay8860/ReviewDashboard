@@ -1,9 +1,11 @@
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Optional, Tuple
+from datetime import date
 
 import openpyxl
 from docx import Document
@@ -25,6 +27,18 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 class GeminiModelNotFoundError(RuntimeError):
     pass
+
+
+def _normalize_model_name(name: str) -> str:
+    raw = (name or "").strip()
+    if not raw:
+        return ""
+    match = re.search(r"models/([^/:]+)", raw, flags=re.IGNORECASE)
+    if match:
+        raw = match.group(1)
+    raw = raw.replace(":generateContent", "")
+    raw = raw.strip().strip("/")
+    return raw
 
 
 def _read_text_file(path: str) -> str:
@@ -243,6 +257,210 @@ def _gemini_generate_once(api_key: str, model_name: str, prompt: str, output_tok
     return result, finish_reason
 
 
+def _extract_json_from_text(raw_text: str):
+    text = (raw_text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    candidates = []
+    arr_start = text.find("[")
+    obj_start = text.find("{")
+    if arr_start != -1:
+        candidates.append(arr_start)
+    if obj_start != -1:
+        candidates.append(obj_start)
+    if not candidates:
+        raise ValueError("No JSON found in model response.")
+
+    start = min(candidates)
+    for open_char, close_char in [("{", "}"), ("[", "]")]:
+        if text[start] != open_char:
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for idx in range(start, len(text)):
+            ch = text[idx]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+                continue
+            if ch == open_char:
+                depth += 1
+            elif ch == close_char:
+                depth -= 1
+                if depth == 0:
+                    snippet = text[start:idx + 1]
+                    return json.loads(snippet)
+    raise ValueError("Could not parse JSON payload from model response.")
+
+
+def _normalize_priority(value: Optional[str]) -> str:
+    val = str(value or "").strip().lower()
+    if val in {"critical", "crit", "p0"}:
+        return "Critical"
+    if val in {"high", "p1"}:
+        return "High"
+    if val in {"low", "p3"}:
+        return "Low"
+    return "Normal"
+
+
+def generate_task_suggestions_with_gemini(
+    source_name: str,
+    source_text: str,
+    department_name: Optional[str] = None,
+    focus_prompt: Optional[str] = None,
+) -> list[dict]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set. Please add it in environment variables.")
+
+    today = date.today().isoformat()
+    user_focus = (focus_prompt or "").strip()
+    focus_block = (
+        f"\nCustom focus from user:\n{user_focus}\n"
+        if user_focus else
+        "\nCustom focus from user:\n(Not provided)\n"
+    )
+
+    prompt = f"""
+You are an administrative task planner for district governance reviews.
+
+Generate a practical task list from the input text below.
+Department: {department_name or "Unknown"}
+Source: {source_name}
+Today's date: {today}
+{focus_block}
+Return ONLY valid JSON object, no markdown, no commentary.
+JSON schema:
+{{
+  "suggestions": [
+    {{
+      "description": "string (required, specific and action-oriented)",
+      "assigned_agency": "string or null",
+      "priority": "Critical|High|Normal|Low",
+      "deadline_date": "YYYY-MM-DD or null",
+      "time_given": "string or null",
+      "remarks": "short rationale / expected outcome",
+      "source_snippet": "short evidence line from input",
+      "confidence": 0.0
+    }}
+  ]
+}}
+
+Rules:
+- Generate 6 to 20 suggestions.
+- Prioritize immediate execution tasks, especially 15-day and 30-day actions where relevant.
+- Avoid duplicates and vague items.
+- If date is uncertain, use null deadline_date and suggest time_given (like "15 days").
+- confidence must be between 0 and 1.
+
+Input text:
+{source_text}
+""".strip()
+
+    preferred = _normalize_model_name(GEMINI_MODEL)
+    model_candidates = [
+        preferred,
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+    model_candidates = [_normalize_model_name(m) for m in model_candidates]
+    model_candidates = [m for i, m in enumerate(model_candidates) if m and m not in model_candidates[:i]]
+
+    tried = []
+    last_error = None
+    for model_name in model_candidates:
+        tried.append(model_name)
+        for output_tokens in _output_token_candidates():
+            try:
+                raw, _ = _gemini_generate_once(api_key, model_name, prompt, output_tokens)
+                parsed = _extract_json_from_text(raw)
+                suggestions = parsed.get("suggestions") if isinstance(parsed, dict) else None
+                if not isinstance(suggestions, list):
+                    raise ValueError("Model response missing 'suggestions' array.")
+
+                cleaned = []
+                for i, item in enumerate(suggestions):
+                    if not isinstance(item, dict):
+                        continue
+                    description = str(item.get("description") or "").strip()
+                    if len(description) < 6:
+                        continue
+                    deadline = item.get("deadline_date")
+                    if deadline is not None:
+                        deadline = str(deadline).strip() or None
+                        if deadline:
+                            try:
+                                date.fromisoformat(deadline)
+                            except Exception:
+                                deadline = None
+                    confidence = item.get("confidence", 0.65)
+                    try:
+                        confidence = float(confidence)
+                    except Exception:
+                        confidence = 0.65
+                    confidence = max(0.0, min(1.0, confidence))
+                    cleaned.append({
+                        "id": f"s{i + 1}",
+                        "description": description,
+                        "assigned_agency": (str(item.get("assigned_agency") or "").strip() or None),
+                        "priority": _normalize_priority(item.get("priority")),
+                        "deadline_date": deadline,
+                        "time_given": (str(item.get("time_given") or "").strip() or None),
+                        "remarks": (str(item.get("remarks") or "").strip() or None),
+                        "source_snippet": (str(item.get("source_snippet") or "").strip() or None),
+                        "confidence": round(confidence, 2),
+                    })
+                if cleaned:
+                    return cleaned[:25]
+                raise ValueError("No usable suggestions found in model response.")
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="ignore")
+                detail_l = detail.lower()
+                if exc.code == 404 and ("not found" in detail_l or "not supported" in detail_l):
+                    last_error = GeminiModelNotFoundError(f"Model '{model_name}' unavailable")
+                    break
+                if exc.code == 400 and (
+                    "maxoutputtokens" in detail_l
+                    or "max output token" in detail_l
+                    or "invalid argument" in detail_l
+                    or "unexpected model name format" in detail_l
+                ):
+                    last_error = RuntimeError(
+                        f"Model '{model_name}' rejected request (tokens/model format). Retrying fallback."
+                    )
+                    continue
+                raise RuntimeError(f"Gemini API error ({exc.code}): {detail[:500]}") from exc
+            except urllib.error.URLError as exc:
+                raise RuntimeError(f"Gemini API network error: {exc}") from exc
+            except Exception as exc:
+                last_error = exc
+                continue
+
+    raise RuntimeError(
+        f"No compatible Gemini model found for task suggestions. Tried: {', '.join(tried)}. "
+        f"Last error: {last_error}"
+    )
+
+
 def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "default", custom_prompt: Optional[str] = None) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -257,7 +475,7 @@ def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "de
     if mode == "custom":
         prompt = _build_custom_prompt(document_name, extracted_text, custom_prompt.strip())
 
-    preferred = (GEMINI_MODEL or "").strip()
+    preferred = _normalize_model_name(GEMINI_MODEL)
     model_candidates = [
         preferred,
         "gemini-2.5-flash",
@@ -266,6 +484,7 @@ def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "de
         "gemini-2.0-flash",
         "gemini-1.5-flash",
     ]
+    model_candidates = [_normalize_model_name(m) for m in model_candidates]
     model_candidates = [m for i, m in enumerate(model_candidates) if m and m not in model_candidates[:i]]
 
     tried = []
@@ -306,6 +525,7 @@ def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "de
                     "maxoutputtokens" in detail_l
                     or "max output token" in detail_l
                     or "invalid argument" in detail_l
+                    or "unexpected model name format" in detail_l
                 ):
                     last_error = RuntimeError(
                         f"Model '{model_name}' rejected maxOutputTokens={output_tokens}. Retrying with lower limit."
