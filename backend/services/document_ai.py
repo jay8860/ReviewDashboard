@@ -15,7 +15,11 @@ SUPPORTED_EXTENSIONS = {
     ".docx", ".pptx", ".pdf", ".xlsx"
 }
 
-MAX_EXTRACT_CHARS = int(os.getenv("DOC_ANALYSIS_MAX_CHARS", "140000"))
+CONTEXT_TOKEN_LIMIT = int(os.getenv("DOC_ANALYSIS_CONTEXT_TOKEN_LIMIT", "20000"))
+# Approximation: 1 token ~= 4 chars. This caps extracted text size to fit requested context.
+MAX_EXTRACT_CHARS = int(os.getenv("DOC_ANALYSIS_MAX_CHARS", str(CONTEXT_TOKEN_LIMIT * 4)))
+MAX_OUTPUT_TOKENS = int(os.getenv("DOC_ANALYSIS_MAX_OUTPUT_TOKENS", str(CONTEXT_TOKEN_LIMIT)))
+MAX_CONTINUATIONS = int(os.getenv("DOC_ANALYSIS_MAX_CONTINUATIONS", "2"))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
@@ -169,6 +173,76 @@ Document text:
 """.strip()
 
 
+def _build_continuation_prompt(partial_output: str) -> str:
+    tail = (partial_output or "")[-6000:]
+    return f"""
+The previous response was cut short due to output token limit.
+Continue from exactly where it ended.
+
+Rules:
+- Do not repeat any text already produced.
+- Keep the same structure and formatting.
+- Return only the continuation content in Markdown.
+
+Tail of already generated response:
+{tail}
+""".strip()
+
+
+def _output_token_candidates() -> list[int]:
+    requested = max(1024, int(MAX_OUTPUT_TOKENS))
+    defaults = [requested, 20000, 16000, 12000, 8192, 4096, 2048]
+    candidates = []
+    for value in defaults:
+        if value <= requested and value not in candidates:
+            candidates.append(value)
+    if requested not in candidates:
+        candidates.insert(0, requested)
+    return candidates
+
+
+def _gemini_generate_once(api_key: str, model_name: str, prompt: str, output_tokens: int) -> Tuple[str, str]:
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": output_tokens,
+        },
+    }
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(api_key)}"
+    )
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        body = resp.read().decode("utf-8")
+    parsed = json.loads(body)
+
+    candidates = parsed.get("candidates") or []
+    if not candidates:
+        feedback = parsed.get("promptFeedback") or {}
+        block_reason = feedback.get("blockReason")
+        if block_reason:
+            raise RuntimeError(f"Gemini blocked the response: {block_reason}")
+        raise RuntimeError("Gemini returned no candidates.")
+
+    candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+    finish_reason = str(candidate.get("finishReason") or "").upper()
+    parts = candidate.get("content", {}).get("parts", [])
+    text_chunks = [p.get("text", "") for p in parts if isinstance(p, dict)]
+    result = "\n".join([c for c in text_chunks if c]).strip()
+    if not result:
+        raise RuntimeError(f"Gemini returned an empty response (finishReason={finish_reason or 'UNKNOWN'}).")
+    return result, finish_reason
+
+
 def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "default", custom_prompt: Optional[str] = None) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -182,14 +256,6 @@ def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "de
     prompt = _build_default_prompt(document_name, extracted_text)
     if mode == "custom":
         prompt = _build_custom_prompt(document_name, extracted_text, custom_prompt.strip())
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 4096,
-        },
-    }
 
     preferred = (GEMINI_MODEL or "").strip()
     model_candidates = [
@@ -207,41 +273,50 @@ def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "de
 
     for model_name in model_candidates:
         tried.append(model_name)
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{urllib.parse.quote(model_name)}:generateContent?key={urllib.parse.quote(api_key)}"
-        )
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                body = resp.read().decode("utf-8")
-            parsed = json.loads(body)
-            candidates = parsed.get("candidates") or []
-            if not candidates:
-                raise RuntimeError("Gemini returned no candidates.")
+        for output_tokens in _output_token_candidates():
+            combined_output = ""
+            current_prompt = prompt
+            continuation_count = 0
+            try:
+                while True:
+                    chunk, finish_reason = _gemini_generate_once(
+                        api_key, model_name, current_prompt, output_tokens
+                    )
+                    combined_output = f"{combined_output}\n{chunk}".strip() if combined_output else chunk
 
-            parts = candidates[0].get("content", {}).get("parts", [])
-            text_chunks = [p.get("text", "") for p in parts if isinstance(p, dict)]
-            result = "\n".join([c for c in text_chunks if c]).strip()
-            if not result:
-                raise RuntimeError("Gemini returned an empty response.")
-            return result
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            if exc.code == 404 and ("not found" in detail.lower() or "not supported" in detail.lower()):
-                last_error = GeminiModelNotFoundError(f"Model '{model_name}' unavailable")
+                    if finish_reason != "MAX_TOKENS":
+                        return combined_output.strip()
+
+                    continuation_count += 1
+                    if continuation_count > MAX_CONTINUATIONS:
+                        return (
+                            f"{combined_output.strip()}\n\n"
+                            f"_Note: Output hit model token limit after {continuation_count} segments. "
+                            f"Re-run with Custom mode for a narrower prompt if needed._"
+                        )
+
+                    current_prompt = _build_continuation_prompt(combined_output)
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="ignore")
+                detail_l = detail.lower()
+                if exc.code == 404 and ("not found" in detail_l or "not supported" in detail_l):
+                    last_error = GeminiModelNotFoundError(f"Model '{model_name}' unavailable")
+                    break
+                if exc.code == 400 and (
+                    "maxoutputtokens" in detail_l
+                    or "max output token" in detail_l
+                    or "invalid argument" in detail_l
+                ):
+                    last_error = RuntimeError(
+                        f"Model '{model_name}' rejected maxOutputTokens={output_tokens}. Retrying with lower limit."
+                    )
+                    continue
+                raise RuntimeError(f"Gemini API error ({exc.code}): {detail[:500]}") from exc
+            except urllib.error.URLError as exc:
+                raise RuntimeError(f"Gemini API network error: {exc}") from exc
+            except Exception as exc:
+                last_error = exc
                 continue
-            raise RuntimeError(f"Gemini API error ({exc.code}): {detail[:500]}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Gemini API network error: {exc}") from exc
-        except Exception as exc:
-            last_error = exc
-            continue
 
     raise RuntimeError(
         f"No compatible Gemini model found. Tried: {', '.join(tried)}. "
