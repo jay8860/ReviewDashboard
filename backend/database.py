@@ -1,8 +1,10 @@
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 import os
+import re
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -121,6 +123,7 @@ def apply_non_destructive_migrations():
 
     with engine.begin() as conn:
         existing_tables = set(inspector.get_table_names())
+        is_sqlite = engine.dialect.name == "sqlite"
         for table_name, columns in migration_plan.items():
             if table_name not in existing_tables:
                 continue
@@ -129,7 +132,26 @@ def apply_non_destructive_migrations():
             for col_name, col_def in columns:
                 if col_name in existing_cols:
                     continue
-                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"))
+                try:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"))
+                except OperationalError as exc:
+                    # SQLite cannot ALTER TABLE ADD COLUMN with non-constant defaults
+                    # such as CURRENT_TIMESTAMP. Retry without that default.
+                    msg = str(exc)
+                    has_dynamic_default = "Cannot add a column with non-constant default" in msg
+                    if not (is_sqlite and has_dynamic_default):
+                        raise
+
+                    sqlite_safe_def = re.sub(
+                        r"\s+DEFAULT\s+CURRENT_TIMESTAMP(?:\(\))?",
+                        "",
+                        col_def,
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {sqlite_safe_def}"))
+                    conn.execute(
+                        text(f"UPDATE {table_name} SET {col_name} = CURRENT_TIMESTAMP WHERE {col_name} IS NULL")
+                    )
                 existing_cols.add(col_name)
                 print(f"ℹ️  Added missing column: {table_name}.{col_name}")
 
