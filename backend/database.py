@@ -103,6 +103,12 @@ def apply_non_destructive_migrations():
             ("officer_phone", "VARCHAR"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "review_programs": [
+            ("target_value", "REAL"),
+            ("achieved_value", "REAL"),
+            ("is_active", "BOOLEAN DEFAULT TRUE"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
     }
 
     with engine.begin() as conn:
