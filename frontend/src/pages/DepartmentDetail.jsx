@@ -11,6 +11,7 @@ import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { format } from 'date-fns';
+import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
 
 const colorGrad = {
     indigo: 'from-indigo-500 to-indigo-700',
@@ -1017,6 +1018,11 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             )}
                         </div>
                     </div>
+
+                    <DocumentAnalysisPanel
+                        deptId={deptIdInt}
+                        title="Department Documents & AI Analysis"
+                    />
                 </div>
 
                 <div className="glass-card rounded-3xl overflow-hidden min-h-[760px] flex flex-col border border-indigo-100/60 dark:border-indigo-500/20">

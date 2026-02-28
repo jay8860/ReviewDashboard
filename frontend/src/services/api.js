@@ -55,6 +55,27 @@ export const api = {
         const res = await axios.delete(`${DEPT_URL}/${id}`);
         return res.data;
     },
+    getDepartmentDocuments: async (deptId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/documents`);
+        return res.data;
+    },
+    uploadDepartmentDocument: async (deptId, file) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await axios.post(`${DEPT_URL}/${deptId}/documents`, fd);
+        return res.data;
+    },
+    analyzeDepartmentDocument: async (deptId, docId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/documents/${docId}/analyze`, data);
+        return res.data;
+    },
+    deleteDepartmentDocument: async (deptId, docId) => {
+        const res = await axios.delete(`${DEPT_URL}/${deptId}/documents/${docId}`);
+        return res.data;
+    },
+    downloadDepartmentDocument: async (deptId, docId) => {
+        return axios.get(`${DEPT_URL}/${deptId}/documents/${docId}/download`, { responseType: 'blob' });
+    },
 
     // ── Agenda Points ─────────────────────────────────────────────────────────
     getAgendaPoints: async (deptId) => {
@@ -90,6 +111,27 @@ export const api = {
     deleteMeeting: async (deptId, meetingId) => {
         const res = await axios.delete(`${DEPT_URL}/${deptId}/meetings/${meetingId}`);
         return res.data;
+    },
+    getMeetingDocuments: async (deptId, meetingId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents`);
+        return res.data;
+    },
+    uploadMeetingDocument: async (deptId, meetingId, file) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents`, fd);
+        return res.data;
+    },
+    analyzeMeetingDocument: async (deptId, meetingId, docId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/analyze`, data);
+        return res.data;
+    },
+    deleteMeetingDocument: async (deptId, meetingId, docId) => {
+        const res = await axios.delete(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}`);
+        return res.data;
+    },
+    downloadMeetingDocument: async (deptId, meetingId, docId) => {
+        return axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/download`, { responseType: 'blob' });
     },
 
     // ── Department Data Grid ───────────────────────────────────────────────────

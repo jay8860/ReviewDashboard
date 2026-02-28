@@ -68,6 +68,7 @@ class Department(Base):
     meetings = relationship("DepartmentMeeting", back_populates="department", cascade="all, delete-orphan")
     employees = relationship("Employee", back_populates="department")
     data_grid = relationship("DeptDataGrid", back_populates="department", uselist=False, cascade="all, delete-orphan")
+    document_attachments = relationship("DocumentAttachment", back_populates="department", cascade="all, delete-orphan")
 
 # ─── Employee ─────────────────────────────────────────────────────────────────
 
@@ -249,6 +250,7 @@ class DepartmentMeeting(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="meetings")
+    document_attachments = relationship("DocumentAttachment", back_populates="meeting", cascade="all, delete-orphan")
 
 
 # ─── Department Data Grid ─────────────────────────────────────────────────────
@@ -266,6 +268,35 @@ class DeptDataGrid(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="data_grid")
+
+
+# ─── Document Attachments ──────────────────────────────────────────────────────
+# Uploaded files at department-level or meeting-level with AI analysis fields
+
+class DocumentAttachment(Base):
+    __tablename__ = "document_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
+    meeting_id = Column(Integer, ForeignKey("department_meetings.id"), nullable=True, index=True)
+    scope = Column(String, nullable=False, default="department")   # department | meeting
+    original_filename = Column(String, nullable=False)
+    stored_filename = Column(String, nullable=False)
+    file_path = Column(Text, nullable=False)
+    mime_type = Column(String, nullable=True)
+    file_extension = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=False, default=0)
+    extracted_text = Column(Text, nullable=True)
+    extraction_truncated = Column(Boolean, default=False)
+    analysis_mode = Column(String, nullable=True)                  # default | custom
+    analysis_prompt = Column(Text, nullable=True)                  # Custom prompt
+    analysis_output = Column(Text, nullable=True)
+    analysis_status = Column(String, nullable=False, default="Not Analyzed")
+    analysis_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="document_attachments")
+    meeting = relationship("DepartmentMeeting", back_populates="document_attachments")
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────

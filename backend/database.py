@@ -119,6 +119,25 @@ def apply_non_destructive_migrations():
             ("rows", "TEXT DEFAULT '[]'"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "document_attachments": [
+            ("meeting_id", "INTEGER"),
+            ("scope", "VARCHAR DEFAULT 'department'"),
+            ("original_filename", "VARCHAR"),
+            ("stored_filename", "VARCHAR"),
+            ("file_path", "TEXT"),
+            ("mime_type", "VARCHAR"),
+            ("file_extension", "VARCHAR"),
+            ("file_size", "INTEGER DEFAULT 0"),
+            ("extracted_text", "TEXT"),
+            ("extraction_truncated", "BOOLEAN DEFAULT FALSE"),
+            ("analysis_mode", "VARCHAR"),
+            ("analysis_prompt", "TEXT"),
+            ("analysis_output", "TEXT"),
+            ("analysis_status", "VARCHAR DEFAULT 'Not Analyzed'"),
+            ("analysis_error", "TEXT"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
     }
 
     with engine.begin() as conn:

@@ -7,4 +7,7 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv
 openpyxl
+python-docx
+python-pptx
+pypdf
 psycopg2-binary

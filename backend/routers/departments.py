@@ -1,17 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, timedelta
 import json
+import os
+import uuid
+from pathlib import Path
 
 from database import get_db
 import models
+from services.document_ai import (
+    SUPPORTED_EXTENSIONS,
+    extract_text_from_document,
+    analyze_with_gemini,
+)
 
 router = APIRouter()
 
 DEFAULT_MEETING_TABLE_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"]
+MAX_DOC_UPLOAD_BYTES = int(os.getenv("MAX_DOC_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "uploads")
 
 
 def _safe_json_list(value: Optional[str], fallback: list) -> list:
@@ -22,6 +33,73 @@ def _safe_json_list(value: Optional[str], fallback: list) -> list:
         return parsed if isinstance(parsed, list) else fallback
     except Exception:
         return fallback
+
+
+def _serialize_attachment(doc: models.DocumentAttachment) -> dict:
+    return {
+        "id": doc.id,
+        "department_id": doc.department_id,
+        "meeting_id": doc.meeting_id,
+        "scope": doc.scope,
+        "original_filename": doc.original_filename,
+        "stored_filename": doc.stored_filename,
+        "mime_type": doc.mime_type,
+        "file_extension": doc.file_extension,
+        "file_size": doc.file_size,
+        "extraction_truncated": bool(doc.extraction_truncated),
+        "analysis_mode": doc.analysis_mode,
+        "analysis_prompt": doc.analysis_prompt,
+        "analysis_output": doc.analysis_output,
+        "analysis_status": doc.analysis_status,
+        "analysis_error": doc.analysis_error,
+        "created_at": doc.created_at,
+        "updated_at": doc.updated_at,
+    }
+
+
+def _validate_document_extension(filename: str) -> str:
+    ext = Path(filename or "").suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext or 'unknown'}. Supported: {supported}")
+    return ext
+
+
+def _store_uploaded_document(file: UploadFile, dept_id: int, meeting_id: Optional[int] = None) -> tuple[str, str, int, str]:
+    ext = _validate_document_extension(file.filename or "")
+    scope_dir = os.path.join(UPLOAD_ROOT, f"department_{dept_id}", f"meeting_{meeting_id}" if meeting_id else "department")
+    os.makedirs(scope_dir, exist_ok=True)
+
+    stored_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(scope_dir, stored_filename)
+    total_bytes = 0
+
+    try:
+        with open(file_path, "wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_DOC_UPLOAD_BYTES:
+                    out.close()
+                    os.remove(file_path)
+                    raise HTTPException(status_code=413, detail=f"File too large. Max allowed: {MAX_DOC_UPLOAD_BYTES // (1024 * 1024)} MB")
+                out.write(chunk)
+    finally:
+        file.file.close()
+
+    return file_path, stored_filename, total_bytes, ext
+
+
+def _get_meeting_or_404(db: Session, dept_id: int, meeting_id: int) -> models.DepartmentMeeting:
+    meeting = db.query(models.DepartmentMeeting).filter(
+        models.DepartmentMeeting.id == meeting_id,
+        models.DepartmentMeeting.department_id == dept_id
+    ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return meeting
 
 
 class DepartmentCreate(BaseModel):
@@ -508,3 +586,225 @@ def update_datagrid(dept_id: int, data: DataGridUpdate, db: Session = Depends(ge
         "rows": json.loads(grid.rows),
         "updated_at": grid.updated_at,
     }
+
+
+# ─── Documents + AI Analysis ───────────────────────────────────────────────────
+
+class DocumentAnalyzeRequest(BaseModel):
+    mode: Optional[str] = "default"   # default | custom
+    prompt: Optional[str] = None      # required for custom
+
+
+@router.get("/{dept_id}/documents")
+def list_department_documents(dept_id: int, db: Session = Depends(get_db)):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    docs = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None)
+    ).order_by(models.DocumentAttachment.created_at.desc()).all()
+    return [_serialize_attachment(d) for d in docs]
+
+
+@router.post("/{dept_id}/documents")
+def upload_department_document(dept_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is missing")
+
+    file_path, stored_filename, file_size, ext = _store_uploaded_document(file, dept_id=dept_id, meeting_id=None)
+    doc = models.DocumentAttachment(
+        department_id=dept_id,
+        meeting_id=None,
+        scope="department",
+        original_filename=file.filename,
+        stored_filename=stored_filename,
+        file_path=file_path,
+        mime_type=file.content_type,
+        file_extension=ext,
+        file_size=file_size,
+        analysis_status="Not Analyzed",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return _serialize_attachment(doc)
+
+
+@router.post("/{dept_id}/documents/{doc_id}/analyze")
+def analyze_department_document(dept_id: int, doc_id: int, data: DocumentAnalyzeRequest, db: Session = Depends(get_db)):
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None)
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc.analysis_status = "Processing"
+    doc.analysis_error = None
+    db.commit()
+
+    try:
+        extracted_text, was_truncated = extract_text_from_document(doc.file_path, doc.file_extension or "")
+        mode = (data.mode or "default").strip().lower()
+        prompt = (data.prompt or "").strip() if data.prompt else None
+        analysis = analyze_with_gemini(doc.original_filename, extracted_text, mode=mode, custom_prompt=prompt)
+
+        doc.extracted_text = extracted_text
+        doc.extraction_truncated = was_truncated
+        doc.analysis_mode = mode
+        doc.analysis_prompt = prompt if mode == "custom" else None
+        doc.analysis_output = analysis
+        doc.analysis_status = "Completed"
+        doc.analysis_error = None
+    except Exception as exc:
+        doc.analysis_status = "Failed"
+        doc.analysis_error = str(exc)
+        db.commit()
+        db.refresh(doc)
+        raise HTTPException(status_code=500, detail=f"Document analysis failed: {exc}")
+
+    db.commit()
+    db.refresh(doc)
+    return _serialize_attachment(doc)
+
+
+@router.get("/{dept_id}/documents/{doc_id}/download")
+def download_department_document(dept_id: int, doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None)
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Stored file not found")
+    return FileResponse(path=doc.file_path, filename=doc.original_filename, media_type=doc.mime_type or "application/octet-stream")
+
+
+@router.delete("/{dept_id}/documents/{doc_id}")
+def delete_department_document(dept_id: int, doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None)
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.file_path and os.path.exists(doc.file_path):
+        os.remove(doc.file_path)
+    db.delete(doc)
+    db.commit()
+    return {"message": "Deleted"}
+
+
+@router.get("/{dept_id}/meetings/{meeting_id}/documents")
+def list_meeting_documents(dept_id: int, meeting_id: int, db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    docs = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).order_by(models.DocumentAttachment.created_at.desc()).all()
+    return [_serialize_attachment(d) for d in docs]
+
+
+@router.post("/{dept_id}/meetings/{meeting_id}/documents")
+def upload_meeting_document(dept_id: int, meeting_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is missing")
+
+    file_path, stored_filename, file_size, ext = _store_uploaded_document(file, dept_id=dept_id, meeting_id=meeting_id)
+    doc = models.DocumentAttachment(
+        department_id=dept_id,
+        meeting_id=meeting_id,
+        scope="meeting",
+        original_filename=file.filename,
+        stored_filename=stored_filename,
+        file_path=file_path,
+        mime_type=file.content_type,
+        file_extension=ext,
+        file_size=file_size,
+        analysis_status="Not Analyzed",
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return _serialize_attachment(doc)
+
+
+@router.post("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}/analyze")
+def analyze_meeting_document(dept_id: int, meeting_id: int, doc_id: int, data: DocumentAnalyzeRequest, db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc.analysis_status = "Processing"
+    doc.analysis_error = None
+    db.commit()
+
+    try:
+        extracted_text, was_truncated = extract_text_from_document(doc.file_path, doc.file_extension or "")
+        mode = (data.mode or "default").strip().lower()
+        prompt = (data.prompt or "").strip() if data.prompt else None
+        analysis = analyze_with_gemini(doc.original_filename, extracted_text, mode=mode, custom_prompt=prompt)
+
+        doc.extracted_text = extracted_text
+        doc.extraction_truncated = was_truncated
+        doc.analysis_mode = mode
+        doc.analysis_prompt = prompt if mode == "custom" else None
+        doc.analysis_output = analysis
+        doc.analysis_status = "Completed"
+        doc.analysis_error = None
+    except Exception as exc:
+        doc.analysis_status = "Failed"
+        doc.analysis_error = str(exc)
+        db.commit()
+        db.refresh(doc)
+        raise HTTPException(status_code=500, detail=f"Document analysis failed: {exc}")
+
+    db.commit()
+    db.refresh(doc)
+    return _serialize_attachment(doc)
+
+
+@router.get("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}/download")
+def download_meeting_document(dept_id: int, meeting_id: int, doc_id: int, db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Stored file not found")
+    return FileResponse(path=doc.file_path, filename=doc.original_filename, media_type=doc.mime_type or "application/octet-stream")
+
+
+@router.delete("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}")
+def delete_meeting_document(dept_id: int, meeting_id: int, doc_id: int, db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.file_path and os.path.exists(doc.file_path):
+        os.remove(doc.file_path)
+    db.delete(doc)
+    db.commit()
+    return {"message": "Deleted"}

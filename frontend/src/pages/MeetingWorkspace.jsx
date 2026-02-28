@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
+import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
 
 const DEFAULT_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"];
 
@@ -40,6 +41,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
     const [loading, setLoading] = useState(true);
     const [dept, setDept] = useState(null);
     const [meeting, setMeeting] = useState(null);
+    const [allMeetings, setAllMeetings] = useState([]);
 
     const [form, setForm] = useState({
         scheduled_date: '',
@@ -67,6 +69,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
             const found = meetings.find(m => m.id === meetingIdInt) || null;
             setDept(deptData);
             setMeeting(found);
+            setAllMeetings(meetings || []);
             if (found) {
                 setForm({
                     scheduled_date: found.scheduled_date || '',
@@ -240,6 +243,35 @@ const MeetingWorkspace = ({ user, onLogout }) => {
     }
 
     const grad = colorGrad[dept.color] || colorGrad.indigo;
+    const previousMeeting = [...allMeetings]
+        .filter(m => m.id !== meetingIdInt && new Date(m.scheduled_date) < new Date(meeting.scheduled_date))
+        .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date))[0];
+
+    const prevCols = previousMeeting?.action_table_columns?.length
+        ? previousMeeting.action_table_columns
+        : DEFAULT_COLUMNS;
+    const prevRows = previousMeeting?.action_table_rows || [];
+
+    const getColIndex = (cols, names) => {
+        const lowered = cols.map(c => String(c || '').toLowerCase());
+        for (const name of names) {
+            const idx = lowered.findIndex(c => c.includes(name));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const prevActionIdx = getColIndex(prevCols, ['action point', 'action', 'item']);
+    const prevStatusIdx = getColIndex(prevCols, ['action taken', 'status', 'progress', 'update']);
+    const prevRemarkIdx = getColIndex(prevCols, ['remark', 'remarks', 'comment', 'note']);
+
+    const actionTakenSummary = prevRows
+        .map((row, i) => {
+            const action = row[prevActionIdx] || row[0] || `Action ${i + 1}`;
+            const taken = row[prevStatusIdx] || row[prevRemarkIdx] || 'No update recorded';
+            return { action, taken };
+        })
+        .filter(item => item.action || item.taken);
 
     return (
         <Layout user={user} onLogout={onLogout}>
@@ -380,6 +412,84 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                                 )}
                             </div>
                         </div>
+
+                        <div className="glass-card rounded-3xl overflow-hidden border border-indigo-100/70 dark:border-indigo-500/20">
+                            <div className="px-5 py-4 border-b border-indigo-100 bg-gradient-to-r from-violet-50/70 to-white">
+                                <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                                    <FileText size={16} className="text-violet-600" /> Previous Meeting Context
+                                </h2>
+                            </div>
+                            <div className="p-5 bg-white/90 space-y-4">
+                                {!previousMeeting ? (
+                                    <p className="text-sm text-slate-400 italic">No previous meeting found for this department.</p>
+                                ) : (
+                                    <>
+                                        <p className="text-xs font-black uppercase tracking-wider text-violet-500">
+                                            Last meeting: {format(new Date(previousMeeting.scheduled_date), 'd MMM yyyy')}
+                                        </p>
+
+                                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+                                            <p className="text-[11px] font-black uppercase tracking-wider text-indigo-500 mb-1">Last Meeting Notes</p>
+                                            <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                                                {previousMeeting.notes || 'No notes recorded.'}
+                                            </p>
+                                        </div>
+
+                                        <div className="rounded-xl border border-indigo-100 overflow-auto">
+                                            <table className="w-full text-xs">
+                                                <thead className="bg-violet-50">
+                                                    <tr>
+                                                        {prevCols.map((c, idx) => (
+                                                            <th key={idx} className="px-2 py-2 text-left font-black uppercase tracking-wider text-violet-600">{c}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-indigo-100 bg-white">
+                                                    {prevRows.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={prevCols.length} className="px-2 py-4 text-center text-slate-400 italic">
+                                                                No action points in previous meeting.
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        prevRows.map((row, rIdx) => (
+                                                            <tr key={rIdx}>
+                                                                {prevCols.map((_, cIdx) => (
+                                                                    <td key={cIdx} className="px-2 py-1.5 text-slate-700">
+                                                                        {row[cIdx] || <span className="text-slate-300">—</span>}
+                                                                    </td>
+                                                                ))}
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+                                            <p className="text-[11px] font-black uppercase tracking-wider text-violet-600 mb-2">Action Taken Snapshot</p>
+                                            <div className="space-y-1.5">
+                                                {actionTakenSummary.length === 0 ? (
+                                                    <p className="text-xs text-slate-400 italic">No action-taken entries found.</p>
+                                                ) : (
+                                                    actionTakenSummary.map((item, i) => (
+                                                        <p key={i} className="text-xs text-slate-700">
+                                                            <span className="font-black text-violet-500">{i + 1}.</span> {item.action} → {item.taken}
+                                                        </p>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        <DocumentAnalysisPanel
+                            deptId={deptIdInt}
+                            meetingId={meetingIdInt}
+                            title="Meeting Documents & AI Analysis"
+                        />
                     </div>
 
                     <div className="xl:col-span-2 glass-card rounded-3xl overflow-hidden border border-violet-100/70 dark:border-violet-500/20 min-h-[620px] flex flex-col">
