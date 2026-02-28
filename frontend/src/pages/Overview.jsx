@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Building2, ClipboardList, AlertTriangle, CheckCircle2,
     TrendingUp, Clock, CalendarCheck, ArrowRight, RefreshCw,
-    Activity, Zap, Plus, Calendar, ChevronRight
+    Activity, Zap, Plus, Calendar, ChevronRight, Users
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
@@ -63,6 +63,8 @@ const Overview = ({ user, onLogout }) => {
     const [departments, setDepartments] = useState([]);
     const [taskStats, setTaskStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0 });
     const [allSessions, setAllSessions] = useState([]);
+    // Map of deptId -> meetings array (department-level meetings)
+    const [deptMeetings, setDeptMeetings] = useState({});
     const [loading, setLoading] = useState(true);
 
     const loadData = async () => {
@@ -76,6 +78,18 @@ const Overview = ({ user, onLogout }) => {
             setDepartments(depts);
             setTaskStats(stats);
             setAllSessions(sessions);
+
+            // Fetch meetings for all departments in parallel
+            const meetingResults = await Promise.allSettled(
+                depts.map(d => api.getMeetings(d.id).then(meetings => ({ deptId: d.id, meetings })))
+            );
+            const meetingsMap = {};
+            meetingResults.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    meetingsMap[result.value.deptId] = result.value.meetings;
+                }
+            });
+            setDeptMeetings(meetingsMap);
         } catch (e) {
             console.error(e);
         } finally {
@@ -204,6 +218,15 @@ const Overview = ({ user, onLogout }) => {
                                     .filter(s => s.status === 'Scheduled' && isAfter(new Date(s.scheduled_date), now))
                                     .sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
 
+                                // Department meetings from our per-dept fetch
+                                const deptMeetingList = deptMeetings[dept.id] || [];
+                                const upcomingMeetings = deptMeetingList
+                                    .filter(m => m.status === 'Scheduled' && isAfter(new Date(m.scheduled_date), now))
+                                    .sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
+                                const recentMeetings = deptMeetingList
+                                    .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date))
+                                    .slice(0, 3);
+
                                 return (
                                     <motion.div
                                         key={dept.id}
@@ -225,14 +248,17 @@ const Overview = ({ user, onLogout }) => {
                                                 </div>
                                                 <div>
                                                     <h3 className="font-black text-slate-800 dark:text-white group-hover:text-indigo-600 transition-colors">{dept.name}</h3>
-                                                    {dept.review_health?.days_since_last_review != null ? (
-                                                        <p className="text-xs text-slate-400">Last reviewed: {dept.review_health.days_since_last_review} days ago</p>
-                                                    ) : (
-                                                        <p className="text-xs text-slate-300 italic">No reviews yet</p>
-                                                    )}
+                                                    {dept.head_name && <p className="text-xs text-slate-400">{dept.head_name}</p>}
                                                 </div>
                                             </div>
-                                            <ChevronRight size={16} className="text-slate-300 dark:text-white/20" />
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                {deptMeetingList.length > 0 && (
+                                                    <span className="flex items-center gap-1 text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-full">
+                                                        <Calendar size={10} /> {deptMeetingList.length} mtg{deptMeetingList.length > 1 ? 's' : ''}
+                                                    </span>
+                                                )}
+                                                <ChevronRight size={16} className="text-slate-300 dark:text-white/20" />
+                                            </div>
                                         </div>
 
                                         {/* Reviews done row */}
@@ -280,6 +306,44 @@ const Overview = ({ user, onLogout }) => {
                                                             : futureSessions[0]
                                                                 ? format(new Date(futureSessions[0].scheduled_date), 'dd/MM/yy')
                                                                 : '—'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Meetings row — shows dept-level meetings */}
+                                        <div className="flex w-full border-b border-slate-100 dark:border-white/5 text-sm divide-x divide-slate-100 dark:divide-white/5">
+                                            <div className="font-black text-slate-500 dark:text-slate-400 py-2.5 px-4 w-32 shrink-0 flex items-center text-[10px] uppercase tracking-wider bg-white/60 dark:bg-white/3">
+                                                Meetings
+                                            </div>
+                                            <div className="flex-1 flex overflow-x-auto">
+                                                {recentMeetings.slice(0, 4).map((m) => (
+                                                    <div
+                                                        key={m.id}
+                                                        className="px-3 py-2.5 font-bold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-900/20 cursor-pointer border-r border-slate-100 dark:border-white/5 shrink-0 flex flex-col items-center justify-center min-w-[80px] transition-colors"
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/departments/${dept.id}`); }}
+                                                    >
+                                                        <span className="text-xs font-bold">{format(new Date(m.scheduled_date), 'dd/MM/yy')}</span>
+                                                        <span className={`text-[9px] mt-0.5 font-bold uppercase tracking-wide ${m.status === 'Done' ? 'text-emerald-500' : m.status === 'Cancelled' ? 'text-slate-400' : 'text-violet-500'}`}>
+                                                            {m.status}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {deptMeetingList.length === 0 && (
+                                                    <div className="px-4 py-2.5 text-xs text-slate-300 dark:text-white/20 italic flex items-center">
+                                                        No meetings yet
+                                                    </div>
+                                                )}
+                                                <div className="flex-1" />
+                                            </div>
+                                            {/* Next meeting */}
+                                            <div className="py-2 px-3 shrink-0 flex items-center justify-center bg-white/60 dark:bg-white/3 min-w-[90px]">
+                                                <div className="text-center">
+                                                    <p className="text-[9px] font-black uppercase text-violet-500 tracking-wider">Next</p>
+                                                    <p className="font-bold text-slate-700 dark:text-white text-xs mt-0.5">
+                                                        {upcomingMeetings[0]
+                                                            ? format(new Date(upcomingMeetings[0].scheduled_date), 'dd/MM/yy')
+                                                            : '—'}
                                                     </p>
                                                 </div>
                                             </div>

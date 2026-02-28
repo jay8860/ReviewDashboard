@@ -92,6 +92,16 @@ export const api = {
         return res.data;
     },
 
+    // ── Department Data Grid ───────────────────────────────────────────────────
+    getDataGrid: async (deptId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/datagrid`);
+        return res.data;
+    },
+    updateDataGrid: async (deptId, data) => {
+        const res = await axios.put(`${DEPT_URL}/${deptId}/datagrid`, data);
+        return res.data;
+    },
+
     // ── Review Programs ───────────────────────────────────────────────────────
     getPrograms: async (departmentId = null) => {
         const params = departmentId ? `?department_id=${departmentId}` : '';

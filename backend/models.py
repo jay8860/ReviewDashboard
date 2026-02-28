@@ -67,6 +67,7 @@ class Department(Base):
     agenda_points = relationship("AgendaPoint", back_populates="department", cascade="all, delete-orphan", order_by="AgendaPoint.order_index")
     meetings = relationship("DepartmentMeeting", back_populates="department", cascade="all, delete-orphan")
     employees = relationship("Employee", back_populates="department")
+    data_grid = relationship("DeptDataGrid", back_populates="department", uselist=False, cascade="all, delete-orphan")
 
 # ─── Employee ─────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,23 @@ class DepartmentMeeting(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     department = relationship("Department", back_populates="meetings")
+
+
+# ─── Department Data Grid ─────────────────────────────────────────────────────
+# A flexible spreadsheet-style data store per department
+
+class DeptDataGrid(Base):
+    __tablename__ = "dept_data_grids"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    # Store column headers as JSON array e.g. ["Program", "Target", "Achieved", "Remarks"]
+    columns = Column(Text, nullable=False, default='["Item","Target","Achieved","Remarks"]')
+    # Store rows as JSON array of arrays e.g. [["PDLD", "100%", "45%", "On track"], ...]
+    rows = Column(Text, nullable=False, default='[]')
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="data_grid")
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────

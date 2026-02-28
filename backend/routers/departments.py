@@ -406,3 +406,62 @@ def delete_meeting(dept_id: int, meeting_id: int, db: Session = Depends(get_db))
     db.delete(meeting)
     db.commit()
     return {"message": "Deleted"}
+
+
+# ─── Department Data Grid ───────────────────────────────────────────────────────
+
+class DataGridUpdate(BaseModel):
+    columns: Optional[List[str]] = None
+    rows: Optional[List[List[str]]] = None
+
+
+@router.get("/{dept_id}/datagrid")
+def get_datagrid(dept_id: int, db: Session = Depends(get_db)):
+    grid = db.query(models.DeptDataGrid).filter(
+        models.DeptDataGrid.department_id == dept_id
+    ).first()
+    if not grid:
+        # Auto-create default grid
+        grid = models.DeptDataGrid(
+            department_id=dept_id,
+            columns=json.dumps(["Item", "Target", "Achieved", "Remarks"]),
+            rows=json.dumps([])
+        )
+        db.add(grid)
+        db.commit()
+        db.refresh(grid)
+    return {
+        "id": grid.id,
+        "department_id": grid.department_id,
+        "columns": json.loads(grid.columns),
+        "rows": json.loads(grid.rows),
+        "updated_at": grid.updated_at,
+    }
+
+
+@router.put("/{dept_id}/datagrid")
+def update_datagrid(dept_id: int, data: DataGridUpdate, db: Session = Depends(get_db)):
+    grid = db.query(models.DeptDataGrid).filter(
+        models.DeptDataGrid.department_id == dept_id
+    ).first()
+    if not grid:
+        grid = models.DeptDataGrid(
+            department_id=dept_id,
+            columns=json.dumps(data.columns or ["Item", "Target", "Achieved", "Remarks"]),
+            rows=json.dumps(data.rows or [])
+        )
+        db.add(grid)
+    else:
+        if data.columns is not None:
+            grid.columns = json.dumps(data.columns)
+        if data.rows is not None:
+            grid.rows = json.dumps(data.rows)
+    db.commit()
+    db.refresh(grid)
+    return {
+        "id": grid.id,
+        "department_id": grid.department_id,
+        "columns": json.loads(grid.columns),
+        "rows": json.loads(grid.rows),
+        "updated_at": grid.updated_at,
+    }

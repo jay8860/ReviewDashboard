@@ -109,6 +109,11 @@ def apply_non_destructive_migrations():
             ("is_active", "BOOLEAN DEFAULT TRUE"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "dept_data_grids": [
+            ("columns", "TEXT DEFAULT '[\"Item\",\"Target\",\"Achieved\",\"Remarks\"]'"),
+            ("rows", "TEXT DEFAULT '[]'"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
     }
 
     with engine.begin() as conn:
