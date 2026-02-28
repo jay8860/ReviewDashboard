@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     Upload, Brain, Sparkles, Trash2, Download,
-    FileText, Loader2, MessageSquareText
+    FileText, Loader2, MessageSquareText, ExternalLink
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useToast } from './Toast';
 
@@ -25,6 +26,7 @@ const fileNameFromDisposition = (header) => {
 };
 
 const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & AI Analysis' }) => {
+    const navigate = useNavigate();
     const toast = useToast();
     const [docs, setDocs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -143,6 +145,13 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         }
     };
 
+    const openWorkspace = (docId) => {
+        const path = isMeetingScope
+            ? `/departments/${deptId}/meetings/${meetingId}/documents/${docId}/analysis`
+            : `/departments/${deptId}/documents/${docId}/analysis`;
+        navigate(path);
+    };
+
     return (
         <div className="glass-card rounded-3xl overflow-hidden border border-violet-100/70 dark:border-violet-500/20">
             <div className="px-5 py-4 border-b border-violet-100/70 dark:border-violet-500/20 bg-gradient-to-r from-violet-50 via-indigo-50 to-white dark:from-violet-500/10 dark:via-indigo-500/10 dark:to-transparent">
@@ -213,6 +222,12 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                                             className="px-2.5 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-[11px] font-bold hover:bg-violet-200 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
                                         >
                                             <MessageSquareText size={12} /> Custom
+                                        </button>
+                                        <button
+                                            onClick={() => openWorkspace(doc.id)}
+                                            className="px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-bold hover:bg-violet-700 transition-colors inline-flex items-center gap-1"
+                                        >
+                                            <ExternalLink size={12} /> Workspace
                                         </button>
                                         <button
                                             onClick={() => downloadDoc(doc.id)}

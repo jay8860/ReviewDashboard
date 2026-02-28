@@ -673,6 +673,18 @@ def analyze_department_document(dept_id: int, doc_id: int, data: DocumentAnalyze
     return _serialize_attachment(doc)
 
 
+@router.get("/{dept_id}/documents/{doc_id}")
+def get_department_document(dept_id: int, doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id.is_(None)
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return _serialize_attachment(doc)
+
+
 @router.get("/{dept_id}/documents/{doc_id}/download")
 def download_department_document(dept_id: int, doc_id: int, db: Session = Depends(get_db)):
     doc = db.query(models.DocumentAttachment).filter(
@@ -775,6 +787,19 @@ def analyze_meeting_document(dept_id: int, meeting_id: int, doc_id: int, data: D
 
     db.commit()
     db.refresh(doc)
+    return _serialize_attachment(doc)
+
+
+@router.get("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}")
+def get_meeting_document(dept_id: int, meeting_id: int, doc_id: int, db: Session = Depends(get_db)):
+    _get_meeting_or_404(db, dept_id, meeting_id)
+    doc = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.id == doc_id,
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.meeting_id == meeting_id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
     return _serialize_attachment(doc)
 
 

@@ -69,6 +69,10 @@ export const api = {
         const res = await axios.post(`${DEPT_URL}/${deptId}/documents/${docId}/analyze`, data);
         return res.data;
     },
+    getDepartmentDocument: async (deptId, docId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/documents/${docId}`);
+        return res.data;
+    },
     deleteDepartmentDocument: async (deptId, docId) => {
         const res = await axios.delete(`${DEPT_URL}/${deptId}/documents/${docId}`);
         return res.data;
@@ -124,6 +128,10 @@ export const api = {
     },
     analyzeMeetingDocument: async (deptId, meetingId, docId, data) => {
         const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/analyze`, data);
+        return res.data;
+    },
+    getMeetingDocument: async (deptId, meetingId, docId) => {
+        const res = await axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}`);
         return res.data;
     },
     deleteMeetingDocument: async (deptId, meetingId, docId) => {
