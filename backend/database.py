@@ -19,13 +19,17 @@ is_railway_runtime = any(
     os.getenv(k) for k in ("RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID")
 )
 
+VOLUME_DATA_DIR = "/app/backend/data"
+VOLUME_DB_PATH = os.path.join(VOLUME_DATA_DIR, "tasks.db")
+
 if not raw_database_url:
     if is_railway_runtime:
-        raise RuntimeError(
-            "DATABASE_URL is not set in Railway. "
-            "Refusing to use local SQLite in production because it causes non-persistent/inconsistent data."
-        )
-    print("⚠️  DATABASE_URL not set. Using local SQLite at backend/data/tasks.db")
+        # Use SQLite on the persistent volume mounted at /app/backend/data
+        os.makedirs(VOLUME_DATA_DIR, exist_ok=True)
+        raw_database_url = f"sqlite:///{VOLUME_DB_PATH}"
+        print(f"ℹ️  Railway runtime: using volume-backed SQLite at {VOLUME_DB_PATH}")
+    else:
+        print("⚠️  DATABASE_URL not set. Using local SQLite at backend/data/tasks.db")
 
 SQLALCHEMY_DATABASE_URL = raw_database_url or f"sqlite:///{os.path.join(DATA_DIR, 'tasks.db')}"
 
