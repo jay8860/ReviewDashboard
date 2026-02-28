@@ -330,9 +330,9 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Task Description */}
-                                <td className="px-3 py-3 max-w-xs">
+                                <td className="px-3 py-3 min-w-[280px] align-top">
                                     <div className="flex flex-col gap-0.5">
-                                        <p className={`text-sm font-semibold text-slate-700 dark:text-slate-200 line-clamp-2 leading-snug ${isCompleted ? 'line-through' : ''}`}>
+                                        <p className={`text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words ${isCompleted ? 'line-through' : ''}`}>
                                             {task.description || <span className="text-slate-300 italic">No description</span>}
                                         </p>
                                         <div className="flex items-center gap-1 flex-wrap">

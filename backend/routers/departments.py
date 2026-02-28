@@ -240,32 +240,11 @@ def _build_document_task_source(doc: models.DocumentAttachment) -> str:
     return _clip_text(chunks, limit=22000)
 
 
-def _build_meeting_task_source(
-    meeting: models.DepartmentMeeting,
-    meeting_docs: List[models.DocumentAttachment],
-) -> str:
-    chunks = [
-        f"Meeting date: {meeting.scheduled_date}",
-        f"Venue: {meeting.venue or 'N/A'}",
-        f"Attendees: {meeting.attendees or 'N/A'}",
-        f"Status: {meeting.status or 'Scheduled'}",
-    ]
-
-    agenda_snapshot = _safe_json_list(meeting.agenda_snapshot, [])
-    if agenda_snapshot:
-        agenda_lines = []
-        for idx, item in enumerate(agenda_snapshot, start=1):
-            if isinstance(item, dict):
-                title = item.get("title") or f"Agenda {idx}"
-                details = item.get("details") or ""
-            else:
-                title = str(item)
-                details = ""
-            agenda_lines.append(f"{idx}. {title} {('- ' + details) if details else ''}".strip())
-        chunks.append("Agenda snapshot:\n" + "\n".join(agenda_lines))
+def _build_meeting_task_source(meeting: models.DepartmentMeeting) -> str:
+    chunks = []
 
     if meeting.notes:
-        chunks.append("Meeting notes:\n" + meeting.notes[:9000])
+        chunks.append("Meeting notes:\n" + meeting.notes[:12000])
 
     columns = _safe_json_list(meeting.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS)
     rows = _safe_json_list(meeting.action_table_rows, [])
@@ -280,17 +259,12 @@ def _build_meeting_task_source(
             if pairs:
                 table_lines.append(f"Row {row_idx}: " + " | ".join(pairs))
         if table_lines:
-            chunks.append("Action table entries:\n" + "\n".join(table_lines[:120]))
+            chunks.append("Action table entries:\n" + "\n".join(table_lines[:160]))
 
-    analyzed_docs = [d for d in meeting_docs if (d.analysis_output or "").strip()]
-    if analyzed_docs:
-        doc_lines = []
-        for idx, doc in enumerate(analyzed_docs[:3], start=1):
-            doc_lines.append(f"Document {idx}: {doc.original_filename}")
-            doc_lines.append((doc.analysis_output or "")[:5000])
-        chunks.append("Meeting document analyses:\n" + "\n".join(doc_lines))
+    if not chunks:
+        chunks.append("Meeting notes and action table are currently empty.")
 
-    return _clip_text(chunks, limit=24000)
+    return _clip_text(chunks, limit=22000)
 
 
 class DepartmentCreate(BaseModel):
@@ -1136,13 +1110,8 @@ def suggest_tasks_from_meeting_workspace(
         raise HTTPException(status_code=404, detail="Department not found")
     meeting = _get_meeting_or_404(db, dept_id, meeting_id)
 
-    meeting_docs = db.query(models.DocumentAttachment).filter(
-        models.DocumentAttachment.department_id == dept_id,
-        models.DocumentAttachment.meeting_id == meeting_id
-    ).order_by(models.DocumentAttachment.created_at.desc()).all()
-
     try:
-        source_text = _build_meeting_task_source(meeting, meeting_docs)
+        source_text = _build_meeting_task_source(meeting)
         suggestions = generate_task_suggestions_with_gemini(
             source_name=f"Meeting workspace ({meeting.scheduled_date})",
             source_text=source_text,

@@ -496,7 +496,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
 
                         <TaskSuggestionsEditor
                             title="Task Suggestions From Meeting Notes"
-                            subtitle="Generate tasks from MOM, action grid, and meeting documents. Edit rows before creating tasks."
+                            subtitle="Generate tasks only from MOM notes and the action grid. Edit rows before creating tasks."
                             generateLabel="Suggest From Meeting"
                             onGenerate={generateMeetingTaskSuggestions}
                             onConfirmCreate={confirmTaskSuggestions}
