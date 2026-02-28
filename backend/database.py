@@ -99,9 +99,12 @@ def apply_non_destructive_migrations():
         ],
         "department_meetings": [
             ("agenda_snapshot", "TEXT"),
+            ("action_table_columns", "TEXT DEFAULT '[\"Action Point\",\"Owner\",\"Timeline\",\"Status\",\"Remarks\"]'"),
+            ("action_table_rows", "TEXT DEFAULT '[]'"),
             ("status", "VARCHAR DEFAULT 'Scheduled'"),
             ("officer_phone", "VARCHAR"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
         "review_programs": [
             ("target_value", "REAL"),

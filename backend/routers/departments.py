@@ -11,6 +11,18 @@ import models
 
 router = APIRouter()
 
+DEFAULT_MEETING_TABLE_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"]
+
+
+def _safe_json_list(value: Optional[str], fallback: list) -> list:
+    if not value:
+        return fallback
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else fallback
+    except Exception:
+        return fallback
+
 
 class DepartmentCreate(BaseModel):
     name: str
@@ -299,6 +311,8 @@ class MeetingCreate(BaseModel):
     officer_phone: Optional[str] = None
     # Will auto-snapshot open agenda points if not provided
     agenda_snapshot: Optional[str] = None
+    action_table_columns: Optional[List[str]] = None
+    action_table_rows: Optional[List[List[str]]] = None
 
 
 class MeetingUpdate(BaseModel):
@@ -308,6 +322,8 @@ class MeetingUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     officer_phone: Optional[str] = None
+    action_table_columns: Optional[List[str]] = None
+    action_table_rows: Optional[List[List[str]]] = None
 
 
 @router.get("/{dept_id}/meetings")
@@ -318,12 +334,9 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
 
     result = []
     for m in meetings:
-        snapshot = []
-        if m.agenda_snapshot:
-            try:
-                snapshot = json.loads(m.agenda_snapshot)
-            except Exception:
-                snapshot = []
+        snapshot = _safe_json_list(m.agenda_snapshot, [])
+        table_columns = _safe_json_list(m.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS)
+        table_rows = _safe_json_list(m.action_table_rows, [])
         result.append({
             "id": m.id,
             "department_id": m.department_id,
@@ -334,7 +347,10 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
             "status": m.status,
             "officer_phone": m.officer_phone,
             "agenda_snapshot": snapshot,
+            "action_table_columns": table_columns,
+            "action_table_rows": table_rows,
             "created_at": m.created_at,
+            "updated_at": m.updated_at,
         })
     return result
 
@@ -351,6 +367,9 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
     else:
         snapshot = data.agenda_snapshot
 
+    table_columns = data.action_table_columns or DEFAULT_MEETING_TABLE_COLUMNS
+    table_rows = data.action_table_rows or []
+
     meeting = models.DepartmentMeeting(
         department_id=dept_id,
         scheduled_date=data.scheduled_date,
@@ -359,13 +378,15 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
         notes=data.notes,
         officer_phone=data.officer_phone,
         agenda_snapshot=snapshot,
+        action_table_columns=json.dumps(table_columns),
+        action_table_rows=json.dumps(table_rows),
     )
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
 
     # Parse snapshot for response
-    parsed_snapshot = json.loads(snapshot) if snapshot else []
+    parsed_snapshot = _safe_json_list(snapshot, [])
     return {
         "id": meeting.id,
         "department_id": meeting.department_id,
@@ -376,7 +397,10 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
         "status": meeting.status,
         "officer_phone": meeting.officer_phone,
         "agenda_snapshot": parsed_snapshot,
+        "action_table_columns": _safe_json_list(meeting.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS),
+        "action_table_rows": _safe_json_list(meeting.action_table_rows, []),
         "created_at": meeting.created_at,
+        "updated_at": meeting.updated_at,
     }
 
 
@@ -388,11 +412,30 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
     ).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    for k, v in data.dict(exclude_none=True).items():
+    payload = data.dict(exclude_none=True)
+    if "action_table_columns" in payload:
+        meeting.action_table_columns = json.dumps(payload.pop("action_table_columns") or DEFAULT_MEETING_TABLE_COLUMNS)
+    if "action_table_rows" in payload:
+        meeting.action_table_rows = json.dumps(payload.pop("action_table_rows") or [])
+    for k, v in payload.items():
         setattr(meeting, k, v)
     db.commit()
     db.refresh(meeting)
-    return {"message": "Updated"}
+    return {
+        "id": meeting.id,
+        "department_id": meeting.department_id,
+        "scheduled_date": str(meeting.scheduled_date),
+        "venue": meeting.venue,
+        "attendees": meeting.attendees,
+        "notes": meeting.notes,
+        "status": meeting.status,
+        "officer_phone": meeting.officer_phone,
+        "agenda_snapshot": _safe_json_list(meeting.agenda_snapshot, []),
+        "action_table_columns": _safe_json_list(meeting.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS),
+        "action_table_rows": _safe_json_list(meeting.action_table_rows, []),
+        "created_at": meeting.created_at,
+        "updated_at": meeting.updated_at,
+    }
 
 
 @router.delete("/{dept_id}/meetings/{meeting_id}")

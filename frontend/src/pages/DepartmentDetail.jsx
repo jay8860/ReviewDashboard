@@ -1,12 +1,11 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-    ArrowLeft, Plus, Trash2, Edit2, Calendar, AlertTriangle,
-    CheckCircle2, Clock, X, RefreshCw, BookOpen,
-    ListChecks, MessageCircle, Phone, MapPin, Users, Check,
-    ChevronDown, FileText, Table2, Upload, Download,
-    Save, PlusCircle, Minus, GripVertical, MoreHorizontal
+    ArrowLeft, Plus, Trash2, Edit2, Calendar,
+    X, RefreshCw, ListChecks, MapPin, Users, Check,
+    FileText, Table2, Upload, Download,
+    Save, PlusCircle, Minus, ChevronRight
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
@@ -23,6 +22,8 @@ const colorGrad = {
     teal: 'from-teal-500 to-teal-700',
     orange: 'from-orange-500 to-orange-700',
 };
+
+const DEFAULT_MEETING_TABLE_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"];
 
 // WhatsApp SVG
 const WAIcon = () => (
@@ -107,7 +108,6 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                                 className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm resize-none" />
                         </div>
 
-                        {/* Preview open agenda to be auto-snapshotted */}
                         {openAgenda.length > 0 && (
                             <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 p-4">
                                 <p className="text-xs font-black uppercase text-slate-400 mb-2">Agenda snapshot ({openAgenda.length} open items)</p>
@@ -121,6 +121,12 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                                 </div>
                             </div>
                         )}
+
+                        <div className="rounded-2xl bg-teal-50 dark:bg-teal-500/10 border border-teal-100 dark:border-teal-500/20 p-3">
+                            <p className="text-xs text-teal-700 dark:text-teal-300 font-semibold">
+                                A meeting Action Table will be created automatically. Open the meeting row later to enter live action points.
+                            </p>
+                        </div>
 
                         <div className="flex gap-3 pt-2">
                             <button onClick={onClose} className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
@@ -140,19 +146,86 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
     );
 };
 
-// ── Meeting Detail Modal ───────────────────────────────────────────────────────
-const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange }) => {
+// ── Meeting Detail Modal (with action table editing) ──────────────────────────
+const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange, onSaveTable }) => {
+    const [activeTab, setActiveTab] = useState('details');
+    const [editMode, setEditMode] = useState(false);
+    const [columns, setColumns] = useState(DEFAULT_MEETING_TABLE_COLUMNS);
+    const [rows, setRows] = useState([]);
+    const [savingTable, setSavingTable] = useState(false);
+    const [editingColIdx, setEditingColIdx] = useState(null);
+    const [editingColText, setEditingColText] = useState('');
+
+    useEffect(() => {
+        if (!meeting) return;
+        setActiveTab('details');
+        setEditMode(false);
+        setColumns(meeting.action_table_columns?.length ? meeting.action_table_columns : DEFAULT_MEETING_TABLE_COLUMNS);
+        setRows(meeting.action_table_rows || []);
+        setEditingColIdx(null);
+        setEditingColText('');
+    }, [meeting?.id]);
+
     if (!meeting) return null;
+
     const statusColors = {
         Scheduled: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400',
         Done: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
         Cancelled: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400',
     };
+
+    const updateCell = (rIdx, cIdx, val) => {
+        setRows(prev => {
+            const next = prev.map(r => [...r]);
+            while (next[rIdx].length < columns.length) next[rIdx].push('');
+            next[rIdx][cIdx] = val;
+            return next;
+        });
+    };
+
+    const addRow = () => setRows(prev => [...prev, Array(columns.length).fill('')]);
+    const removeRow = (rIdx) => setRows(prev => prev.filter((_, i) => i !== rIdx));
+
+    const addCol = () => {
+        const name = `Col ${columns.length + 1}`;
+        setColumns(prev => [...prev, name]);
+        setRows(prev => prev.map(r => [...r, '']));
+    };
+
+    const removeCol = (cIdx) => {
+        if (columns.length <= 1) return;
+        setColumns(prev => prev.filter((_, i) => i !== cIdx));
+        setRows(prev => prev.map(r => r.filter((_, i) => i !== cIdx)));
+    };
+
+    const renameCol = (cIdx, val) => {
+        setColumns(prev => prev.map((c, i) => (i === cIdx ? val : c)));
+    };
+
+    const handleSaveTable = async () => {
+        setSavingTable(true);
+        try {
+            await onSaveTable(meeting.id, {
+                action_table_columns: columns,
+                action_table_rows: rows,
+            });
+            setEditMode(false);
+        } finally {
+            setSavingTable(false);
+        }
+    };
+
+    const cancelEdit = () => {
+        setEditMode(false);
+        setColumns(meeting.action_table_columns?.length ? meeting.action_table_columns : DEFAULT_MEETING_TABLE_COLUMNS);
+        setRows(meeting.action_table_rows || []);
+    };
+
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                 <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="glass-card rounded-3xl w-full max-w-lg shadow-premium-lg max-h-[90vh] overflow-y-auto custom-scrollbar">
+                    className="glass-card rounded-3xl w-full max-w-5xl shadow-premium-lg max-h-[92vh] overflow-hidden flex flex-col">
                     <div className="px-6 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
                         <div>
                             <h2 className="text-lg font-black dark:text-white">Meeting Details</h2>
@@ -160,140 +233,182 @@ const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange }) => {
                         </div>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
-                    <div className="p-6 space-y-4">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <span className={`text-xs font-black px-3 py-1 rounded-full ${statusColors[meeting.status] || statusColors.Scheduled}`}>{meeting.status}</span>
-                            {meeting.venue && <span className="flex items-center gap-1 text-xs text-slate-500"><MapPin size={12} />{meeting.venue}</span>}
-                            {meeting.attendees && <span className="flex items-center gap-1 text-xs text-slate-500"><Users size={12} />{meeting.attendees}</span>}
-                        </div>
 
-                        {meeting.notes && (
-                            <div className="rounded-2xl bg-slate-50 dark:bg-white/5 p-4">
-                                <p className="text-xs font-black uppercase text-slate-400 mb-2">Notes</p>
-                                <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">{meeting.notes}</p>
+                    <div className="border-b border-slate-100 dark:border-white/10 flex items-center">
+                        <button
+                            onClick={() => setActiveTab('details')}
+                            className={`px-5 py-3 text-sm font-black border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        >
+                            Details
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('table')}
+                            className={`px-5 py-3 text-sm font-black border-b-2 transition-colors ${activeTab === 'table' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        >
+                            Action Table
+                        </button>
+                    </div>
+
+                    {activeTab === 'details' ? (
+                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <span className={`text-xs font-black px-3 py-1 rounded-full ${statusColors[meeting.status] || statusColors.Scheduled}`}>{meeting.status}</span>
+                                {meeting.venue && <span className="flex items-center gap-1 text-xs text-slate-500"><MapPin size={12} />{meeting.venue}</span>}
+                                {meeting.attendees && <span className="flex items-center gap-1 text-xs text-slate-500"><Users size={12} />{meeting.attendees}</span>}
                             </div>
-                        )}
 
-                        {meeting.agenda_snapshot && meeting.agenda_snapshot.length > 0 && (
-                            <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-500/15 p-4">
-                                <p className="text-xs font-black uppercase text-indigo-500 mb-2">Agenda at time of scheduling</p>
-                                <div className="space-y-1.5">
-                                    {meeting.agenda_snapshot.map((item, i) => (
-                                        <div key={i} className="flex items-start gap-2">
-                                            <span className="text-xs font-bold text-indigo-300 w-4">{i + 1}.</span>
-                                            <div>
-                                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{item.title}</p>
-                                                {item.details && <p className="text-xs text-slate-400">{item.details}</p>}
+                            {meeting.notes && (
+                                <div className="rounded-2xl bg-slate-50 dark:bg-white/5 p-4">
+                                    <p className="text-xs font-black uppercase text-slate-400 mb-2">Notes</p>
+                                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">{meeting.notes}</p>
+                                </div>
+                            )}
+
+                            {meeting.agenda_snapshot && meeting.agenda_snapshot.length > 0 && (
+                                <div className="rounded-2xl bg-indigo-50 dark:bg-indigo-500/5 border border-indigo-100 dark:border-indigo-500/15 p-4">
+                                    <p className="text-xs font-black uppercase text-indigo-500 mb-2">Agenda at time of scheduling</p>
+                                    <div className="space-y-1.5">
+                                        {meeting.agenda_snapshot.map((item, i) => (
+                                            <div key={i} className="flex items-start gap-2">
+                                                <span className="text-xs font-bold text-indigo-300 w-4">{i + 1}.</span>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{item.title}</p>
+                                                    {item.details && <p className="text-xs text-slate-400">{item.details}</p>}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 pt-2 flex-wrap">
+                                {meeting.status === 'Scheduled' && (
+                                    <button onClick={() => onStatusChange(meeting.id, 'Done')}
+                                        className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors flex items-center gap-1.5">
+                                        <Check size={14} /> Mark Done
+                                    </button>
+                                )}
+                                {meeting.status !== 'Cancelled' && (
+                                    <button onClick={() => onStatusChange(meeting.id, 'Cancelled')}
+                                        className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 transition-colors">
+                                        Cancel Meeting
+                                    </button>
+                                )}
+                                <button onClick={() => onDelete(meeting.id)}
+                                    className="px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-1.5 ml-auto">
+                                    <Trash2 size={14} /> Delete
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <div className="px-5 py-3 border-b border-slate-100 dark:border-white/10 flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <Table2 size={16} className="text-teal-500" />
+                                    <span className="text-sm font-black text-slate-700 dark:text-white">Meeting Action Table</span>
+                                    <span className="text-xs text-slate-400">{rows.length} rows × {columns.length} cols</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {editMode ? (
+                                        <>
+                                            <button onClick={cancelEdit} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-white/15 text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
+                                            <button onClick={handleSaveTable} disabled={savingTable}
+                                                className="flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-60">
+                                                <Save size={13} /> {savingTable ? 'Saving…' : 'Save'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button onClick={() => setEditMode(true)} className="flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 transition-colors">
+                                            <Edit2 size={13} /> Edit
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-                        )}
 
-                        <div className="flex gap-2 pt-2 flex-wrap">
-                            {meeting.status === 'Scheduled' && (
-                                <button onClick={() => onStatusChange(meeting.id, 'Done')}
-                                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors flex items-center gap-1.5">
-                                    <Check size={14} /> Mark Done
-                                </button>
-                            )}
-                            {meeting.status !== 'Cancelled' && (
-                                <button onClick={() => onStatusChange(meeting.id, 'Cancelled')}
-                                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 transition-colors">
-                                    Cancel Meeting
-                                </button>
-                            )}
-                            <button onClick={() => onDelete(meeting.id)}
-                                className="px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-1.5 ml-auto">
-                                <Trash2 size={14} /> Delete
-                            </button>
+                            <div className="flex-1 overflow-auto custom-scrollbar">
+                                <table className="w-full text-sm border-collapse">
+                                    <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800">
+                                        <tr>
+                                            <th className="w-8 px-2 py-2 text-xs text-slate-400 font-black border-b border-r border-slate-100 dark:border-white/10">#</th>
+                                            {columns.map((col, cIdx) => (
+                                                <th key={cIdx} className="px-2 py-2 border-b border-r border-slate-100 dark:border-white/10 text-left font-black text-slate-600 dark:text-slate-300 text-xs uppercase tracking-wider min-w-[130px]">
+                                                    {editMode ? (
+                                                        <div className="flex items-center gap-1">
+                                                            {editingColIdx === cIdx ? (
+                                                                <input autoFocus value={editingColText}
+                                                                    onChange={e => setEditingColText(e.target.value)}
+                                                                    onBlur={() => { renameCol(cIdx, editingColText || col); setEditingColIdx(null); }}
+                                                                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { renameCol(cIdx, editingColText || col); setEditingColIdx(null); } }}
+                                                                    className="w-full text-xs font-bold bg-white dark:bg-slate-700 border border-indigo-300 rounded px-1 py-0.5 focus:outline-none" />
+                                                            ) : (
+                                                                <span className="flex-1 cursor-pointer hover:text-indigo-600" onClick={() => { setEditingColIdx(cIdx); setEditingColText(col); }}>{col}</span>
+                                                            )}
+                                                            {columns.length > 1 && (
+                                                                <button onClick={() => removeCol(cIdx)} className="p-0.5 text-rose-400 hover:bg-rose-50 rounded"><Minus size={10} /></button>
+                                                            )}
+                                                        </div>
+                                                    ) : col}
+                                                </th>
+                                            ))}
+                                            {editMode && (
+                                                <th className="px-2 py-2 border-b border-slate-100 dark:border-white/10">
+                                                    <button onClick={addCol} className="flex items-center gap-1 text-xs text-indigo-500 font-bold hover:text-indigo-700 whitespace-nowrap">
+                                                        <Plus size={11} /> Col
+                                                    </button>
+                                                </th>
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rows.length === 0 && !editMode && (
+                                            <tr><td colSpan={columns.length + 1} className="text-center py-10 text-slate-400 italic text-xs">
+                                                No action entries yet. Click Edit to add rows.
+                                            </td></tr>
+                                        )}
+                                        {rows.map((row, rIdx) => (
+                                            <tr key={rIdx} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
+                                                <td className="px-2 py-1.5 text-xs text-slate-400 font-bold text-center border-r border-b border-slate-100 dark:border-white/5 w-8">
+                                                    {editMode ? (
+                                                        <button onClick={() => removeRow(rIdx)} className="text-rose-400 hover:text-rose-600">
+                                                            <Minus size={12} />
+                                                        </button>
+                                                    ) : rIdx + 1}
+                                                </td>
+                                                {columns.map((_, cIdx) => (
+                                                    <td key={cIdx} className="px-2 py-1 border-r border-b border-slate-100 dark:border-white/5 min-w-[130px]">
+                                                        {editMode ? (
+                                                            <input
+                                                                value={row[cIdx] || ''}
+                                                                onChange={e => updateCell(rIdx, cIdx, e.target.value)}
+                                                                className="w-full text-xs bg-transparent border-b border-transparent focus:border-indigo-400 focus:outline-none px-1 py-0.5 text-slate-700 dark:text-slate-200 focus:bg-indigo-50/30 dark:focus:bg-indigo-900/20 rounded transition-colors"
+                                                                placeholder="—"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-xs text-slate-700 dark:text-slate-300 px-1">{row[cIdx] || <span className="text-slate-300 dark:text-white/20">—</span>}</span>
+                                                        )}
+                                                    </td>
+                                                ))}
+                                                {editMode && <td className="border-b border-slate-100 dark:border-white/5" />}
+                                            </tr>
+                                        ))}
+                                        {editMode && (
+                                            <tr>
+                                                <td colSpan={columns.length + 2} className="px-4 py-2">
+                                                    <button onClick={addRow} className="flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:text-indigo-700 transition-colors">
+                                                        <PlusCircle size={14} /> Add Row
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </motion.div>
             </div>
         </AnimatePresence>
     );
-};
-
-// ── Program (Targets) Modal ────────────────────────────────────────────────────
-const ProgramModal = ({ isOpen, onClose, onSave, departmentId, initial }) => {
-    const blank = { name: '', description: '', review_frequency_days: 30, target_value: '', achieved_value: '', department_id: departmentId };
-    const [form, setForm] = useState(blank);
-    useEffect(() => { setForm(initial ? { ...initial } : { ...blank, department_id: departmentId }); }, [isOpen, initial]);
-
-    if (!isOpen) return null;
-    const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-    const inputCls = "w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm";
-    const labelCls = "block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5";
-
-    return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="glass-card rounded-3xl w-full max-w-md shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar">
-                    <div className="px-7 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
-                        <h2 className="text-lg font-black dark:text-white">{initial ? 'Edit Program' : 'New Review Program'}</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
-                    </div>
-                    <div className="p-7 space-y-5">
-                        <div><label className={labelCls}>Program Name *</label><input value={form.name} onChange={f('name')} placeholder="e.g. PDLD, Infrastructure Review" className={inputCls} /></div>
-                        <div><label className={labelCls}>Description</label><textarea value={form.description} onChange={f('description')} rows={2} className={inputCls + ' resize-none'} /></div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div><label className={labelCls}>Target</label><input value={form.target_value} onChange={f('target_value')} placeholder="e.g. 100%" className={inputCls} /></div>
-                            <div><label className={labelCls}>Achieved</label><input value={form.achieved_value} onChange={f('achieved_value')} placeholder="e.g. 45%" className={inputCls} /></div>
-                        </div>
-                        <div><label className={labelCls}>Review Frequency (days)</label><input type="number" value={form.review_frequency_days} onChange={f('review_frequency_days')} className={inputCls} /></div>
-                        <div className="flex gap-3 pt-2">
-                            <button onClick={onClose} className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
-                            <button onClick={() => form.name && onSave(form)} className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">Save</button>
-                        </div>
-                    </div>
-                </motion.div>
-            </div>
-        </AnimatePresence>
-    );
-};
-
-// ── Schedule Review Modal ──────────────────────────────────────────────────────
-const ScheduleReviewModal = ({ isOpen, onClose, onSave, programId }) => {
-    const today = new Date().toISOString().split('T')[0];
-    const [date, setDate] = useState(today);
-    useEffect(() => { setDate(today); }, [isOpen]);
-    if (!isOpen) return null;
-    return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl w-full max-w-sm shadow-premium-lg p-7">
-                    <div className="flex items-center justify-between mb-5">
-                        <h2 className="text-lg font-black dark:text-white">Schedule Review</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
-                    </div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Review Date *</label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm mb-5" />
-                    <div className="flex gap-3">
-                        <button onClick={onClose} className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
-                        <button onClick={() => date && onSave({ program_id: programId, scheduled_date: date })}
-                            className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">Schedule</button>
-                    </div>
-                </motion.div>
-            </div>
-        </AnimatePresence>
-    );
-};
-
-// ── Debt Badge ─────────────────────────────────────────────────────────────────
-const DebtBadge = ({ status }) => {
-    const map = {
-        ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
-        warning: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-        overdue: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400',
-        never_reviewed: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400',
-    };
-    const labels = { ok: 'On Track', warning: 'Due Soon', overdue: 'Overdue', never_reviewed: 'Never Reviewed' };
-    return <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${map[status] || map.ok}`}>{labels[status] || status}</span>;
 };
 
 // ── Inline Data Grid (Spreadsheet-style) ──────────────────────────────────────
@@ -350,7 +465,6 @@ const InlineDataGrid = ({ deptId }) => {
     };
 
     const addRow = () => setLocalRows(prev => [...prev, Array(localCols.length).fill('')]);
-
     const removeRow = (i) => setLocalRows(prev => prev.filter((_, idx) => idx !== i));
 
     const addCol = () => {
@@ -369,7 +483,6 @@ const InlineDataGrid = ({ deptId }) => {
         setLocalCols(prev => prev.map((c, i) => i === cIdx ? val : c));
     };
 
-    // Excel/CSV import
     const handleFileImport = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -392,7 +505,6 @@ const InlineDataGrid = ({ deptId }) => {
             };
             reader.readAsText(file);
         } else {
-            // For xlsx we'd need SheetJS but since this is backend, fallback to message
             toast.error('For Excel files, please export as CSV first and re-import');
         }
         e.target.value = '';
@@ -415,7 +527,6 @@ const InlineDataGrid = ({ deptId }) => {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Toolbar */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-white/10 gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
                     <Table2 size={18} className="text-teal-500" />
@@ -445,7 +556,6 @@ const InlineDataGrid = ({ deptId }) => {
                 </div>
             </div>
 
-            {/* Grid table */}
             <div className="flex-1 overflow-auto custom-scrollbar">
                 <table className="w-full text-sm border-collapse">
                     <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800">
@@ -465,7 +575,7 @@ const InlineDataGrid = ({ deptId }) => {
                                                 <span className="flex-1 cursor-pointer hover:text-indigo-600" onClick={() => { setEditingColIdx(cIdx); setEditingColText(col); }}>{col}</span>
                                             )}
                                             {localCols.length > 1 && (
-                                                <button onClick={() => removeCol(cIdx)} className="p-0.5 text-rose-400 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100"><Minus size={10} /></button>
+                                                <button onClick={() => removeCol(cIdx)} className="p-0.5 text-rose-400 hover:bg-rose-50 rounded"><Minus size={10} /></button>
                                             )}
                                         </div>
                                     ) : col}
@@ -490,7 +600,7 @@ const InlineDataGrid = ({ deptId }) => {
                             <tr key={rIdx} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
                                 <td className="px-2 py-1.5 text-xs text-slate-400 font-bold text-center border-r border-b border-slate-100 dark:border-white/5 w-8">
                                     {editMode ? (
-                                        <button onClick={() => removeRow(rIdx)} className="text-rose-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => removeRow(rIdx)} className="text-rose-400 hover:text-rose-600">
                                             <Minus size={12} />
                                         </button>
                                     ) : rIdx + 1}
@@ -529,8 +639,7 @@ const InlineDataGrid = ({ deptId }) => {
 };
 
 // ── Inline Agenda Table ────────────────────────────────────────────────────────
-// Replaces the old list UI with a proper inline-editable table
-const AgendaTable = ({ deptId, agenda, setAgenda, onAddAgenda }) => {
+const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const toast = useToast();
     const [editingId, setEditingId] = useState(null);
     const [editValues, setEditValues] = useState({ title: '', details: '' });
@@ -699,54 +808,52 @@ const DepartmentDetail = ({ user, onLogout }) => {
     const { deptId } = useParams();
     const navigate = useNavigate();
     const toast = useToast();
-    const deptIdInt = parseInt(deptId);
+    const deptIdInt = parseInt(deptId, 10);
 
     const [dept, setDept] = useState(null);
-    const [sessions, setSessions] = useState([]);
     const [agenda, setAgenda] = useState([]);
     const [meetings, setMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Modals
-    const [progModal, setProgModal] = useState(false);
-    const [editProg, setEditProg] = useState(null);
-    const [schedReviewModal, setSchedReviewModal] = useState(false);
-    const [schedulingProgId, setSchedulingProgId] = useState(null);
     const [meetingModal, setMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState(null);
-
-    // Active tab for bottom section (targets / data grid)
-    const [activeTab, setActiveTab] = useState('targets'); // 'targets' | 'datagrid'
+    const [activeTab, setActiveTab] = useState('datagrid');
 
     const load = async () => {
         setLoading(true);
         try {
-            const [deptData, allSessions, agendaData, meetingsData] = await Promise.all([
+            const [deptData, agendaData, meetingsData] = await Promise.all([
                 api.getDepartment(deptIdInt),
-                api.getSessions(),
                 api.getAgendaPoints(deptIdInt),
                 api.getMeetings(deptIdInt),
             ]);
             setDept(deptData);
-            const progIds = new Set((deptData.programs || []).map(p => p.id));
-            setSessions(allSessions.filter(s => progIds.has(s.program_id)));
             setAgenda(agendaData);
             setMeetings(meetingsData);
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => { load(); }, [deptId]);
 
-    // ── Meeting handlers ─────────────────────────────────────────────────────
+    const refreshMeetingsOnly = async () => {
+        const fresh = await api.getMeetings(deptIdInt);
+        setMeetings(fresh);
+        return fresh;
+    };
+
     const handleScheduleMeeting = async (form) => {
         try {
             await api.createMeeting(deptIdInt, form);
             setMeetingModal(false);
-            const fresh = await api.getMeetings(deptIdInt);
-            setMeetings(fresh);
+            await refreshMeetingsOnly();
             toast.success('Meeting scheduled');
-        } catch { toast.error('Failed to schedule meeting'); }
+        } catch {
+            toast.error('Failed to schedule meeting');
+        }
     };
 
     const handleDeleteMeeting = async (id) => {
@@ -756,40 +863,34 @@ const DepartmentDetail = ({ user, onLogout }) => {
             setMeetings(prev => prev.filter(m => m.id !== id));
             setSelectedMeeting(null);
             toast.success('Meeting deleted');
-        } catch { toast.error('Failed to delete meeting'); }
+        } catch {
+            toast.error('Failed to delete meeting');
+        }
     };
 
     const handleMeetingStatusChange = async (id, status) => {
         try {
             await api.updateMeeting(deptIdInt, id, { status });
-            setMeetings(prev => prev.map(m => m.id === id ? { ...m, status } : m));
-            setSelectedMeeting(prev => prev && prev.id === id ? { ...prev, status } : prev);
+            const fresh = await refreshMeetingsOnly();
+            const updated = fresh.find(m => m.id === id) || null;
+            setSelectedMeeting(updated);
             toast.success(`Meeting marked as ${status}`);
-        } catch { toast.error('Failed to update meeting'); }
+        } catch {
+            toast.error('Failed to update meeting');
+        }
     };
 
-    // ── Program handlers ─────────────────────────────────────────────────────
-    const handleSaveProgram = async (form) => {
+    const handleMeetingTableSave = async (id, payload) => {
         try {
-            if (editProg) { await api.updateProgram(editProg.id, form); toast.success('Program updated'); }
-            else { await api.createProgram(form); toast.success('Review program created'); }
-            setProgModal(false); setEditProg(null); load();
-        } catch { toast.error('Error saving program'); }
-    };
-
-    const handleDeleteProgram = async (id) => {
-        if (!window.confirm('Delete this program and all its sessions?')) return;
-        try { await api.deleteProgram(id); toast.success('Program deleted'); load(); }
-        catch { toast.error('Failed to delete program'); }
-    };
-
-    const handleScheduleReview = async (form) => {
-        try {
-            await api.createSession(form);
-            setSchedReviewModal(false);
-            toast.success('Review session scheduled!');
-            load();
-        } catch { toast.error('Error scheduling review'); }
+            await api.updateMeeting(deptIdInt, id, payload);
+            const fresh = await refreshMeetingsOnly();
+            const updated = fresh.find(m => m.id === id) || null;
+            setSelectedMeeting(updated);
+            toast.success('Meeting action table saved');
+        } catch {
+            toast.error('Failed to save meeting action table');
+            throw new Error('save failed');
+        }
     };
 
     if (loading) return (
@@ -812,9 +913,17 @@ const DepartmentDetail = ({ user, onLogout }) => {
         Cancelled: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400',
     };
 
+    const lastMeeting = [...meetings]
+        .filter(m => m.status === 'Done' || new Date(m.scheduled_date) <= new Date())
+        .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date))[0];
+
+    const lastMeetingCols = lastMeeting?.action_table_columns?.length
+        ? lastMeeting.action_table_columns
+        : DEFAULT_MEETING_TABLE_COLUMNS;
+    const lastMeetingRows = lastMeeting?.action_table_rows || [];
+
     return (
         <Layout user={user} onLogout={onLogout}>
-            {/* Back + Header */}
             <div className="flex items-center gap-4 mb-8">
                 <button onClick={() => navigate('/departments')}
                     className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
@@ -829,222 +938,170 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 </div>
             </div>
 
-            {/* Grid Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* ── TOP LEFT: Agenda / To Do — inline table ────────────────── */}
-                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[400px]">
+            <div className="space-y-6">
+                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[360px]">
                     <AgendaTable deptId={deptIdInt} agenda={agenda} setAgenda={setAgenda} />
                 </div>
 
-                {/* ── TOP RIGHT: Targets (Programs) — inline table ─────────────── */}
-                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[400px]">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
-                        <div className="flex items-center gap-2">
-                            <BookOpen size={20} className="text-emerald-500" />
-                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Review Programs</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                            <div className="flex items-center gap-2">
+                                <Calendar size={20} className="text-violet-500" />
+                                <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
+                                <span className="text-xs bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-black px-2 py-0.5 rounded-full">{meetings.length}</span>
+                            </div>
+                            <button onClick={() => setMeetingModal(true)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors">
+                                <Plus size={14} /> Schedule
+                            </button>
                         </div>
-                        <button onClick={() => { setEditProg(null); setProgModal(true); }}
-                            className="flex items-center gap-1 p-2 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-800/30 transition-colors">
-                            <Plus size={16} />
-                        </button>
-                    </div>
 
-                    <div className="flex-1 overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-sm text-left">
-                            <thead className="text-xs uppercase bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 sticky top-0">
-                                <tr>
-                                    <th className="px-4 py-3 font-black">Program</th>
-                                    <th className="px-4 py-3 font-black text-center whitespace-nowrap">Achieved</th>
-                                    <th className="px-4 py-3 font-black text-center">Target</th>
-                                    <th className="px-4 py-3 font-black text-center">Status</th>
-                                    <th className="px-4 py-3 font-black text-center"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                {dept.programs?.length === 0 ? (
-                                    <tr><td colSpan="5" className="text-center py-8 text-slate-400 italic text-xs">No programs defined</td></tr>
-                                ) : (
-                                    dept.programs?.map((prog, i) => (
-                                        <tr key={prog.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group cursor-pointer">
-                                            <td className="px-4 py-3 font-semibold text-slate-800 dark:text-white" onClick={() => { setEditProg(prog); setProgModal(true); }}>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-slate-400 font-bold">{i + 1}.</span>
-                                                    <div>
-                                                        <p>{prog.name}</p>
-                                                        {prog.description && <p className="text-xs text-slate-400 font-normal">{prog.description}</p>}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-center font-bold text-emerald-600 dark:text-emerald-400" onClick={() => { setEditProg(prog); setProgModal(true); }}>
-                                                {prog.achieved_value || <span className="text-slate-300 dark:text-white/20">—</span>}
-                                            </td>
-                                            <td className="px-4 py-3 text-center font-bold text-slate-600 dark:text-slate-300 border-l border-slate-100 dark:border-white/5" onClick={() => { setEditProg(prog); setProgModal(true); }}>
-                                                {prog.target_value || <span className="text-slate-300 dark:text-white/20">—</span>}
-                                            </td>
-                                            <td className="px-4 py-3 text-center" onClick={() => { setEditProg(prog); setProgModal(true); }}>
-                                                <DebtBadge status={prog.debt_status} />
-                                            </td>
-                                            <td className="px-3 py-3">
-                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => { e.stopPropagation(); setSchedulingProgId(prog.id); setSchedReviewModal(true); }}
-                                                        className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold whitespace-nowrap">
-                                                        + Review
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteProgram(prog.id); }}
-                                                        className="p-1 text-rose-400 hover:bg-rose-50 rounded">
+                        <div className="flex-1 overflow-auto custom-scrollbar">
+                            {meetings.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                    <Calendar size={32} className="mb-3 opacity-30" />
+                                    <p className="text-sm">No meetings scheduled yet</p>
+                                    <button onClick={() => setMeetingModal(true)} className="mt-3 text-xs text-violet-600 font-bold hover:underline">Schedule first meeting →</button>
+                                </div>
+                            ) : (
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 z-10">
+                                        <tr>
+                                            <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">#</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Date</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Venue</th>
+                                            <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-slate-400">Status</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden md:table-cell">Entries</th>
+                                            <th className="px-2 py-2.5 w-10"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                        {meetings.map((m, i) => (
+                                            <tr key={m.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors cursor-pointer"
+                                                onClick={() => setSelectedMeeting(m)}>
+                                                <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
+                                                <td className="px-3 py-3">
+                                                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
+                                                        {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 hidden sm:table-cell">
+                                                    <span className="text-xs text-slate-500">{m.venue || <span className="text-slate-300 dark:text-white/20">—</span>}</span>
+                                                </td>
+                                                <td className="px-3 py-3 text-center">
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusColors[m.status] || statusColors.Scheduled}`}>
+                                                        {m.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 hidden md:table-cell">
+                                                    <span className="text-xs text-slate-500">
+                                                        {m.action_table_rows?.length ? `${m.action_table_rows.length} row${m.action_table_rows.length > 1 ? 's' : ''}` : <span className="text-slate-300 dark:text-white/20">—</span>}
+                                                    </span>
+                                                </td>
+                                                <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => handleDeleteMeeting(m.id)}
+                                                        className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <Trash2 size={12} />
                                                     </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {/* ── BOTTOM LEFT: Department Meetings ─────────────────────── */}
-                <div className="glass-card rounded-3xl overflow-hidden min-h-[300px] flex flex-col">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
-                        <div className="flex items-center gap-2">
-                            <Calendar size={20} className="text-violet-500" />
-                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
-                            <span className="text-xs bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-black px-2 py-0.5 rounded-full">{meetings.length}</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
-                        <button onClick={() => setMeetingModal(true)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors">
-                            <Plus size={14} /> Schedule
-                        </button>
                     </div>
 
-                    <div className="flex-1 overflow-auto custom-scrollbar">
-                        {meetings.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                <Calendar size={32} className="mb-3 opacity-30" />
-                                <p className="text-sm">No meetings scheduled yet</p>
-                                <button onClick={() => setMeetingModal(true)} className="mt-3 text-xs text-violet-600 font-bold hover:underline">Schedule first meeting →</button>
+                    <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col">
+                        <div className="flex items-center border-b border-slate-100 dark:border-white/10">
+                            <button
+                                onClick={() => setActiveTab('datagrid')}
+                                className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'datagrid' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                                <Table2 size={16} /> Data Grid
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('lastmeeting')}
+                                className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'lastmeeting' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                                <FileText size={16} /> Last Meeting
+                            </button>
+                        </div>
+
+                        {activeTab === 'datagrid' ? (
+                            <div className="flex-1 flex flex-col overflow-hidden">
+                                <InlineDataGrid deptId={deptIdInt} />
                             </div>
                         ) : (
-                            <table className="w-full text-sm">
-                                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 z-10">
-                                    <tr>
-                                        <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">#</th>
-                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Date</th>
-                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Venue</th>
-                                        <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-slate-400">Status</th>
-                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden md:table-cell">Agenda items</th>
-                                        <th className="px-2 py-2.5 w-10"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                    {meetings.map((m, i) => (
-                                        <tr key={m.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors cursor-pointer"
-                                            onClick={() => setSelectedMeeting(m)}>
-                                            <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
-                                            <td className="px-3 py-3">
-                                                <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
-                                                    {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-3 hidden sm:table-cell">
-                                                <span className="text-xs text-slate-500">{m.venue || <span className="text-slate-300 dark:text-white/20">—</span>}</span>
-                                            </td>
-                                            <td className="px-3 py-3 text-center">
-                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusColors[m.status] || statusColors.Scheduled}`}>
-                                                    {m.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-3 hidden md:table-cell">
-                                                <span className="text-xs text-slate-500">
-                                                    {m.agenda_snapshot?.length ? `${m.agenda_snapshot.length} item${m.agenda_snapshot.length > 1 ? 's' : ''}` : <span className="text-slate-300 dark:text-white/20">—</span>}
-                                                </span>
-                                            </td>
-                                            <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
-                                                <button onClick={() => handleDeleteMeeting(m.id)}
-                                                    className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Trash2 size={12} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            <div className="p-5 flex-1 relative overflow-auto custom-scrollbar">
+                                {!lastMeeting ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                        <FileText size={32} className="mb-3 opacity-30" />
+                                        <p className="text-sm">No past meetings found</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-xs font-black uppercase text-slate-400">
+                                                Last meeting: {format(new Date(lastMeeting.scheduled_date), 'd MMM yyyy')}
+                                            </p>
+                                            <button
+                                                onClick={() => setSelectedMeeting(lastMeeting)}
+                                                className="text-xs text-amber-600 dark:text-amber-400 font-bold hover:underline flex items-center gap-1"
+                                            >
+                                                Open Meeting <ChevronRight size={12} />
+                                            </button>
+                                        </div>
+
+                                        <div className="rounded-2xl border border-slate-100 dark:border-white/10 overflow-auto">
+                                            <table className="w-full text-xs">
+                                                <thead className="bg-slate-50 dark:bg-white/5">
+                                                    <tr>
+                                                        {lastMeetingCols.map((c, idx) => (
+                                                            <th key={idx} className="px-3 py-2 text-left font-black uppercase tracking-wider text-slate-500">{c}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                                                    {lastMeetingRows.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={lastMeetingCols.length} className="px-3 py-8 text-center text-slate-400 italic">No action rows recorded yet.</td>
+                                                        </tr>
+                                                    ) : (
+                                                        lastMeetingRows.map((row, rIdx) => (
+                                                            <tr key={rIdx}>
+                                                                {lastMeetingCols.map((_, cIdx) => (
+                                                                    <td key={cIdx} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                                        {row[cIdx] || <span className="text-slate-300 dark:text-white/20">—</span>}
+                                                                    </td>
+                                                                ))}
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
-
-                {/* ── BOTTOM RIGHT: Data Grid (tabbed with Last Meeting) ─────── */}
-                <div className="glass-card rounded-3xl overflow-hidden min-h-[300px] flex flex-col">
-                    {/* Tab headers */}
-                    <div className="flex items-center border-b border-slate-100 dark:border-white/10">
-                        <button
-                            onClick={() => setActiveTab('datagrid')}
-                            className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'datagrid' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                            <Table2 size={16} /> Data Grid
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('lastmeeting')}
-                            className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'lastmeeting' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                            <FileText size={16} /> Last Review
-                        </button>
-                    </div>
-
-                    {activeTab === 'datagrid' ? (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <InlineDataGrid deptId={deptIdInt} />
-                        </div>
-                    ) : (
-                        <div className="p-5 flex-1 relative">
-                            {sessions.length > 0 && sessions.filter(s => s.status === 'Completed').length > 0 ? (() => {
-                                const lastMeeting = sessions.filter(s => s.status === 'Completed').sort((a, b) => new Date(b.actual_date || b.scheduled_date) - new Date(a.actual_date || a.scheduled_date))[0];
-                                const noteLines = (lastMeeting.notes || "No notes recorded.").split('\n').filter(l => l.trim().length > 0);
-                                return (
-                                    <>
-                                        <p className="text-xs font-black uppercase text-slate-400 mb-3">
-                                            Last review: {format(new Date(lastMeeting.actual_date || lastMeeting.scheduled_date), 'd MMM yyyy')}
-                                        </p>
-                                        <div className="space-y-3 mb-16">
-                                            {noteLines.slice(0, 3).map((line, idx) => (
-                                                <div key={idx} className="flex items-start gap-2">
-                                                    <span className="font-bold text-slate-400 w-4">{idx + 1}.</span>
-                                                    <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2">{line}</p>
-                                                </div>
-                                            ))}
-                                            {noteLines.length === 0 && <p className="text-sm text-slate-400">No notes recorded.</p>}
-                                        </div>
-                                        <button
-                                            onClick={() => navigate(`/reviews/${lastMeeting.id}`)}
-                                            className="absolute bottom-5 right-5 px-6 py-2.5 rounded-full border-2 border-amber-400 text-amber-600 dark:text-amber-400 font-black hover:bg-amber-50 dark:hover:bg-amber-400/10 transition-colors">
-                                            Details
-                                        </button>
-                                    </>
-                                );
-                            })() : (
-                                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                    <FileText size={32} className="mb-3 opacity-30" />
-                                    <p className="text-sm">No completed reviews found</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
             </div>
 
-            {/* Modals */}
-            <ProgramModal isOpen={progModal} onClose={() => { setProgModal(false); setEditProg(null); }}
-                onSave={handleSaveProgram} departmentId={deptIdInt} initial={editProg} />
-            <ScheduleReviewModal isOpen={schedReviewModal} onClose={() => setSchedReviewModal(false)}
-                onSave={handleScheduleReview} programId={schedulingProgId} />
-            <ScheduleMeetingModal isOpen={meetingModal} onClose={() => setMeetingModal(false)}
-                onSave={handleScheduleMeeting} agenda={agenda} deptName={dept.name} />
+            <ScheduleMeetingModal
+                isOpen={meetingModal}
+                onClose={() => setMeetingModal(false)}
+                onSave={handleScheduleMeeting}
+                agenda={agenda}
+                deptName={dept.name}
+            />
             {selectedMeeting && (
                 <MeetingDetailModal
                     meeting={selectedMeeting}
                     onClose={() => setSelectedMeeting(null)}
                     onDelete={handleDeleteMeeting}
                     onStatusChange={handleMeetingStatusChange}
+                    onSaveTable={handleMeetingTableSave}
                 />
             )}
         </Layout>

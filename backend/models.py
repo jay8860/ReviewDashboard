@@ -240,9 +240,13 @@ class DepartmentMeeting(Base):
     notes = Column(Text, nullable=True)
     # Snapshot of agenda points at time of meeting (JSON list of titles)
     agenda_snapshot = Column(Text, nullable=True)       # JSON: [{"title": "...", "details": "..."}]
+    # Editable table for in-meeting action tracking
+    action_table_columns = Column(Text, nullable=False, default='["Action Point","Owner","Timeline","Status","Remarks"]')
+    action_table_rows = Column(Text, nullable=False, default='[]')
     status = Column(String, default="Scheduled")        # Scheduled | Done | Cancelled
     officer_phone = Column(String, nullable=True)       # WhatsApp number of concerned officer
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="meetings")
 
