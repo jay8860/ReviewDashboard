@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, Plus, Trash2, Edit2, Calendar,
     X, RefreshCw, ListChecks, MapPin, Users, Check,
-    FileText, Table2, Upload, Download,
+    Table2, Upload, Download,
     Save, PlusCircle, Minus, ChevronRight
 } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -817,7 +817,6 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     const [meetingModal, setMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState(null);
-    const [activeTab, setActiveTab] = useState('datagrid');
 
     const load = async () => {
         setLoading(true);
@@ -910,23 +909,14 @@ const DepartmentDetail = ({ user, onLogout }) => {
     const statusColors = {
         Scheduled: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400',
         Done: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
-        Cancelled: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400',
+        Cancelled: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400',
     };
-
-    const lastMeeting = [...meetings]
-        .filter(m => m.status === 'Done' || new Date(m.scheduled_date) <= new Date())
-        .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date))[0];
-
-    const lastMeetingCols = lastMeeting?.action_table_columns?.length
-        ? lastMeeting.action_table_columns
-        : DEFAULT_MEETING_TABLE_COLUMNS;
-    const lastMeetingRows = lastMeeting?.action_table_rows || [];
 
     return (
         <Layout user={user} onLogout={onLogout}>
             <div className="flex items-center gap-4 mb-8">
                 <button onClick={() => navigate('/departments')}
-                    className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
+                    className="p-2.5 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 transition-colors">
                     <ArrowLeft size={20} />
                 </button>
                 <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${grad} flex items-center justify-center shadow-lg`}>
@@ -938,14 +928,14 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 </div>
             </div>
 
-            <div className="space-y-6">
-                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[360px]">
-                    <AgendaTable deptId={deptIdInt} agenda={agenda} setAgenda={setAgenda} />
-                </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+                <div className="space-y-6">
+                    <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[360px]">
+                        <AgendaTable deptId={deptIdInt} agenda={agenda} setAgenda={setAgenda} />
+                    </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-indigo-100/70 dark:border-indigo-500/20 bg-gradient-to-r from-violet-50/70 to-white dark:from-violet-500/10 dark:to-transparent">
                             <div className="flex items-center gap-2">
                                 <Calendar size={20} className="text-violet-500" />
                                 <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
@@ -957,6 +947,12 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             </button>
                         </div>
 
+                        <div className="px-5 py-2 border-b border-indigo-50 dark:border-indigo-500/15">
+                            <p className="text-[11px] font-semibold text-violet-600 dark:text-violet-300">
+                                Click any meeting to open the Meeting Workspace and capture MOM + action points.
+                            </p>
+                        </div>
+
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             {meetings.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -966,20 +962,24 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                 </div>
                             ) : (
                                 <table className="w-full text-sm">
-                                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 z-10">
+                                    <thead className="sticky top-0 bg-violet-50/80 dark:bg-violet-500/10 z-10">
                                         <tr>
-                                            <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">#</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Date</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Venue</th>
-                                            <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-slate-400">Status</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden md:table-cell">Entries</th>
+                                            <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">#</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">Date</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden sm:table-cell">Venue</th>
+                                            <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-violet-500">Status</th>
+                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden md:table-cell">Entries</th>
+                                            <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-violet-500">Open</th>
                                             <th className="px-2 py-2.5 w-10"></th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                    <tbody className="divide-y divide-indigo-50 dark:divide-indigo-500/10">
                                         {meetings.map((m, i) => (
-                                            <tr key={m.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors cursor-pointer"
-                                                onClick={() => setSelectedMeeting(m)}>
+                                            <tr
+                                                key={m.id}
+                                                className="group hover:bg-violet-50/40 dark:hover:bg-violet-500/8 transition-colors cursor-pointer"
+                                                onClick={() => navigate(`/departments/${deptIdInt}/meetings/${m.id}`)}
+                                            >
                                                 <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
                                                 <td className="px-3 py-3">
                                                     <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
@@ -999,6 +999,11 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                                         {m.action_table_rows?.length ? `${m.action_table_rows.length} row${m.action_table_rows.length > 1 ? 's' : ''}` : <span className="text-slate-300 dark:text-white/20">—</span>}
                                                     </span>
                                                 </td>
+                                                <td className="px-3 py-3 text-right">
+                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-600">
+                                                        Workspace <ChevronRight size={12} />
+                                                    </span>
+                                                </td>
                                                 <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
                                                     <button onClick={() => handleDeleteMeeting(m.id)}
                                                         className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1012,78 +1017,19 @@ const DepartmentDetail = ({ user, onLogout }) => {
                             )}
                         </div>
                     </div>
+                </div>
 
-                    <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col">
-                        <div className="flex items-center border-b border-slate-100 dark:border-white/10">
-                            <button
-                                onClick={() => setActiveTab('datagrid')}
-                                className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'datagrid' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                                <Table2 size={16} /> Data Grid
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('lastmeeting')}
-                                className={`flex items-center gap-2 px-5 py-4 text-sm font-black transition-colors border-b-2 ${activeTab === 'lastmeeting' ? 'border-amber-500 text-amber-600 dark:text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                                <FileText size={16} /> Last Meeting
-                            </button>
+                <div className="glass-card rounded-3xl overflow-hidden min-h-[760px] flex flex-col border border-indigo-100/60 dark:border-indigo-500/20">
+                    <div className="px-5 py-4 border-b border-indigo-100/70 dark:border-indigo-500/20 bg-gradient-to-r from-indigo-50/80 via-violet-50/60 to-white dark:from-indigo-500/15 dark:via-violet-500/10 dark:to-transparent">
+                        <div className="flex items-center gap-2">
+                            <Table2 size={18} className="text-violet-600" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Data Grid</h2>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">Right Panel</span>
                         </div>
-
-                        {activeTab === 'datagrid' ? (
-                            <div className="flex-1 flex flex-col overflow-hidden">
-                                <InlineDataGrid deptId={deptIdInt} />
-                            </div>
-                        ) : (
-                            <div className="p-5 flex-1 relative overflow-auto custom-scrollbar">
-                                {!lastMeeting ? (
-                                    <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                        <FileText size={32} className="mb-3 opacity-30" />
-                                        <p className="text-sm">No past meetings found</p>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="flex items-center justify-between mb-3">
-                                            <p className="text-xs font-black uppercase text-slate-400">
-                                                Last meeting: {format(new Date(lastMeeting.scheduled_date), 'd MMM yyyy')}
-                                            </p>
-                                            <button
-                                                onClick={() => setSelectedMeeting(lastMeeting)}
-                                                className="text-xs text-amber-600 dark:text-amber-400 font-bold hover:underline flex items-center gap-1"
-                                            >
-                                                Open Meeting <ChevronRight size={12} />
-                                            </button>
-                                        </div>
-
-                                        <div className="rounded-2xl border border-slate-100 dark:border-white/10 overflow-auto">
-                                            <table className="w-full text-xs">
-                                                <thead className="bg-slate-50 dark:bg-white/5">
-                                                    <tr>
-                                                        {lastMeetingCols.map((c, idx) => (
-                                                            <th key={idx} className="px-3 py-2 text-left font-black uppercase tracking-wider text-slate-500">{c}</th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
-                                                    {lastMeetingRows.length === 0 ? (
-                                                        <tr>
-                                                            <td colSpan={lastMeetingCols.length} className="px-3 py-8 text-center text-slate-400 italic">No action rows recorded yet.</td>
-                                                        </tr>
-                                                    ) : (
-                                                        lastMeetingRows.map((row, rIdx) => (
-                                                            <tr key={rIdx}>
-                                                                {lastMeetingCols.map((_, cIdx) => (
-                                                                    <td key={cIdx} className="px-3 py-2 text-slate-700 dark:text-slate-300">
-                                                                        {row[cIdx] || <span className="text-slate-300 dark:text-white/20">—</span>}
-                                                                    </td>
-                                                                ))}
-                                                            </tr>
-                                                        ))
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        )}
+                        <p className="text-xs text-slate-500 mt-1">Department-level tracker sheet</p>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                        <InlineDataGrid deptId={deptIdInt} />
                     </div>
                 </div>
             </div>

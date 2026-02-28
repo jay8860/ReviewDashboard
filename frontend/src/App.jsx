@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Overview from './pages/Overview';
 import Departments from './pages/Departments';
 import DepartmentDetail from './pages/DepartmentDetail';
+import MeetingWorkspace from './pages/MeetingWorkspace';
 import ReviewDetail from './pages/ReviewDetail';
 import Tasks from './pages/Tasks';
 import Planner from './pages/Planner';
@@ -61,6 +62,11 @@ function App() {
                 <Route path="/departments/:deptId" element={
                     <ProtectedRoute user={user}>
                         <DepartmentDetail user={user} onLogout={handleLogout} />
+                    </ProtectedRoute>
+                } />
+                <Route path="/departments/:deptId/meetings/:meetingId" element={
+                    <ProtectedRoute user={user}>
+                        <MeetingWorkspace user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 } />
                 <Route path="/reviews/:sessionId" element={
