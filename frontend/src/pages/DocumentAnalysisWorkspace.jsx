@@ -7,6 +7,7 @@ import {
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
+import MarkdownAnalysis from '../components/MarkdownAnalysis';
 
 const formatSize = (bytes = 0) => {
     if (!bytes) return '0 B';
@@ -198,9 +199,7 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                             </div>
                         ) : doc.analysis_output ? (
                             <div className="rounded-2xl border border-violet-100 bg-violet-50/35 p-5 max-h-[72vh] overflow-auto custom-scrollbar">
-                                <pre className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
-                                    {doc.analysis_output}
-                                </pre>
+                                <MarkdownAnalysis content={doc.analysis_output} />
                             </div>
                         ) : (
                             <div className="rounded-2xl border border-violet-100 bg-violet-50/35 p-5">

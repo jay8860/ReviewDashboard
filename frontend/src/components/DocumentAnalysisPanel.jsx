@@ -6,6 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useToast } from './Toast';
+import MarkdownAnalysis from './MarkdownAnalysis';
 
 const formatSize = (bytes = 0) => {
     if (!bytes) return '0 B';
@@ -55,11 +56,19 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         loadDocs();
     }, [deptId, meetingId]);
 
-    const uploadAndAnalyzeDefault = async () => {
+    const uploadAndAnalyze = async (mode, promptText = null) => {
         if (!selectedFile) {
             toast.error('Please select a file first');
             return;
         }
+
+        const isCustom = mode === 'custom';
+        const cleanPrompt = isCustom ? (promptText || '').trim() : null;
+        if (isCustom && !cleanPrompt) {
+            toast.error('Custom prompt is required');
+            return;
+        }
+
         setUploading(true);
         try {
             const created = isMeetingScope
@@ -69,15 +78,28 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
             setDocs(prev => [created, ...prev]);
             setSelectedFile(null);
 
-            // Default mode is automatically applied after upload.
-            await runAnalysis(created.id, 'default');
-            toast.success('Uploaded and analyzed (default mode)');
+            await runAnalysis(created.id, mode, cleanPrompt);
+            toast.success(
+                isCustom
+                    ? 'Uploaded and analyzed (custom mode)'
+                    : 'Uploaded and analyzed (default mode)'
+            );
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Upload failed';
             toast.error(msg);
         } finally {
             setUploading(false);
         }
+    };
+
+    const uploadAndAnalyzeDefault = async () => {
+        await uploadAndAnalyze('default');
+    };
+
+    const uploadAndAnalyzeCustom = async () => {
+        const promptText = window.prompt('Enter custom instruction for this document analysis:');
+        if (!promptText || !promptText.trim()) return;
+        await uploadAndAnalyze('custom', promptText);
     };
 
     const runAnalysis = async (docId, mode, promptText = null) => {
@@ -178,14 +200,24 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                     {selectedFile && (
                         <span className="text-xs text-slate-500 font-semibold truncate max-w-[300px]">{selectedFile.name}</span>
                     )}
-                    <button
-                        onClick={uploadAndAnalyzeDefault}
-                        disabled={uploading}
-                        className="ml-auto px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-black hover:bg-violet-700 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
-                    >
-                        {uploading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                        {uploading ? 'Uploading…' : 'Upload + Default Analyze'}
-                    </button>
+                    <div className="ml-auto flex items-center gap-2">
+                        <button
+                            onClick={uploadAndAnalyzeCustom}
+                            disabled={uploading}
+                            className="px-4 py-2 rounded-xl bg-indigo-100 text-indigo-700 text-xs font-black hover:bg-indigo-200 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
+                        >
+                            {uploading ? <Loader2 size={13} className="animate-spin" /> : <MessageSquareText size={13} />}
+                            {uploading ? 'Uploading…' : 'Upload + Custom Analyze'}
+                        </button>
+                        <button
+                            onClick={uploadAndAnalyzeDefault}
+                            disabled={uploading}
+                            className="px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-black hover:bg-violet-700 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
+                        >
+                            {uploading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            {uploading ? 'Uploading…' : 'Upload + Default Analyze'}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -258,8 +290,8 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                                         {doc.analysis_prompt && (
                                             <p className="text-[11px] text-violet-600 mb-2"><span className="font-black">Prompt:</span> {doc.analysis_prompt}</p>
                                         )}
-                                        <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed max-h-72 overflow-auto custom-scrollbar">
-                                            {doc.analysis_output}
+                                        <div className="max-h-72 overflow-auto custom-scrollbar">
+                                            <MarkdownAnalysis content={doc.analysis_output} compact />
                                         </div>
                                     </div>
                                 ) : doc.analysis_error ? (
