@@ -312,6 +312,7 @@ const Tasks = ({ user, onLogout }) => {
     const [searchParams] = useSearchParams();
     const initialTabParam = searchParams.get('tab');
     const initialTab = ['all', 'today', 'important'].includes(initialTabParam) ? initialTabParam : 'all';
+    const initialStatusParam = searchParams.get('status');
     const [tasks, setTasks] = useState([]);
     const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0, important: 0 });
     const [departments, setDepartments] = useState([]);
@@ -324,7 +325,7 @@ const Tasks = ({ user, onLogout }) => {
 
     // Filters
     const [search, setSearch] = useState(searchParams.get('search') || '');
-    const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
+    const [filterStatus, setFilterStatus] = useState(initialStatusParam || 'Pending,Overdue');
     const [filterDept, setFilterDept] = useState(searchParams.get('department_id') || '');
     const [filterAgency, setFilterAgency] = useState(searchParams.get('agency') || '');
     const [sortBy, setSortBy] = useState('deadline_date');
