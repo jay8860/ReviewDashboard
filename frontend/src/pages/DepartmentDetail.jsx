@@ -33,14 +33,26 @@ const WAIcon = () => (
     </svg>
 );
 
-// ── Agenda Status Badge ────────────────────────────────────────────────────────
-const AgendaBadge = ({ status }) => {
-    const map = {
-        Open: 'bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400',
-        Done: 'bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400',
-        Deferred: 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-white/10 dark:text-slate-400',
-    };
-    return <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${map[status] || map.Open}`}>{status}</span>;
+const getMeetingWhatsAppMessage = (meeting, deptName) => {
+    const agendaSnapshot = Array.isArray(meeting?.agenda_snapshot) ? meeting.agenda_snapshot : [];
+    const dateText = meeting?.scheduled_date ? format(new Date(meeting.scheduled_date), 'd MMMM yyyy') : 'TBD';
+    const timeText = meeting?.scheduled_time ? `\n⏰ Time: ${meeting.scheduled_time}` : '';
+    const venueText = meeting?.venue ? `\n📍 Venue: ${meeting.venue}` : '';
+    const notesText = meeting?.notes ? `\n\n📝 Notes:\n${meeting.notes}` : '';
+    const agendaText = agendaSnapshot.length
+        ? agendaSnapshot.map((a, idx) => `${idx + 1}. ${a?.title || ''}${a?.details ? ` — ${a.details}` : ''}`).join('\n')
+        : 'No agenda points attached.';
+
+    return `📋 *Meeting Agenda – ${deptName || 'Department'}*\n📅 Date: ${dateText}${timeText}${venueText}\n\n*Agenda Points:*\n${agendaText}${notesText}`;
+};
+
+const getMeetingWhatsAppLink = (meeting, deptName) => {
+    const cleanPhone = (meeting?.officer_phone || '').replace(/\D/g, '');
+    const msg = getMeetingWhatsAppMessage(meeting, deptName);
+    if (cleanPhone) {
+        return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    }
+    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
 };
 
 // ── Schedule Meeting Modal ─────────────────────────────────────────────────────
@@ -642,23 +654,31 @@ const InlineDataGrid = ({ deptId }) => {
 // ── Inline Agenda Table ────────────────────────────────────────────────────────
 const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const toast = useToast();
-    const [editingId, setEditingId] = useState(null);
-    const [editValues, setEditValues] = useState({ title: '', details: '' });
+    const [editMode, setEditMode] = useState(false);
+    const [localRows, setLocalRows] = useState([]);
     const [addingNew, setAddingNew] = useState(false);
     const [newRow, setNewRow] = useState({ title: '', details: '' });
     const [saving, setSaving] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
-    const [bulkEditOpen, setBulkEditOpen] = useState(false);
-    const [bulkRows, setBulkRows] = useState([]);
-    const [bulkSaving, setBulkSaving] = useState(false);
 
     useEffect(() => {
-        const validIds = new Set(agenda.map(a => a.id));
+        if (!editMode) return;
+        setLocalRows(agenda.map(item => ({
+            id: item.id,
+            title: item.title || '',
+            details: item.details || '',
+            status: item.status || 'Open',
+        })));
+        setSelectedIds([]);
+    }, [editMode, agenda]);
+
+    useEffect(() => {
+        const validIds = new Set(localRows.map(r => r.id));
         setSelectedIds(prev => prev.filter(id => validIds.has(id)));
-    }, [agenda]);
+    }, [localRows]);
 
     const selectedCount = selectedIds.length;
-    const allSelected = agenda.length > 0 && selectedCount === agenda.length;
+    const allSelected = editMode && localRows.length > 0 && selectedCount === localRows.length;
 
     const clearSelection = () => setSelectedIds([]);
     const isSelected = (id) => selectedIds.includes(id);
@@ -670,41 +690,53 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             clearSelection();
             return;
         }
-        setSelectedIds(agenda.map(a => a.id));
+        setSelectedIds(localRows.map(r => r.id));
     };
 
-    const startEdit = (ap) => {
-        setEditingId(ap.id);
-        setEditValues({ title: ap.title, details: ap.details || '' });
+    const updateLocalRow = (id, key, value) => {
+        setLocalRows(prev => prev.map(item => (item.id === id ? { ...item, [key]: value } : item)));
     };
 
-    const saveEdit = async (ap) => {
-        if (!editValues.title.trim()) return;
+    const enterEdit = () => {
+        setEditMode(true);
+        setAddingNew(false);
+    };
+
+    const cancelEdit = () => {
+        setEditMode(false);
+        setLocalRows([]);
+        setSelectedIds([]);
+        setAddingNew(false);
+    };
+
+    const saveAll = async () => {
+        if (!editMode) return;
+        const payloadItems = localRows.map(item => ({
+            id: item.id,
+            title: (item.title || '').trim(),
+            details: (item.details || '').trim(),
+            status: item.status || 'Open',
+        }));
+
+        if (payloadItems.some(item => !item.title)) {
+            toast.error('Title cannot be empty');
+            return;
+        }
+
+        setSaving(true);
         try {
-            await api.updateAgendaPoint(deptId, ap.id, { title: editValues.title.trim(), details: editValues.details.trim() });
-            setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, title: editValues.title.trim(), details: editValues.details.trim() } : a));
-            setEditingId(null);
-        } catch { toast.error('Failed to update'); }
-    };
-
-    const cancelEdit = () => setEditingId(null);
-
-    const toggleStatus = async (ap) => {
-        const next = ap.status === 'Open' ? 'Done' : ap.status === 'Done' ? 'Deferred' : 'Open';
-        try {
-            await api.updateAgendaPoint(deptId, ap.id, { status: next });
-            setAgenda(prev => prev.map(a => a.id === ap.id ? { ...a, status: next } : a));
-        } catch { toast.error('Failed to update status'); }
-    };
-
-    const deleteAp = async (apId) => {
-        if (!window.confirm('Remove this agenda point?')) return;
-        try {
-            await api.deleteAgendaPoint(deptId, apId);
-            setAgenda(prev => prev.filter(a => a.id !== apId));
-            setSelectedIds(prev => prev.filter(id => id !== apId));
-            toast.success('Removed');
-        } catch { toast.error('Failed to remove'); }
+            const updated = await api.bulkUpdateAgendaPoints(deptId, { items: payloadItems });
+            const updatedById = new Map(updated.map(item => [item.id, item]));
+            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
+            setEditMode(false);
+            setLocalRows([]);
+            setSelectedIds([]);
+            toast.success(`Saved ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
+        } catch {
+            toast.error('Failed to save agenda');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const saveNewRow = async () => {
@@ -721,76 +753,15 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
 
     const openCount = agenda.filter(a => a.status === 'Open').length;
 
-    const applyBulkStatus = async (status) => {
-        if (!selectedCount) return;
-        setSaving(true);
-        try {
-            const updated = await api.bulkUpdateAgendaPoints(deptId, {
-                items: selectedIds.map(id => ({ id, status })),
-            });
-            const updatedById = new Map(updated.map(item => [item.id, item]));
-            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
-            toast.success(`Updated ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
-        } catch {
-            toast.error('Failed to apply bulk status');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const openBulkEdit = () => {
-        if (!selectedCount) return;
-        const selectedRows = agenda
-            .filter(item => selectedIds.includes(item.id))
-            .map(item => ({
-                id: item.id,
-                title: item.title || '',
-                details: item.details || '',
-                status: item.status || 'Open',
-            }));
-        setBulkRows(selectedRows);
-        setBulkEditOpen(true);
-    };
-
-    const updateBulkRow = (id, key, value) => {
-        setBulkRows(prev => prev.map(item => (item.id === id ? { ...item, [key]: value } : item)));
-    };
-
-    const saveBulkEdit = async () => {
-        const payloadItems = bulkRows.map(item => ({
-            id: item.id,
-            title: item.title.trim(),
-            details: (item.details || '').trim(),
-            status: item.status || 'Open',
-        }));
-
-        if (payloadItems.some(item => !item.title)) {
-            toast.error('Title cannot be empty');
-            return;
-        }
-
-        setBulkSaving(true);
-        try {
-            const updated = await api.bulkUpdateAgendaPoints(deptId, { items: payloadItems });
-            const updatedById = new Map(updated.map(item => [item.id, item]));
-            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
-            setBulkEditOpen(false);
-            toast.success(`Saved ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
-        } catch {
-            toast.error('Failed to save bulk edit');
-        } finally {
-            setBulkSaving(false);
-        }
-    };
-
     const deleteSelected = async () => {
-        if (!selectedCount) return;
+        if (!editMode || !selectedCount) return;
         const idsToDelete = [...selectedIds];
         if (!window.confirm(`Delete ${idsToDelete.length} selected agenda item${idsToDelete.length > 1 ? 's' : ''}?`)) return;
         setSaving(true);
         try {
             await api.bulkDeleteAgendaPoints(deptId, { ids: idsToDelete });
             setAgenda(prev => prev.filter(item => !idsToDelete.includes(item.id)));
+            setLocalRows(prev => prev.filter(item => !idsToDelete.includes(item.id)));
             clearSelection();
             toast.success(`Deleted ${idsToDelete.length} agenda item${idsToDelete.length > 1 ? 's' : ''}`);
         } catch {
@@ -808,20 +779,53 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     <h2 className="text-xl font-black text-slate-800 dark:text-white">Agenda / To Do</h2>
                     <span className="text-xs bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 font-black px-2 py-0.5 rounded-full">{openCount} open</span>
                 </div>
-                <button onClick={() => setAddingNew(true)}
-                    className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 transition-colors">
-                    <Plus size={16} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setAddingNew(true)}
+                        className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 transition-colors"
+                        title="Add agenda item"
+                    >
+                        <Plus size={16} />
+                    </button>
+                    {editMode ? (
+                        <>
+                            <button
+                                onClick={deleteSelected}
+                                disabled={!selectedCount || saving}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 hover:bg-rose-200 disabled:opacity-60 transition-colors"
+                            >
+                                Delete Selected
+                            </button>
+                            <button
+                                onClick={cancelEdit}
+                                disabled={saving}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-white/15 text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-60 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveAll}
+                                disabled={saving}
+                                className="flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 transition-colors"
+                            >
+                                <Save size={13} /> {saving ? 'Saving…' : 'Save All'}
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={enterEdit}
+                            className="flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                        >
+                            <Edit2 size={13} /> Edit
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {selectedCount > 0 && (
+            {editMode && selectedCount > 0 && (
                 <div className="px-5 py-2.5 border-b border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/70 dark:bg-indigo-500/10">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">{selectedCount} selected</span>
-                        <button onClick={() => applyBulkStatus('Open')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors disabled:opacity-60">Mark Open</button>
-                        <button onClick={() => applyBulkStatus('Done')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors disabled:opacity-60">Mark Done</button>
-                        <button onClick={() => applyBulkStatus('Deferred')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors disabled:opacity-60">Mark Deferred</button>
-                        <button onClick={openBulkEdit} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors disabled:opacity-60">Bulk Edit</button>
+                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">{selectedCount} selected for delete</span>
                         <button onClick={deleteSelected} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 transition-colors disabled:opacity-60">Delete Selected</button>
                         <button onClick={clearSelection} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60">Clear</button>
                     </div>
@@ -832,85 +836,76 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                 <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 z-10">
                         <tr>
-                            <th className="px-3 py-2.5 text-center w-10">
-                                <input
-                                    type="checkbox"
-                                    checked={allSelected}
-                                    onChange={toggleSelectAll}
-                                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                                    aria-label="Select all agenda items"
-                                />
-                            </th>
+                            {editMode && (
+                                <th className="px-3 py-2.5 text-center w-10">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleSelectAll}
+                                        className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                        aria-label="Select all agenda items"
+                                    />
+                                </th>
+                            )}
                             <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 w-8">#</th>
                             <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Agenda Item</th>
                             <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Details</th>
-                            <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-slate-400 w-20">Status</th>
                             <th className="px-2 py-2.5 w-16"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                         {agenda.length === 0 && !addingNew && (
-                            <tr><td colSpan={6} className="text-center py-10 text-slate-400 italic text-xs">
+                            <tr><td colSpan={editMode ? 5 : 4} className="text-center py-10 text-slate-400 italic text-xs">
                                 No agenda points yet. Click + to add one.
                             </td></tr>
                         )}
-                        {agenda.map((ap, i) => (
+                        {(editMode ? localRows : agenda).map((ap, i) => (
                             <tr key={ap.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
-                                <td className="px-3 py-2 text-center">
-                                    <input
-                                        type="checkbox"
-                                        checked={isSelected(ap.id)}
-                                        onChange={() => toggleSelectOne(ap.id)}
-                                        className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                                        aria-label={`Select agenda item ${ap.title}`}
-                                    />
-                                </td>
+                                {editMode && (
+                                    <td className="px-3 py-2 text-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected(ap.id)}
+                                            onChange={() => toggleSelectOne(ap.id)}
+                                            className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                            aria-label={`Select agenda item ${ap.title}`}
+                                        />
+                                    </td>
+                                )}
                                 <td className="px-4 py-2 text-xs text-slate-400 font-bold">{i + 1}</td>
                                 <td className="px-3 py-2">
-                                    {editingId === ap.id ? (
-                                        <input autoFocus value={editValues.title}
-                                            onChange={e => setEditValues(p => ({ ...p, title: e.target.value }))}
-                                            onKeyDown={e => { if (e.key === 'Enter') saveEdit(ap); if (e.key === 'Escape') cancelEdit(); }}
-                                            className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
+                                    {editMode ? (
+                                        <input
+                                            value={ap.title}
+                                            onChange={e => updateLocalRow(ap.id, 'title', e.target.value)}
+                                            className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        />
                                     ) : (
-                                        <span className={`text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer hover:text-indigo-600 ${ap.status === 'Done' ? 'line-through opacity-50' : ''}`}
-                                            onClick={() => startEdit(ap)}>{ap.title}</span>
+                                        <span className={`text-sm font-semibold text-slate-700 dark:text-slate-200 ${ap.status === 'Done' ? 'line-through opacity-50' : ''}`}>
+                                            {ap.title}
+                                        </span>
                                     )}
                                 </td>
                                 <td className="px-3 py-2 hidden sm:table-cell">
-                                    {editingId === ap.id ? (
-                                        <input value={editValues.details}
-                                            onChange={e => setEditValues(p => ({ ...p, details: e.target.value }))}
-                                            onKeyDown={e => { if (e.key === 'Enter') saveEdit(ap); if (e.key === 'Escape') cancelEdit(); }}
+                                    {editMode ? (
+                                        <input
+                                            value={ap.details || ''}
+                                            onChange={e => updateLocalRow(ap.id, 'details', e.target.value)}
                                             placeholder="Details (optional)"
-                                            className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
+                                            className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        />
                                     ) : (
-                                        <span className="text-xs text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => startEdit(ap)}>{ap.details || <span className="text-slate-200 dark:text-white/20">—</span>}</span>
+                                        <span className="text-xs text-slate-400">
+                                            {ap.details || <span className="text-slate-200 dark:text-white/20">—</span>}
+                                        </span>
                                     )}
                                 </td>
-                                <td className="px-3 py-2 text-center">
-                                    {editingId === ap.id ? (
-                                        <div className="flex gap-1 justify-center">
-                                            <button onClick={() => saveEdit(ap)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={13} /></button>
-                                            <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-50 rounded"><X size={13} /></button>
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => toggleStatus(ap)} title="Click to cycle status">
-                                            <AgendaBadge status={ap.status} />
-                                        </button>
-                                    )}
-                                </td>
-                                <td className="px-2 py-2">
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                                        <button onClick={() => startEdit(ap)} className="p-1 text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"><Edit2 size={12} /></button>
-                                        <button onClick={() => deleteAp(ap.id)} className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded"><Trash2 size={12} /></button>
-                                    </div>
-                                </td>
+                                <td className="px-2 py-2" />
                             </tr>
                         ))}
                         {addingNew && (
                             <tr className="bg-indigo-50/40 dark:bg-indigo-900/10">
-                                <td className="px-3 py-2" />
+                                {editMode && <td className="px-3 py-2" />}
                                 <td className="px-4 py-2 text-xs text-slate-400 font-bold">{agenda.length + 1}</td>
                                 <td className="px-3 py-2">
                                     <input autoFocus value={newRow.title} onChange={e => setNewRow(p => ({ ...p, title: e.target.value }))}
@@ -924,9 +919,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                         onKeyDown={e => { if (e.key === 'Enter') saveNewRow(); if (e.key === 'Escape') { setAddingNew(false); setNewRow({ title: '', details: '' }); } }}
                                         className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
                                 </td>
-                                <td className="px-3 py-2 text-center">
-                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Open</span>
-                                </td>
                                 <td className="px-2 py-2">
                                     <div className="flex items-center gap-1 justify-end">
                                         <button onClick={saveNewRow} disabled={saving} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={13} /></button>
@@ -938,91 +930,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     </tbody>
                 </table>
             </div>
-
-            <AnimatePresence>
-                {bulkEditOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.97, y: 12 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.97, y: 12 }}
-                            className="glass-card rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-premium-lg"
-                        >
-                            <div className="px-6 py-4 border-b border-indigo-100/80 dark:border-indigo-500/20 flex items-center justify-between bg-gradient-to-r from-indigo-50/90 to-white dark:from-indigo-500/10 dark:to-transparent">
-                                <div>
-                                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Bulk Edit Agenda</h3>
-                                    <p className="text-xs text-slate-500">{bulkRows.length} selected item{bulkRows.length > 1 ? 's' : ''}</p>
-                                </div>
-                                <button onClick={() => setBulkEditOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
-                                    <X size={18} className="text-slate-400" />
-                                </button>
-                            </div>
-
-                            <div className="p-5 overflow-auto custom-scrollbar max-h-[65vh]">
-                                <table className="w-full text-sm">
-                                    <thead className="sticky top-0 bg-indigo-50/90 dark:bg-indigo-500/10 z-10">
-                                        <tr>
-                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600 w-12">#</th>
-                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600">Title</th>
-                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600">Details</th>
-                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600 w-36">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-indigo-100/70 dark:divide-indigo-500/20">
-                                        {bulkRows.map((item, idx) => (
-                                            <tr key={item.id}>
-                                                <td className="px-3 py-2 text-xs text-slate-400 font-bold">{idx + 1}</td>
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        value={item.title}
-                                                        onChange={e => updateBulkRow(item.id, 'title', e.target.value)}
-                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        value={item.details}
-                                                        onChange={e => updateBulkRow(item.id, 'details', e.target.value)}
-                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <select
-                                                        value={item.status}
-                                                        onChange={e => updateBulkRow(item.id, 'status', e.target.value)}
-                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                                    >
-                                                        <option value="Open">Open</option>
-                                                        <option value="Done">Done</option>
-                                                        <option value="Deferred">Deferred</option>
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div className="px-6 py-4 border-t border-indigo-100/80 dark:border-indigo-500/20 flex items-center justify-end gap-2 bg-white/80 dark:bg-slate-900/40">
-                                <button
-                                    onClick={() => setBulkEditOpen(false)}
-                                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={saveBulkEdit}
-                                    disabled={bulkSaving}
-                                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 transition-colors inline-flex items-center gap-2"
-                                >
-                                    <Save size={14} />
-                                    Save All
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
         </div>
     );
 };
@@ -1153,118 +1060,131 @@ const DepartmentDetail = ({ user, onLogout }) => {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-                <div className="space-y-6">
-                    <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[360px]">
-                        <AgendaTable deptId={deptIdInt} agenda={agenda} setAgenda={setAgenda} />
-                    </div>
-
-                    <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-indigo-100/70 dark:border-indigo-500/20 bg-gradient-to-r from-violet-50/70 to-white dark:from-violet-500/10 dark:to-transparent">
-                            <div className="flex items-center gap-2">
-                                <Calendar size={20} className="text-violet-500" />
-                                <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
-                                <span className="text-xs bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-black px-2 py-0.5 rounded-full">{meetings.length}</span>
-                            </div>
-                            <button onClick={() => setMeetingModal(true)}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors">
-                                <Plus size={14} /> Schedule
-                            </button>
-                        </div>
-
-                        <div className="px-5 py-2 border-b border-indigo-50 dark:border-indigo-500/15">
-                            <p className="text-[11px] font-semibold text-violet-600 dark:text-violet-300">
-                                Click any meeting to open the Meeting Workspace and capture MOM + action points.
-                            </p>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar">
-                            {meetings.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                                    <Calendar size={32} className="mb-3 opacity-30" />
-                                    <p className="text-sm">No meetings scheduled yet</p>
-                                    <button onClick={() => setMeetingModal(true)} className="mt-3 text-xs text-violet-600 font-bold hover:underline">Schedule first meeting →</button>
-                                </div>
-                            ) : (
-                                <table className="w-full text-sm">
-                                    <thead className="sticky top-0 bg-violet-50/80 dark:bg-violet-500/10 z-10">
-                                        <tr>
-                                            <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">#</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">Date</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden sm:table-cell">Venue</th>
-                                            <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-violet-500">Status</th>
-                                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden md:table-cell">Entries</th>
-                                            <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-violet-500">Open</th>
-                                            <th className="px-2 py-2.5 w-10"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-indigo-50 dark:divide-indigo-500/10">
-                                        {meetings.map((m, i) => (
-                                            <tr
-                                                key={m.id}
-                                                className="group hover:bg-violet-50/40 dark:hover:bg-violet-500/8 transition-colors cursor-pointer"
-                                                onClick={() => navigate(`/departments/${deptIdInt}/meetings/${m.id}`)}
-                                            >
-                                                <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
-                                                <td className="px-3 py-3">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
-                                                            {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
-                                                        </span>
-                                                        {m.scheduled_time && (
-                                                            <span className="text-[11px] text-slate-400">{m.scheduled_time}</span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-3 py-3 hidden sm:table-cell">
-                                                    <span className="text-xs text-slate-500">{m.venue || <span className="text-slate-300 dark:text-white/20">—</span>}</span>
-                                                </td>
-                                                <td className="px-3 py-3 text-center">
-                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusColors[m.status] || statusColors.Scheduled}`}>
-                                                        {m.status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-3 hidden md:table-cell">
-                                                    <span className="text-xs text-slate-500">
-                                                        {m.action_table_rows?.length ? `${m.action_table_rows.length} row${m.action_table_rows.length > 1 ? 's' : ''}` : <span className="text-slate-300 dark:text-white/20">—</span>}
-                                                    </span>
-                                                </td>
-                                                <td className="px-3 py-3 text-right">
-                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-600">
-                                                        Workspace <ChevronRight size={12} />
-                                                    </span>
-                                                </td>
-                                                <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
-                                                    <button onClick={() => handleDeleteMeeting(m.id)}
-                                                        className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-
-                    <DocumentAnalysisPanel
-                        deptId={deptIdInt}
-                        title="Department Documents & AI Analysis"
-                    />
+                <div className="glass-card rounded-3xl overflow-hidden flex flex-col min-h-[360px]">
+                    <AgendaTable deptId={deptIdInt} agenda={agenda} setAgenda={setAgenda} />
                 </div>
 
-                <div className="glass-card rounded-3xl overflow-hidden min-h-[760px] flex flex-col border border-indigo-100/60 dark:border-indigo-500/20">
+                <div className="glass-card rounded-3xl overflow-hidden min-h-[360px] flex flex-col border border-indigo-100/60 dark:border-indigo-500/20">
                     <div className="px-5 py-4 border-b border-indigo-100/70 dark:border-indigo-500/20 bg-gradient-to-r from-indigo-50/80 via-violet-50/60 to-white dark:from-indigo-500/15 dark:via-violet-500/10 dark:to-transparent">
                         <div className="flex items-center gap-2">
                             <Table2 size={18} className="text-violet-600" />
                             <h2 className="text-xl font-black text-slate-800 dark:text-white">Data Grid</h2>
-                            <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">Right Panel</span>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 font-black px-2 py-0.5 rounded-full">Top Right</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">Department-level tracker sheet</p>
                     </div>
                     <div className="flex-1 overflow-hidden">
                         <InlineDataGrid deptId={deptIdInt} />
                     </div>
+                </div>
+
+                <div className="glass-card rounded-3xl overflow-hidden min-h-[320px] flex flex-col xl:col-span-2">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-indigo-100/70 dark:border-indigo-500/20 bg-gradient-to-r from-violet-50/70 to-white dark:from-violet-500/10 dark:to-transparent">
+                        <div className="flex items-center gap-2">
+                            <Calendar size={20} className="text-violet-500" />
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Meetings</h2>
+                            <span className="text-xs bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400 font-black px-2 py-0.5 rounded-full">{meetings.length}</span>
+                        </div>
+                        <button onClick={() => setMeetingModal(true)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors">
+                            <Plus size={14} /> Schedule
+                        </button>
+                    </div>
+
+                    <div className="px-5 py-2 border-b border-indigo-50 dark:border-indigo-500/15">
+                        <p className="text-[11px] font-semibold text-violet-600 dark:text-violet-300">
+                            Click any meeting to open the Meeting Workspace and capture MOM + action points.
+                        </p>
+                    </div>
+
+                    <div className="flex-1 overflow-auto custom-scrollbar">
+                        {meetings.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                <Calendar size={32} className="mb-3 opacity-30" />
+                                <p className="text-sm">No meetings scheduled yet</p>
+                                <button onClick={() => setMeetingModal(true)} className="mt-3 text-xs text-violet-600 font-bold hover:underline">Schedule first meeting →</button>
+                            </div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead className="sticky top-0 bg-violet-50/80 dark:bg-violet-500/10 z-10">
+                                    <tr>
+                                        <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">#</th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500">Date</th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden sm:table-cell">Venue</th>
+                                        <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-violet-500">Status</th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-violet-500 hidden md:table-cell">Entries</th>
+                                        <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wider text-violet-500">Notify</th>
+                                        <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wider text-violet-500">Open</th>
+                                        <th className="px-2 py-2.5 w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-indigo-50 dark:divide-indigo-500/10">
+                                    {meetings.map((m, i) => (
+                                        <tr
+                                            key={m.id}
+                                            className="group hover:bg-violet-50/40 dark:hover:bg-violet-500/8 transition-colors cursor-pointer"
+                                            onClick={() => navigate(`/departments/${deptIdInt}/meetings/${m.id}`)}
+                                        >
+                                            <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
+                                            <td className="px-3 py-3">
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
+                                                        {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
+                                                    </span>
+                                                    {m.scheduled_time && (
+                                                        <span className="text-[11px] text-slate-400">{m.scheduled_time}</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-3 hidden sm:table-cell">
+                                                <span className="text-xs text-slate-500">{m.venue || <span className="text-slate-300 dark:text-white/20">—</span>}</span>
+                                            </td>
+                                            <td className="px-3 py-3 text-center">
+                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${statusColors[m.status] || statusColors.Scheduled}`}>
+                                                    {m.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-3 hidden md:table-cell">
+                                                <span className="text-xs text-slate-500">
+                                                    {m.action_table_rows?.length ? `${m.action_table_rows.length} row${m.action_table_rows.length > 1 ? 's' : ''}` : <span className="text-slate-300 dark:text-white/20">—</span>}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                                <a
+                                                    href={getMeetingWhatsAppLink(m, dept.name)}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-[11px] font-black transition-colors"
+                                                    title="Send meeting message on WhatsApp"
+                                                >
+                                                    <WAIcon />
+                                                    WA
+                                                </a>
+                                            </td>
+                                            <td className="px-3 py-3 text-right">
+                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-600">
+                                                    Workspace <ChevronRight size={12} />
+                                                </span>
+                                            </td>
+                                            <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
+                                                <button onClick={() => handleDeleteMeeting(m.id)}
+                                                    className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+
+                <div className="xl:col-span-2">
+                    <DocumentAnalysisPanel
+                        deptId={deptIdInt}
+                        title="Department Documents & AI Analysis"
+                    />
                 </div>
             </div>
 
