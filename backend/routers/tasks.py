@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
@@ -131,6 +131,7 @@ def get_tasks(
     is_pinned: Optional[bool] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
+    sort_dir: Optional[str] = "asc",
     db: Session = Depends(get_db)
 ):
     today = date.today()
@@ -169,10 +170,10 @@ def get_tasks(
             models.Task.steno_comment.ilike(f"%{search}%"),
         ))
 
-    if sort_by == "deadline_date":
-        q = q.order_by(models.Task.deadline_date.asc().nullslast())
-    elif sort_by == "priority":
-        from sqlalchemy import case
+    direction = (sort_dir or "asc").strip().lower()
+    is_desc = direction == "desc"
+
+    if sort_by == "priority":
         priority_order = case(
             (models.Task.priority == "Critical", 0),
             (models.Task.priority == "High", 1),
@@ -180,11 +181,19 @@ def get_tasks(
             (models.Task.priority == "Low", 3),
             else_=4
         )
-        q = q.order_by(priority_order)
-    elif sort_by == "created_at":
-        q = q.order_by(models.Task.created_at.desc())
+        q = q.order_by(priority_order.desc() if is_desc else priority_order.asc())
+    elif sort_by == "task_number":
+        q = q.order_by(models.Task.task_number.desc().nullslast() if is_desc else models.Task.task_number.asc().nullslast())
+    elif sort_by == "description":
+        q = q.order_by(models.Task.description.desc().nullslast() if is_desc else models.Task.description.asc().nullslast())
+    elif sort_by == "assigned_agency":
+        q = q.order_by(models.Task.assigned_agency.desc().nullslast() if is_desc else models.Task.assigned_agency.asc().nullslast())
     elif sort_by == "allocated_date":
-        q = q.order_by(models.Task.allocated_date.desc().nullslast())
+        q = q.order_by(models.Task.allocated_date.desc().nullslast() if is_desc else models.Task.allocated_date.asc().nullslast())
+    elif sort_by == "created_at":
+        q = q.order_by(models.Task.created_at.desc() if is_desc else models.Task.created_at.asc())
+    else:  # deadline_date
+        q = q.order_by(models.Task.deadline_date.desc().nullslast() if is_desc else models.Task.deadline_date.asc().nullslast())
 
     return [task_to_dict(t) for t in q.all()]
 
@@ -260,13 +269,26 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    payload = data.dict(exclude_none=True)
+    payload = data.dict(exclude_unset=True)
     if "status" in payload:
         payload["status"] = _normalize_task_status(payload.get("status"))
+
+    if "completion_date" in payload:
+        if payload["completion_date"] in ("", None):
+            payload["completion_date"] = None
+
     for k, v in payload.items():
         setattr(task, k, v)
-    if data.completion_date:
-        task.status = "Completed"
+
+    # Keep completion_date and status consistent in both directions.
+    if payload.get("status") == "Completed":
+        if not task.completion_date:
+            task.completion_date = str(date.today())
+    elif "status" in payload and payload.get("status") in {"Pending", "Overdue"}:
+        task.completion_date = None
+    elif "completion_date" in payload and payload.get("completion_date") is None and task.status == "Completed":
+        task.status = "Pending"
+
     db.commit()
     db.refresh(task)
     return task_to_dict(task)

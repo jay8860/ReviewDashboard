@@ -407,11 +407,12 @@ const TaskTable = ({
     selectedIds = [],
     onSelectChange,
     bulkMode = false,
+    sort = { key: 'deadline_date', dir: 'asc' },
+    onSortChange = null,
 }) => {
     const [editId, setEditId] = useState(null);
     const [calendarId, setCalendarId] = useState(null);
     const [stenoId, setStenoId] = useState(null);
-    const [sort, setSort] = useState({ key: 'deadline_date', dir: 'asc' });
     const [bulkDrafts, setBulkDrafts] = useState({});
     const [savingCells, setSavingCells] = useState({});
     const [scheduleTask, setScheduleTask] = useState(null);
@@ -447,18 +448,10 @@ const TaskTable = ({
     }, [bulkMode, tasks]);
 
     const handleSort = (key) => {
-        setSort(s => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }));
-    };
-
-    const getDueDeltaDays = (task) => {
-        if (!task || task.completion_date || task.status === 'Completed') return null;
-        if (!task.deadline_date) return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const deadline = new Date(task.deadline_date);
-        if (Number.isNaN(deadline.getTime())) return null;
-        deadline.setHours(0, 0, 0, 0);
-        return differenceInDays(deadline, today);
+        if (!onSortChange) return;
+        const defaultDir = ['allocated_date', 'created_at'].includes(key) ? 'desc' : 'asc';
+        const nextDir = sort?.key === key ? (sort?.dir === 'asc' ? 'desc' : 'asc') : defaultDir;
+        onSortChange({ key, dir: nextDir });
     };
 
     const handleSaveEdit = async (id, form) => {
@@ -562,28 +555,7 @@ const TaskTable = ({
         onSelectChange(selectedIds.length === tasks.length ? [] : tasks.map(t => t.id));
     };
 
-    // Client-side sort (server also sorts but local UX is faster)
-    const sorted = [...tasks].sort((a, b) => {
-        if (sort.key === 'deadline_date') {
-            const av = getDueDeltaDays(a);
-            const bv = getDueDeltaDays(b);
-            if (av === null && bv === null) return 0;
-            if (av === null) return 1;
-            if (bv === null) return -1;
-            return sort.dir === 'asc' ? av - bv : bv - av;
-        }
-
-        let av = a[sort.key], bv = b[sort.key];
-        if (av === undefined || av === null || av === '') return 1;
-        if (bv === undefined || bv === null || bv === '') return -1;
-        if (sort.key === 'priority') {
-            const order = { Critical: 0, High: 1, Normal: 2, Low: 3 };
-            av = order[av] ?? 9; bv = order[bv] ?? 9;
-        }
-        if (av < bv) return sort.dir === 'asc' ? -1 : 1;
-        if (av > bv) return sort.dir === 'asc' ? 1 : -1;
-        return 0;
-    });
+    const sorted = tasks;
 
     if (tasks.length === 0) return null;
 

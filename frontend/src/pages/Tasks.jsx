@@ -329,6 +329,7 @@ const Tasks = ({ user, onLogout }) => {
     const [filterDept, setFilterDept] = useState(searchParams.get('department_id') || '');
     const [filterAgency, setFilterAgency] = useState(searchParams.get('agency') || '');
     const [sortBy, setSortBy] = useState('deadline_date');
+    const [sortDir, setSortDir] = useState('asc');
     const [currentPage, setCurrentPage] = useState(1);
 
     // Tabs: all | today | important
@@ -359,10 +360,10 @@ const Tasks = ({ user, onLogout }) => {
     }, [tab]);
 
     const buildFilters = useCallback(() => {
-        const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy };
+        const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy, sortDir };
         if (tab === 'today') filters.is_today = true;
         return filters;
-    }, [filterStatus, search, filterDept, filterAgency, sortBy, tab]);
+    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -388,11 +389,11 @@ const Tasks = ({ user, onLogout }) => {
         }
     }, [applyTabFilter, buildFilters]);
 
-    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -881,7 +882,13 @@ const Tasks = ({ user, onLogout }) => {
                         isAdmin={canManageTasks}
                         selectedIds={selectedIds}
                         onSelectChange={setSelectedIds}
-                        bulkMode={bulkMode} />
+                        bulkMode={bulkMode}
+                        sort={{ key: sortBy, dir: sortDir }}
+                        onSortChange={({ key, dir }) => {
+                            setSortBy(key);
+                            setSortDir(dir);
+                        }}
+                    />
                     <div className="px-4 py-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
                         <span className="text-xs font-semibold text-slate-500">
                             Showing {tasks.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE) + 1}

@@ -310,6 +310,7 @@ export const api = {
         if (filters.status) params.append('status', filters.status);
         if (filters.search) params.append('search', filters.search);
         if (filters.sortBy) params.append('sort_by', filters.sortBy);
+        if (filters.sortDir) params.append('sort_dir', filters.sortDir);
         if (filters.is_today !== undefined) params.append('is_today', filters.is_today);
         if (filters.is_pinned !== undefined) params.append('is_pinned', filters.is_pinned);
         params.append('t', Date.now());
