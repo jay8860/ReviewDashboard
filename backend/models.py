@@ -55,6 +55,10 @@ class Department(Base):
     name = Column(String, unique=True, nullable=False)
     short_name = Column(String, nullable=True)         # e.g. "EDU", "HEALTH"
     description = Column(Text, nullable=True)
+    category_name = Column(String, default="General")
+    category_order = Column(Integer, default=0)
+    display_order = Column(Integer, default=0)         # Order within category bucket
+    priority_level = Column(String, default="Normal")  # Critical | High | Normal | Low
     head_name = Column(String, nullable=True)          # Department head / nodal officer
     head_designation = Column(String, nullable=True)
     color = Column(String, default="indigo")           # For UI theming: indigo/emerald/amber/rose/sky

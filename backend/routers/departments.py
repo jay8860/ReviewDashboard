@@ -119,6 +119,22 @@ def _normalize_priority(value: Optional[str]) -> str:
     return "Normal"
 
 
+def _normalize_department_priority(value: Optional[str]) -> str:
+    val = (value or "").strip().lower()
+    if val in {"critical", "crit", "p0"}:
+        return "Critical"
+    if val in {"high", "p1"}:
+        return "High"
+    if val in {"low", "p3"}:
+        return "Low"
+    return "Normal"
+
+
+def _sanitize_category_name(value: Optional[str]) -> str:
+    name = (value or "").strip()
+    return name or "General"
+
+
 def _task_to_dict(task: models.Task) -> dict:
     return {
         "id": task.id,
@@ -271,6 +287,10 @@ class DepartmentCreate(BaseModel):
     name: str
     short_name: Optional[str] = None
     description: Optional[str] = None
+    category_name: Optional[str] = "General"
+    category_order: Optional[int] = None
+    display_order: Optional[int] = None
+    priority_level: Optional[str] = "Normal"
     head_name: Optional[str] = None
     head_designation: Optional[str] = None
     color: Optional[str] = "indigo"
@@ -281,6 +301,10 @@ class DepartmentUpdate(BaseModel):
     name: Optional[str] = None
     short_name: Optional[str] = None
     description: Optional[str] = None
+    category_name: Optional[str] = None
+    category_order: Optional[int] = None
+    display_order: Optional[int] = None
+    priority_level: Optional[str] = None
     head_name: Optional[str] = None
     head_designation: Optional[str] = None
     color: Optional[str] = None
@@ -340,7 +364,11 @@ def get_departments(db: Session = Depends(get_db)):
     today = date.today()
     departments = db.query(models.Department).options(
         joinedload(models.Department.review_programs).joinedload(models.ReviewProgram.review_sessions)
-    ).filter(models.Department.is_active == True).all()
+    ).filter(models.Department.is_active == True).order_by(
+        models.Department.category_order.asc(),
+        models.Department.display_order.asc(),
+        models.Department.created_at.asc()
+    ).all()
 
     result = []
     for dept in departments:
@@ -377,6 +405,10 @@ def get_departments(db: Session = Depends(get_db)):
             "name": dept.name,
             "short_name": dept.short_name,
             "description": dept.description,
+            "category_name": dept.category_name or "General",
+            "category_order": dept.category_order if dept.category_order is not None else 0,
+            "display_order": dept.display_order if dept.display_order is not None else 0,
+            "priority_level": _normalize_department_priority(dept.priority_level),
             "head_name": dept.head_name,
             "head_designation": dept.head_designation,
             "color": dept.color,
@@ -392,7 +424,41 @@ def get_departments(db: Session = Depends(get_db)):
 
 @router.post("/")
 def create_department(data: DepartmentCreate, db: Session = Depends(get_db)):
-    dept = models.Department(**data.dict())
+    category_name = _sanitize_category_name(data.category_name)
+
+    if data.category_order is None:
+        existing_category_order = db.query(func.min(models.Department.category_order)).filter(
+            models.Department.category_name == category_name
+        ).scalar()
+        if existing_category_order is None:
+            max_category_order = db.query(func.max(models.Department.category_order)).scalar()
+            category_order = (max_category_order if max_category_order is not None else -1) + 1
+        else:
+            category_order = existing_category_order
+    else:
+        category_order = data.category_order
+
+    if data.display_order is None:
+        max_display_order = db.query(func.max(models.Department.display_order)).filter(
+            models.Department.category_name == category_name
+        ).scalar()
+        display_order = (max_display_order if max_display_order is not None else -1) + 1
+    else:
+        display_order = data.display_order
+
+    dept = models.Department(
+        name=data.name,
+        short_name=data.short_name,
+        description=data.description,
+        category_name=category_name,
+        category_order=category_order,
+        display_order=display_order,
+        priority_level=_normalize_department_priority(data.priority_level),
+        head_name=data.head_name,
+        head_designation=data.head_designation,
+        color=data.color,
+        icon=data.icon,
+    )
     db.add(dept)
     db.commit()
     db.refresh(dept)
@@ -453,6 +519,10 @@ def get_department(dept_id: int, db: Session = Depends(get_db)):
         "name": dept.name,
         "short_name": dept.short_name,
         "description": dept.description,
+        "category_name": dept.category_name or "General",
+        "category_order": dept.category_order if dept.category_order is not None else 0,
+        "display_order": dept.display_order if dept.display_order is not None else 0,
+        "priority_level": _normalize_department_priority(dept.priority_level),
         "head_name": dept.head_name,
         "head_designation": dept.head_designation,
         "color": dept.color,
@@ -467,7 +537,12 @@ def update_department(dept_id: int, data: DepartmentUpdate, db: Session = Depend
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
-    for k, v in data.dict(exclude_none=True).items():
+    payload = data.dict(exclude_none=True)
+    if "category_name" in payload:
+        payload["category_name"] = _sanitize_category_name(payload.get("category_name"))
+    if "priority_level" in payload:
+        payload["priority_level"] = _normalize_department_priority(payload.get("priority_level"))
+    for k, v in payload.items():
         setattr(dept, k, v)
     db.commit()
     db.refresh(dept)

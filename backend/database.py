@@ -66,6 +66,10 @@ def apply_non_destructive_migrations():
         "departments": [
             ("short_name", "VARCHAR"),
             ("description", "TEXT"),
+            ("category_name", "VARCHAR DEFAULT 'General'"),
+            ("category_order", "INTEGER DEFAULT 0"),
+            ("display_order", "INTEGER DEFAULT 0"),
+            ("priority_level", "VARCHAR DEFAULT 'Normal'"),
             ("head_name", "VARCHAR"),
             ("head_designation", "VARCHAR"),
             ("color", "VARCHAR DEFAULT 'indigo'"),

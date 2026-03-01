@@ -455,6 +455,10 @@ def seed_departments_and_agenda(db: Session):
                 name=seed_dept["name"],
                 short_name=seed_dept.get("short_name"),
                 description=seed_dept.get("description"),
+                category_name="General",
+                category_order=0,
+                display_order=len(existing_departments),
+                priority_level="Normal",
                 color=seed_dept.get("color", "indigo"),
                 icon=seed_dept.get("icon", "Building2"),
                 is_active=True,
@@ -476,6 +480,18 @@ def seed_departments_and_agenda(db: Session):
                 changed = True
             if not (dept.icon or "").strip() and seed_dept.get("icon"):
                 dept.icon = seed_dept["icon"]
+                changed = True
+            if not (dept.category_name or "").strip():
+                dept.category_name = "General"
+                changed = True
+            if dept.category_order is None:
+                dept.category_order = 0
+                changed = True
+            if dept.display_order is None:
+                dept.display_order = 0
+                changed = True
+            if not (dept.priority_level or "").strip():
+                dept.priority_level = "Normal"
                 changed = True
             if dept.is_active is False:
                 dept.is_active = True
