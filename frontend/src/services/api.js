@@ -98,8 +98,16 @@ export const api = {
         const res = await axios.put(`${DEPT_URL}/${deptId}/agenda/${apId}`, data);
         return res.data;
     },
+    bulkUpdateAgendaPoints: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/agenda/bulk-update`, data);
+        return res.data;
+    },
     deleteAgendaPoint: async (deptId, apId) => {
         const res = await axios.delete(`${DEPT_URL}/${deptId}/agenda/${apId}`);
+        return res.data;
+    },
+    bulkDeleteAgendaPoints: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/agenda/bulk-delete`, data);
         return res.data;
     },
 

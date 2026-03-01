@@ -647,6 +647,31 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const [addingNew, setAddingNew] = useState(false);
     const [newRow, setNewRow] = useState({ title: '', details: '' });
     const [saving, setSaving] = useState(false);
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [bulkEditOpen, setBulkEditOpen] = useState(false);
+    const [bulkRows, setBulkRows] = useState([]);
+    const [bulkSaving, setBulkSaving] = useState(false);
+
+    useEffect(() => {
+        const validIds = new Set(agenda.map(a => a.id));
+        setSelectedIds(prev => prev.filter(id => validIds.has(id)));
+    }, [agenda]);
+
+    const selectedCount = selectedIds.length;
+    const allSelected = agenda.length > 0 && selectedCount === agenda.length;
+
+    const clearSelection = () => setSelectedIds([]);
+    const isSelected = (id) => selectedIds.includes(id);
+    const toggleSelectOne = (id) => {
+        setSelectedIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+    };
+    const toggleSelectAll = () => {
+        if (allSelected) {
+            clearSelection();
+            return;
+        }
+        setSelectedIds(agenda.map(a => a.id));
+    };
 
     const startEdit = (ap) => {
         setEditingId(ap.id);
@@ -677,6 +702,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         try {
             await api.deleteAgendaPoint(deptId, apId);
             setAgenda(prev => prev.filter(a => a.id !== apId));
+            setSelectedIds(prev => prev.filter(id => id !== apId));
             toast.success('Removed');
         } catch { toast.error('Failed to remove'); }
     };
@@ -695,8 +721,87 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
 
     const openCount = agenda.filter(a => a.status === 'Open').length;
 
+    const applyBulkStatus = async (status) => {
+        if (!selectedCount) return;
+        setSaving(true);
+        try {
+            const updated = await api.bulkUpdateAgendaPoints(deptId, {
+                items: selectedIds.map(id => ({ id, status })),
+            });
+            const updatedById = new Map(updated.map(item => [item.id, item]));
+            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
+            toast.success(`Updated ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
+        } catch {
+            toast.error('Failed to apply bulk status');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const openBulkEdit = () => {
+        if (!selectedCount) return;
+        const selectedRows = agenda
+            .filter(item => selectedIds.includes(item.id))
+            .map(item => ({
+                id: item.id,
+                title: item.title || '',
+                details: item.details || '',
+                status: item.status || 'Open',
+            }));
+        setBulkRows(selectedRows);
+        setBulkEditOpen(true);
+    };
+
+    const updateBulkRow = (id, key, value) => {
+        setBulkRows(prev => prev.map(item => (item.id === id ? { ...item, [key]: value } : item)));
+    };
+
+    const saveBulkEdit = async () => {
+        const payloadItems = bulkRows.map(item => ({
+            id: item.id,
+            title: item.title.trim(),
+            details: (item.details || '').trim(),
+            status: item.status || 'Open',
+        }));
+
+        if (payloadItems.some(item => !item.title)) {
+            toast.error('Title cannot be empty');
+            return;
+        }
+
+        setBulkSaving(true);
+        try {
+            const updated = await api.bulkUpdateAgendaPoints(deptId, { items: payloadItems });
+            const updatedById = new Map(updated.map(item => [item.id, item]));
+            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
+            setBulkEditOpen(false);
+            toast.success(`Saved ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
+        } catch {
+            toast.error('Failed to save bulk edit');
+        } finally {
+            setBulkSaving(false);
+        }
+    };
+
+    const deleteSelected = async () => {
+        if (!selectedCount) return;
+        const idsToDelete = [...selectedIds];
+        if (!window.confirm(`Delete ${idsToDelete.length} selected agenda item${idsToDelete.length > 1 ? 's' : ''}?`)) return;
+        setSaving(true);
+        try {
+            await api.bulkDeleteAgendaPoints(deptId, { ids: idsToDelete });
+            setAgenda(prev => prev.filter(item => !idsToDelete.includes(item.id)));
+            clearSelection();
+            toast.success(`Deleted ${idsToDelete.length} agenda item${idsToDelete.length > 1 ? 's' : ''}`);
+        } catch {
+            toast.error('Failed to delete selected agenda items');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
                 <div className="flex items-center gap-2">
                     <ListChecks size={20} className="text-indigo-500" />
@@ -709,10 +814,33 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                 </button>
             </div>
 
+            {selectedCount > 0 && (
+                <div className="px-5 py-2.5 border-b border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/70 dark:bg-indigo-500/10">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">{selectedCount} selected</span>
+                        <button onClick={() => applyBulkStatus('Open')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors disabled:opacity-60">Mark Open</button>
+                        <button onClick={() => applyBulkStatus('Done')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors disabled:opacity-60">Mark Done</button>
+                        <button onClick={() => applyBulkStatus('Deferred')} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors disabled:opacity-60">Mark Deferred</button>
+                        <button onClick={openBulkEdit} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors disabled:opacity-60">Bulk Edit</button>
+                        <button onClick={deleteSelected} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 transition-colors disabled:opacity-60">Delete Selected</button>
+                        <button onClick={clearSelection} disabled={saving} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60">Clear</button>
+                    </div>
+                </div>
+            )}
+
             <div className="flex-1 overflow-auto custom-scrollbar">
                 <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 z-10">
                         <tr>
+                            <th className="px-3 py-2.5 text-center w-10">
+                                <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    onChange={toggleSelectAll}
+                                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                    aria-label="Select all agenda items"
+                                />
+                            </th>
                             <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 w-8">#</th>
                             <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Agenda Item</th>
                             <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Details</th>
@@ -722,12 +850,21 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                         {agenda.length === 0 && !addingNew && (
-                            <tr><td colSpan={5} className="text-center py-10 text-slate-400 italic text-xs">
+                            <tr><td colSpan={6} className="text-center py-10 text-slate-400 italic text-xs">
                                 No agenda points yet. Click + to add one.
                             </td></tr>
                         )}
                         {agenda.map((ap, i) => (
                             <tr key={ap.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
+                                <td className="px-3 py-2 text-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={isSelected(ap.id)}
+                                        onChange={() => toggleSelectOne(ap.id)}
+                                        className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                        aria-label={`Select agenda item ${ap.title}`}
+                                    />
+                                </td>
                                 <td className="px-4 py-2 text-xs text-slate-400 font-bold">{i + 1}</td>
                                 <td className="px-3 py-2">
                                     {editingId === ap.id ? (
@@ -773,6 +910,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                         ))}
                         {addingNew && (
                             <tr className="bg-indigo-50/40 dark:bg-indigo-900/10">
+                                <td className="px-3 py-2" />
                                 <td className="px-4 py-2 text-xs text-slate-400 font-bold">{agenda.length + 1}</td>
                                 <td className="px-3 py-2">
                                     <input autoFocus value={newRow.title} onChange={e => setNewRow(p => ({ ...p, title: e.target.value }))}
@@ -800,6 +938,91 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     </tbody>
                 </table>
             </div>
+
+            <AnimatePresence>
+                {bulkEditOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+                            className="glass-card rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-premium-lg"
+                        >
+                            <div className="px-6 py-4 border-b border-indigo-100/80 dark:border-indigo-500/20 flex items-center justify-between bg-gradient-to-r from-indigo-50/90 to-white dark:from-indigo-500/10 dark:to-transparent">
+                                <div>
+                                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Bulk Edit Agenda</h3>
+                                    <p className="text-xs text-slate-500">{bulkRows.length} selected item{bulkRows.length > 1 ? 's' : ''}</p>
+                                </div>
+                                <button onClick={() => setBulkEditOpen(false)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                                    <X size={18} className="text-slate-400" />
+                                </button>
+                            </div>
+
+                            <div className="p-5 overflow-auto custom-scrollbar max-h-[65vh]">
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 bg-indigo-50/90 dark:bg-indigo-500/10 z-10">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600 w-12">#</th>
+                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600">Title</th>
+                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600">Details</th>
+                                            <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-wider text-indigo-600 w-36">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-indigo-100/70 dark:divide-indigo-500/20">
+                                        {bulkRows.map((item, idx) => (
+                                            <tr key={item.id}>
+                                                <td className="px-3 py-2 text-xs text-slate-400 font-bold">{idx + 1}</td>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        value={item.title}
+                                                        onChange={e => updateBulkRow(item.id, 'title', e.target.value)}
+                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        value={item.details}
+                                                        onChange={e => updateBulkRow(item.id, 'details', e.target.value)}
+                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <select
+                                                        value={item.status}
+                                                        onChange={e => updateBulkRow(item.id, 'status', e.target.value)}
+                                                        className="w-full text-sm px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-white dark:bg-white/5 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                                    >
+                                                        <option value="Open">Open</option>
+                                                        <option value="Done">Done</option>
+                                                        <option value="Deferred">Deferred</option>
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="px-6 py-4 border-t border-indigo-100/80 dark:border-indigo-500/20 flex items-center justify-end gap-2 bg-white/80 dark:bg-slate-900/40">
+                                <button
+                                    onClick={() => setBulkEditOpen(false)}
+                                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={saveBulkEdit}
+                                    disabled={bulkSaving}
+                                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 transition-colors inline-flex items-center gap-2"
+                                >
+                                    <Save size={14} />
+                                    Save All
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

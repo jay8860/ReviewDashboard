@@ -500,6 +500,22 @@ class AgendaPointUpdate(BaseModel):
     order_index: Optional[int] = None
 
 
+class AgendaPointBulkItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    details: Optional[str] = None
+    status: Optional[str] = None
+    order_index: Optional[int] = None
+
+
+class AgendaPointBulkUpdate(BaseModel):
+    items: List[AgendaPointBulkItem]
+
+
+class AgendaPointBulkDelete(BaseModel):
+    ids: List[int]
+
+
 @router.get("/{dept_id}/agenda")
 def get_agenda(dept_id: int, db: Session = Depends(get_db)):
     return db.query(models.AgendaPoint).filter(
@@ -542,6 +558,64 @@ def delete_agenda_point(dept_id: int, ap_id: int, db: Session = Depends(get_db))
     db.delete(ap)
     db.commit()
     return {"message": "Deleted"}
+
+
+@router.post("/{dept_id}/agenda/bulk-update")
+def bulk_update_agenda_points(dept_id: int, data: AgendaPointBulkUpdate, db: Session = Depends(get_db)):
+    items = data.items or []
+    if not items:
+        raise HTTPException(status_code=400, detail="No agenda items provided")
+
+    ids = [item.id for item in items]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="Duplicate agenda ids in payload")
+
+    agenda_points = db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.department_id == dept_id,
+        models.AgendaPoint.id.in_(ids)
+    ).all()
+    by_id = {ap.id: ap for ap in agenda_points}
+
+    missing_ids = [ap_id for ap_id in ids if ap_id not in by_id]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"Agenda point(s) not found: {missing_ids}")
+
+    for item in items:
+        ap = by_id[item.id]
+        payload = item.dict(exclude_none=True, exclude={"id"})
+        if "title" in payload:
+            payload["title"] = (payload["title"] or "").strip()
+            if not payload["title"]:
+                raise HTTPException(status_code=400, detail=f"Title cannot be empty for agenda id {item.id}")
+        if "details" in payload and payload["details"] is not None:
+            payload["details"] = payload["details"].strip()
+        for key, value in payload.items():
+            setattr(ap, key, value)
+
+    db.commit()
+    return [by_id[item.id] for item in items]
+
+
+@router.post("/{dept_id}/agenda/bulk-delete")
+def bulk_delete_agenda_points(dept_id: int, data: AgendaPointBulkDelete, db: Session = Depends(get_db)):
+    ids = data.ids or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="No agenda ids provided")
+
+    unique_ids = list(dict.fromkeys(ids))
+    agenda_points = db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.department_id == dept_id,
+        models.AgendaPoint.id.in_(unique_ids)
+    ).all()
+    found_ids = {ap.id for ap in agenda_points}
+    missing_ids = [ap_id for ap_id in unique_ids if ap_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"Agenda point(s) not found: {missing_ids}")
+
+    for ap in agenda_points:
+        db.delete(ap)
+    db.commit()
+    return {"deleted_ids": unique_ids, "deleted_count": len(unique_ids)}
 
 
 # ─── Department Meetings ───────────────────────────────────────────────────────
