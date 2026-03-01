@@ -159,8 +159,25 @@ const buildTaskWhatsAppMessage = (task) => {
 };
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
+const normalizeWhatsAppNumber = (value) => {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (digits.length === 10) digits = `91${digits}`;
+    return digits;
+};
+const formatTime12 = (value) => {
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return text || 'TBD';
+    let hour = parseInt(match[1], 10);
+    const minute = match[2];
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${minute} ${suffix}`;
+};
 
-const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, onSave }) => {
+const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees = [], allTasks = [], onClose, onSave }) => {
     const [form, setForm] = useState({
         title: '',
         date: getTodayIso(),
@@ -169,10 +186,13 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, o
         venue: '',
         department_id: '',
     });
+    const [primaryRecipientId, setPrimaryRecipientId] = useState('');
+    const [messageDraft, setMessageDraft] = useState('');
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (!isOpen || !task) return;
+        const autoRecipientId = task.assigned_employee_id ? String(task.assigned_employee_id) : '';
         setForm({
             title: (task.description || task.task_number || 'Task Meeting').slice(0, 120),
             date: getTodayIso(),
@@ -181,10 +201,45 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, o
             venue: '',
             department_id: task.department_id || '',
         });
+        setPrimaryRecipientId(autoRecipientId);
         setSaving(false);
     }, [isOpen, task]);
 
+    useEffect(() => {
+        if (!isOpen || !task) return;
+        const date = form.date ? format(new Date(form.date), 'd MMMM yyyy') : 'TBD';
+        const time = formatTime12(form.time_slot);
+        const recipient = employees.find((emp) => String(emp.id) === String(primaryRecipientId));
+        const personName = recipient?.name || task?.assigned_employee_name || task?.assigned_agency || 'the concerned officer';
+        const taskName = (task?.description || '').trim() || task?.task_number || 'Task';
+        const personTasks = recipient
+            ? allTasks
+                .filter((row) => String(row.assigned_employee_id || '') === String(recipient.id))
+                .slice(0, 8)
+            : [];
+        const lines = personTasks.map((row, idx) => `${idx + 1}. ${(row.description || row.task_number || '').trim()}`).filter(Boolean);
+        const summary = lines.length
+            ? `\n\nPlease review status of the following tasks:\n${lines.join('\n')}`
+            : '';
+        setMessageDraft(`Meeting to be scheduled with ${personName} on ${date} at ${time} on task "${taskName}".${summary}`);
+    }, [isOpen, task, form.date, form.time_slot, primaryRecipientId, employees, allTasks]);
+
     if (!isOpen || !task) return null;
+
+    const sendWhatsApp = () => {
+        const recipient = employees.find((emp) => String(emp.id) === String(primaryRecipientId));
+        const phone = normalizeWhatsAppNumber(recipient?.mobile_number);
+        if (!phone) {
+            window.alert('Select a recipient with a valid mobile number');
+            return;
+        }
+        const text = encodeURIComponent((messageDraft || '').trim());
+        if (!text) {
+            window.alert('Message draft cannot be empty');
+            return;
+        }
+        window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener,noreferrer');
+    };
 
     const submit = async (e) => {
         e.preventDefault();
@@ -204,12 +259,14 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, o
 
     const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30';
 
+    const currentRecipient = employees.find((emp) => String(emp.id) === String(primaryRecipientId));
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 6 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 6 }}
-            className="absolute right-0 top-full mt-2 z-[70] glass-card rounded-2xl w-[360px] shadow-premium-lg border border-slate-200 dark:border-white/10"
+            className="absolute right-0 top-full mt-2 z-[70] glass-card rounded-2xl w-[420px] shadow-premium-lg border border-slate-200 dark:border-white/10"
         >
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white rounded-t-2xl">
                 <div>
@@ -292,9 +349,41 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, o
                     />
                 </div>
 
+                <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Meeting With</label>
+                    <select
+                        value={primaryRecipientId}
+                        onChange={(e) => setPrimaryRecipientId(e.target.value)}
+                        className={inputCls}
+                    >
+                        <option value="">Select person</option>
+                        {employees.map((emp) => (
+                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                    </select>
+                    {currentRecipient?.mobile_number && (
+                        <p className="text-[10px] text-slate-400 mt-1">
+                            Recipient mobile: {currentRecipient.mobile_number}
+                        </p>
+                    )}
+                </div>
+
+                <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Message Draft</label>
+                    <textarea
+                        rows={6}
+                        value={messageDraft}
+                        onChange={(e) => setMessageDraft(e.target.value)}
+                        className={`${inputCls} resize-none`}
+                    />
+                </div>
+
                 <div className="pt-1 flex gap-2">
                     <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50">
                         Cancel
+                    </button>
+                    <button type="button" onClick={sendWhatsApp} className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
+                        Send WA
                     </button>
                     <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-60">
                         {saving ? 'Scheduling…' : 'Schedule'}
@@ -308,6 +397,7 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, o
 // ── Main TaskTable ─────────────────────────────────────────────────────────────
 const TaskTable = ({
     tasks = [],
+    allTasks = [],
     departments = [],
     employees = [],
     onUpdate,
@@ -825,6 +915,8 @@ const TaskTable = ({
                                                     isOpen
                                                     task={scheduleTask}
                                                     departments={departments}
+                                                    employees={employees}
+                                                    allTasks={allTasks}
                                                     onClose={() => setScheduleTask(null)}
                                                     onSave={(payload) => onScheduleTask ? onScheduleTask(scheduleTask, payload) : Promise.resolve()}
                                                 />

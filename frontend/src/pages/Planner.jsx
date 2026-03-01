@@ -12,7 +12,7 @@ import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 
-const EVENT_TYPES = ['meeting', 'review', 'task', 'reminder', 'field-visit', 'other'];
+const EVENT_TYPES = ['meeting', 'review', 'task', 'field-visit', 'other'];
 const EVENT_COLORS = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'teal', 'orange'];
 
 const statusStyles = {
@@ -40,9 +40,75 @@ const WAIcon = () => (
     </svg>
 );
 
-const isStenoEmployee = (emp) => {
-    const haystack = `${emp?.name || ''} ${emp?.display_username || ''}`.toLowerCase();
-    return haystack.includes('steno') || haystack.includes('secretary');
+const normalizeText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const normalizeWhatsAppNumber = (value) => {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    if (digits.startsWith('0') && digits.length > 10) digits = digits.replace(/^0+/, '');
+    if (digits.length === 10) digits = `91${digits}`;
+    return digits;
+};
+
+const splitAttendeeNames = (attendees) =>
+    String(attendees || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+const extractTaskNameFromDescription = (description) => {
+    const lines = String(description || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const taskLine = lines.find((line) => /^task\s*:/i.test(line));
+    if (!taskLine) return '';
+    return taskLine.replace(/^task\s*:/i, '').trim();
+};
+
+const eventCandidateStrings = (event) => {
+    const candidates = [];
+    if (!event) return candidates;
+    candidates.push(...splitAttendeeNames(event.attendees));
+    if (event.title) candidates.push(event.title);
+    if (event.description) candidates.push(event.description);
+    return candidates.filter(Boolean);
+};
+
+const autoSelectRecipientsForEvents = (events = [], employees = []) => {
+    if (!employees.length) return [];
+    const picked = new Set();
+
+    events.forEach((event) => {
+        const pickedBefore = picked.size;
+        const deptId = event?.department_id ? Number(event.department_id) : null;
+        const candidates = eventCandidateStrings(event).map(normalizeText).filter(Boolean);
+        employees.forEach((emp) => {
+            const empName = normalizeText(emp?.name);
+            const empUsername = normalizeText(emp?.display_username);
+            const empMobile = normalizeWhatsAppNumber(emp?.mobile_number);
+
+            const matchByText = candidates.some((candidate) => (
+                (empName && candidate.includes(empName)) ||
+                (empUsername && candidate.includes(empUsername)) ||
+                (empMobile && candidate.includes(empMobile))
+            ));
+
+            if (matchByText) {
+                picked.add(emp.id);
+            }
+        });
+
+        // Fallback: if no explicit attendee match and department is set, include department employees.
+        if (deptId && picked.size === pickedBefore) {
+            employees.forEach((emp) => {
+                if (Number(emp?.department_id || 0) === deptId) picked.add(emp.id);
+            });
+        }
+    });
+
+    return [...picked];
 };
 
 const parseDateSafe = (value) => {
@@ -94,23 +160,36 @@ const formatTimeForMessage = (value) => {
     return `${hour}:${minute} ${suffix}`;
 };
 
-const extractTaskNameFromDescription = (description) => {
-    const lines = String(description || '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-    const taskLine = lines.find((line) => /^task\s*:/i.test(line));
-    if (!taskLine) return '';
-    return taskLine.replace(/^task\s*:/i, '').trim();
+const normalizeTimeForInput = (value, fallback = '10:00') => {
+    const text = String(value || '').trim();
+    if (!text) return fallback;
+    const hhmm = text.match(/^(\d{1,2}):(\d{2})$/);
+    if (hhmm) {
+        const hour = Math.max(0, Math.min(23, parseInt(hhmm[1], 10)));
+        const minute = Math.max(0, Math.min(59, parseInt(hhmm[2], 10)));
+        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+    const ampm = text.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+    if (ampm) {
+        let hour = parseInt(ampm[1], 10);
+        const minute = Math.max(0, Math.min(59, parseInt(ampm[2], 10)));
+        const suffix = ampm[3].toUpperCase();
+        if (suffix === 'PM' && hour < 12) hour += 12;
+        if (suffix === 'AM' && hour === 12) hour = 0;
+        hour = Math.max(0, Math.min(23, hour));
+        return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+    return fallback;
 };
 
 const buildPlannerEventWhatsAppMessage = (event) => {
-    const title = (event?.title || 'the concerned team').trim();
+    const title = (event?.title || 'meeting').trim();
     const dateText = formatDateSafe(event?.date, 'd MMMM yyyy', 'TBD');
     const timeText = formatTimeForMessage(event?.time_slot);
     const taskName = extractTaskNameFromDescription(event?.description);
     const venueText = String(event?.venue || '').trim();
-    const attendeesText = String(event?.attendees || '').trim();
+    const attendeeNames = splitAttendeeNames(event?.attendees);
+    const meetingWith = attendeeNames.length ? attendeeNames.join(', ') : title;
     const notesOnly = String(event?.description || '')
         .split('\n')
         .map((line) => line.trim())
@@ -119,11 +198,11 @@ const buildPlannerEventWhatsAppMessage = (event) => {
         .replace(/\s+/g, ' ')
         .trim();
 
-    let sentence = `Meeting to be scheduled with ${title} on ${dateText} at ${timeText}`;
+    let sentence = `Meeting to be scheduled with ${meetingWith} on ${dateText} at ${timeText}`;
     if (taskName) sentence += ` on task "${taskName}"`;
+    else sentence += ` regarding "${title}"`;
     if (venueText) sentence += ` at ${venueText}`;
     sentence += '.';
-    if (attendeesText) sentence += ` Please coordinate with ${attendeesText}.`;
     if (notesOnly) sentence += ` Note: ${notesOnly}`;
 
     return sentence;
@@ -133,28 +212,12 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
-    const [includeStenoCopy, setIncludeStenoCopy] = useState(true);
 
     useEffect(() => {
         if (!isOpen || !event) return;
         setMessage(buildPlannerEventWhatsAppMessage(event));
         setSearchTerm('');
-        const initialSelected = [];
-        const attendeeTokens = String(event.attendees || '')
-            .split(',')
-            .map(token => token.trim().toLowerCase())
-            .filter(Boolean);
-        if (attendeeTokens.length > 0) {
-            employees.forEach(emp => {
-                const name = (emp.name || '').toLowerCase();
-                if (attendeeTokens.some(token => token && name.includes(token))) {
-                    initialSelected.push(emp.id);
-                }
-            });
-        }
-        setSelectedEmployeeIds(initialSelected);
-        const hasSteno = employees.some(isStenoEmployee);
-        setIncludeStenoCopy(hasSteno);
+        setSelectedEmployeeIds(autoSelectRecipientsForEvents([event], employees));
     }, [isOpen, event, employees]);
 
     if (!isOpen || !event) return null;
@@ -173,8 +236,6 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
         .filter(Boolean);
     const selectableEmployees = visibleEmployees.filter((emp) => !selectedEmployeeIds.includes(emp.id));
 
-    const stenoEmployees = employees.filter(isStenoEmployee);
-
     const toggleEmployee = (id) => {
         setSelectedEmployeeIds(prev => (
             prev.includes(id)
@@ -187,15 +248,10 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
         const numbers = [];
         const employeeMap = new Map(employees.map(emp => [emp.id, emp]));
         selectedEmployeeIds.forEach(id => {
-            const mobile = employeeMap.get(id)?.mobile_number;
+            const mobile = normalizeWhatsAppNumber(employeeMap.get(id)?.mobile_number);
             if (mobile) numbers.push(mobile);
         });
-        if (includeStenoCopy) {
-            stenoEmployees.forEach(emp => {
-                if (emp.mobile_number) numbers.push(emp.mobile_number);
-            });
-        }
-        return [...new Set(numbers.map(value => String(value || '').replace(/\D/g, '')).filter(Boolean))];
+        return [...new Set(numbers.filter(Boolean))];
     };
 
     const handleSend = () => {
@@ -298,16 +354,6 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
                                 ))}
                             </div>
 
-                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                                <input
-                                    type="checkbox"
-                                    checked={includeStenoCopy}
-                                    onChange={e => setIncludeStenoCopy(e.target.checked)}
-                                    className="w-4 h-4 accent-indigo-600"
-                                    disabled={stenoEmployees.length === 0}
-                                />
-                                Send copy to steno {stenoEmployees.length ? `(${stenoEmployees.length})` : '(not found)'}
-                            </label>
                         </div>
 
                         <div className="space-y-3">
@@ -344,17 +390,19 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
 const buildDayScheduleMessage = (dateValue, items) => {
     const headingDate = formatDateSafe(dateValue, 'd MMMM yyyy', 'TBD');
     if (!items.length) {
-        return `Schedule for ${headingDate}\nNo events scheduled.`;
+        return `No meetings or events are scheduled for ${headingDate}.`;
     }
 
     const lines = items.map((event, idx) => {
-        const timeText = event.time_slot || 'TBD';
+        const timeText = formatTimeForMessage(event.time_slot);
         const typeText = (event.event_type || 'event').replace('-', ' ');
-        const deptText = event.department_name ? ` · ${event.department_name}` : '';
-        return `${idx + 1}. ${timeText} - ${event.title} (${typeText})${deptText}`;
+        const attendeeNames = splitAttendeeNames(event.attendees);
+        const who = attendeeNames.length ? attendeeNames.join(', ') : (event.title || 'concerned officer');
+        const topic = extractTaskNameFromDescription(event.description) || event.title || typeText;
+        return `${idx + 1}. At ${timeText}, schedule a ${typeText} with ${who} regarding "${topic}".`;
     });
 
-    return `Schedule the following for ${headingDate}:\n${lines.join('\n')}`;
+    return `Please schedule the following meetings/events for ${headingDate}:\n${lines.join('\n')}`;
 };
 
 const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [], defaultDate }) => {
@@ -362,7 +410,6 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
-    const [includeStenoCopy, setIncludeStenoCopy] = useState(true);
 
     const dayEvents = useMemo(() => {
         if (!day) return [];
@@ -381,15 +428,17 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
         if (!isOpen) return;
         setDay(defaultDate || getTodayIso());
         setSearchTerm('');
-        setSelectedEmployeeIds([]);
-        const hasSteno = employees.some(isStenoEmployee);
-        setIncludeStenoCopy(hasSteno);
-    }, [isOpen, defaultDate, employees]);
+    }, [isOpen, defaultDate]);
 
     useEffect(() => {
         if (!isOpen) return;
         setMessage(buildDayScheduleMessage(day, dayEvents));
     }, [isOpen, day, dayEvents]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setSelectedEmployeeIds(autoSelectRecipientsForEvents(dayEvents, employees));
+    }, [isOpen, dayEvents, employees]);
 
     if (!isOpen) return null;
 
@@ -407,8 +456,6 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
         .filter(Boolean);
     const selectableEmployees = visibleEmployees.filter((emp) => !selectedEmployeeIds.includes(emp.id));
 
-    const stenoEmployees = employees.filter(isStenoEmployee);
-
     const toggleEmployee = (id) => {
         setSelectedEmployeeIds((prev) => (
             prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -419,15 +466,10 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
         const numbers = [];
         const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
         selectedEmployeeIds.forEach((id) => {
-            const mobile = employeeMap.get(id)?.mobile_number;
+            const mobile = normalizeWhatsAppNumber(employeeMap.get(id)?.mobile_number);
             if (mobile) numbers.push(mobile);
         });
-        if (includeStenoCopy) {
-            stenoEmployees.forEach((emp) => {
-                if (emp.mobile_number) numbers.push(emp.mobile_number);
-            });
-        }
-        return [...new Set(numbers.map((num) => String(num || '').replace(/\D/g, '')).filter(Boolean))];
+        return [...new Set(numbers.filter(Boolean))];
     };
 
     const handleSend = () => {
@@ -532,17 +574,6 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
                                     </label>
                                 ))}
                             </div>
-
-                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                                <input
-                                    type="checkbox"
-                                    checked={includeStenoCopy}
-                                    onChange={(e) => setIncludeStenoCopy(e.target.checked)}
-                                    className="w-4 h-4 accent-indigo-600"
-                                    disabled={stenoEmployees.length === 0}
-                                />
-                                Send copy to steno {stenoEmployees.length ? `(${stenoEmployees.length})` : '(not found)'}
-                            </label>
 
                             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                                 <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Selected Day Events</p>
@@ -670,7 +701,7 @@ const EventModal = ({
             setForm({
                 title: eventData.title || '',
                 date: eventData.date || defaultDate,
-                time_slot: eventData.time_slot || defaultTime,
+                time_slot: normalizeTimeForInput(eventData.time_slot || defaultTime, defaultTime),
                 duration_minutes: eventData.duration_minutes || defaultSlotMinutes,
                 event_type: eventData.event_type || 'meeting',
                 status: normalizeModalStatus(eventData.status),
@@ -686,7 +717,7 @@ const EventModal = ({
             setForm({
                 title: prefillData.title || '',
                 date: prefillData.date || defaultDate,
-                time_slot: prefillData.time_slot || defaultTime,
+                time_slot: normalizeTimeForInput(prefillData.time_slot || defaultTime, defaultTime),
                 duration_minutes: prefillData.duration_minutes || defaultSlotMinutes,
                 event_type: prefillData.event_type || 'meeting',
                 status: normalizeModalStatus(prefillData.status),
@@ -701,7 +732,7 @@ const EventModal = ({
         setForm({
             title: '',
             date: defaultDate,
-            time_slot: defaultTime,
+            time_slot: normalizeTimeForInput(defaultTime, '10:00'),
             duration_minutes: defaultSlotMinutes,
             event_type: 'meeting',
             status: 'Confirmed',

@@ -871,6 +871,7 @@ const Tasks = ({ user, onLogout }) => {
                     </div>
                     <TaskTable
                         tasks={pagedTasks}
+                        allTasks={tasks}
                         departments={departments}
                         employees={employees}
                         onUpdate={handleUpdate}
