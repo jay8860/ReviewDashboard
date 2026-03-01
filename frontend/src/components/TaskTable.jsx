@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarPlus,
+    Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
     MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
@@ -160,7 +160,7 @@ const buildTaskWhatsAppMessage = (task) => {
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 
-const ScheduleTaskMeetingModal = ({ isOpen, task, departments = [], onClose, onSave }) => {
+const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], onClose, onSave }) => {
     const [form, setForm] = useState({
         title: '',
         date: getTodayIso(),
@@ -205,107 +205,103 @@ const ScheduleTaskMeetingModal = ({ isOpen, task, departments = [], onClose, onS
     const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30';
 
     return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="glass-card rounded-3xl w-full max-w-md shadow-premium-lg"
-                >
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white">
-                        <div>
-                            <h3 className="text-lg font-black text-slate-800">Schedule Task Meeting</h3>
-                            <p className="text-xs text-slate-400">Create a planner slot from this task</p>
-                        </div>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100">
-                            <X size={16} className="text-slate-400" />
-                        </button>
-                    </div>
-
-                    <form onSubmit={submit} className="p-6 space-y-3">
-                        <div>
-                            <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Title</label>
-                            <input
-                                required
-                                value={form.title}
-                                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                                className={inputCls}
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Date</label>
-                                <input
-                                    type="date"
-                                    value={form.date}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
-                                    className={inputCls}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Time</label>
-                                <input
-                                    type="time"
-                                    value={form.time_slot}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, time_slot: e.target.value }))}
-                                    className={inputCls}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Duration</label>
-                                <select
-                                    value={form.duration_minutes}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, duration_minutes: e.target.value }))}
-                                    className={inputCls}
-                                >
-                                    <option value={30}>30m</option>
-                                    <option value={60}>60m</option>
-                                    <option value={90}>90m</option>
-                                    <option value={120}>120m</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Department</label>
-                                <select
-                                    value={form.department_id}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value }))}
-                                    className={inputCls}
-                                >
-                                    <option value="">None</option>
-                                    {departments.map((dept) => (
-                                        <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Venue</label>
-                            <input
-                                value={form.venue}
-                                onChange={(e) => setForm((prev) => ({ ...prev, venue: e.target.value }))}
-                                placeholder="Meeting room / location"
-                                className={inputCls}
-                            />
-                        </div>
-
-                        <div className="pt-2 flex gap-2">
-                            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50">
-                                Cancel
-                            </button>
-                            <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60">
-                                {saving ? 'Scheduling…' : 'Schedule'}
-                            </button>
-                        </div>
-                    </form>
-                </motion.div>
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 6 }}
+            className="absolute right-0 top-full mt-2 z-[70] glass-card rounded-2xl w-[360px] shadow-premium-lg border border-slate-200 dark:border-white/10"
+        >
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white rounded-t-2xl">
+                <div>
+                    <h3 className="text-sm font-black text-slate-800">Schedule Task Meeting</h3>
+                    <p className="text-[11px] text-slate-400">Create a planner slot from this row</p>
+                </div>
+                <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100">
+                    <X size={14} className="text-slate-400" />
+                </button>
             </div>
-        </AnimatePresence>
+
+            <form onSubmit={submit} className="p-4 space-y-2.5">
+                <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Title</label>
+                    <input
+                        required
+                        value={form.title}
+                        onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                        className={inputCls}
+                    />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Date</label>
+                        <input
+                            type="date"
+                            value={form.date}
+                            onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Time</label>
+                        <input
+                            type="time"
+                            value={form.time_slot}
+                            onChange={(e) => setForm((prev) => ({ ...prev, time_slot: e.target.value }))}
+                            className={inputCls}
+                        />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Duration</label>
+                        <select
+                            value={form.duration_minutes}
+                            onChange={(e) => setForm((prev) => ({ ...prev, duration_minutes: e.target.value }))}
+                            className={inputCls}
+                        >
+                            <option value={30}>30m</option>
+                            <option value={60}>60m</option>
+                            <option value={90}>90m</option>
+                            <option value={120}>120m</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Department</label>
+                        <select
+                            value={form.department_id}
+                            onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value }))}
+                            className={inputCls}
+                        >
+                            <option value="">None</option>
+                            {departments.map((dept) => (
+                                <option key={dept.id} value={dept.id}>{dept.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Venue</label>
+                    <input
+                        value={form.venue}
+                        onChange={(e) => setForm((prev) => ({ ...prev, venue: e.target.value }))}
+                        placeholder="Meeting room / location"
+                        className={inputCls}
+                    />
+                </div>
+
+                <div className="pt-1 flex gap-2">
+                    <button type="button" onClick={onClose} className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50">
+                        Cancel
+                    </button>
+                    <button type="submit" disabled={saving} className="flex-1 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-60">
+                        {saving ? 'Scheduling…' : 'Schedule'}
+                    </button>
+                </div>
+            </form>
+        </motion.div>
     );
 };
 
@@ -331,12 +327,14 @@ const TaskTable = ({
     const [scheduleTask, setScheduleTask] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
+    const scheduleRef = useRef(null);
 
     // Close popups on outside click
     useEffect(() => {
         const handler = (e) => {
             if (calendarRef.current && !calendarRef.current.contains(e.target)) setCalendarId(null);
             if (stenoRef.current && !stenoRef.current.contains(e.target)) setStenoId(null);
+            if (scheduleRef.current && !scheduleRef.current.contains(e.target)) setScheduleTask(null);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -360,6 +358,17 @@ const TaskTable = ({
 
     const handleSort = (key) => {
         setSort(s => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }));
+    };
+
+    const getDueDeltaDays = (task) => {
+        if (!task || task.completion_date || task.status === 'Completed') return null;
+        if (!task.deadline_date) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deadline = new Date(task.deadline_date);
+        if (Number.isNaN(deadline.getTime())) return null;
+        deadline.setHours(0, 0, 0, 0);
+        return differenceInDays(deadline, today);
     };
 
     const handleSaveEdit = async (id, form) => {
@@ -465,9 +474,18 @@ const TaskTable = ({
 
     // Client-side sort (server also sorts but local UX is faster)
     const sorted = [...tasks].sort((a, b) => {
+        if (sort.key === 'deadline_date') {
+            const av = getDueDeltaDays(a);
+            const bv = getDueDeltaDays(b);
+            if (av === null && bv === null) return 0;
+            if (av === null) return 1;
+            if (bv === null) return -1;
+            return sort.dir === 'asc' ? av - bv : bv - av;
+        }
+
         let av = a[sort.key], bv = b[sort.key];
-        if (!av) return 1;
-        if (!bv) return -1;
+        if (av === undefined || av === null || av === '') return 1;
+        if (bv === undefined || bv === null || bv === '') return -1;
         if (sort.key === 'priority') {
             const order = { Critical: 0, High: 1, Normal: 2, Low: 3 };
             av = order[av] ?? 9; bv = order[bv] ?? 9;
@@ -732,8 +750,8 @@ const TaskTable = ({
 
                                 {/* Actions */}
                                 {isAdmin && (
-                                    <td className="px-3 py-3">
-                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <td className="px-3 py-3 relative" ref={scheduleTask?.id === task.id ? scheduleRef : null}>
+                                        <div className={`flex items-center gap-0.5 transition-opacity ${scheduleTask?.id === task.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                             {/* WhatsApp */}
                                             <a
                                                 href={`https://wa.me/?text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}`}
@@ -761,11 +779,11 @@ const TaskTable = ({
 
                                             {/* Schedule task meeting */}
                                             <button
-                                                onClick={() => setScheduleTask(task)}
+                                                onClick={() => setScheduleTask(scheduleTask?.id === task.id ? null : task)}
                                                 title="Schedule meeting in planner"
                                                 className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
                                             >
-                                                <CalendarPlus size={13} />
+                                                <CalendarClock size={13} />
                                             </button>
 
                                             {/* Quick Complete */}
@@ -800,6 +818,18 @@ const TaskTable = ({
                                                 <Trash2 size={13} />
                                             </button>
                                         </div>
+
+                                        <AnimatePresence>
+                                            {scheduleTask?.id === task.id && (
+                                                <ScheduleTaskMeetingPopover
+                                                    isOpen
+                                                    task={scheduleTask}
+                                                    departments={departments}
+                                                    onClose={() => setScheduleTask(null)}
+                                                    onSave={(payload) => onScheduleTask ? onScheduleTask(scheduleTask, payload) : Promise.resolve()}
+                                                />
+                                            )}
+                                        </AnimatePresence>
                                     </td>
                                 )}
                             </motion.tr>
@@ -808,13 +838,6 @@ const TaskTable = ({
                 </tbody>
             </table>
 
-            <ScheduleTaskMeetingModal
-                isOpen={Boolean(scheduleTask)}
-                task={scheduleTask}
-                departments={departments}
-                onClose={() => setScheduleTask(null)}
-                onSave={(payload) => onScheduleTask ? onScheduleTask(scheduleTask, payload) : Promise.resolve()}
-            />
         </div>
     );
 };

@@ -4,14 +4,16 @@ import { useSearchParams } from 'react-router-dom';
 import {
     ClipboardList, Plus, X, Search, RefreshCw, FileDown,
     CheckCircle2, Clock, AlertTriangle, Flame, List,
-    Trash2, CheckSquare, Check, ChevronRight
+    Trash2, CheckSquare, Check, ChevronRight, ChevronDown
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
-import { format } from 'date-fns';
+import { differenceInDays, format } from 'date-fns';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { canAccessModule } from '../utils/access';
 
 const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) => {
@@ -317,6 +319,8 @@ const Tasks = ({ user, onLogout }) => {
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const statsDigestRef = useRef('');
+    const exportMenuRef = useRef(null);
+    const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
     // Filters
     const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -399,6 +403,15 @@ const Tasks = ({ user, onLogout }) => {
         });
         statsDigestRef.current = digest;
     }, [stats]);
+
+    useEffect(() => {
+        const onDocClick = (event) => {
+            if (!exportMenuRef.current || exportMenuRef.current.contains(event.target)) return;
+            setExportMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onDocClick);
+        return () => document.removeEventListener('mousedown', onDocClick);
+    }, []);
 
     const pollForExternalChanges = useCallback(async () => {
         try {
@@ -605,6 +618,60 @@ const Tasks = ({ user, onLogout }) => {
         XLSX.writeFile(wb, `tasks_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
+    const exportPdf = () => {
+        const getDueText = (task) => {
+            if (task.completion_date || task.status === 'Completed') return 'Done';
+            if (!task.deadline_date) return '-';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const deadline = new Date(task.deadline_date);
+            if (Number.isNaN(deadline.getTime())) return '-';
+            deadline.setHours(0, 0, 0, 0);
+            const diff = differenceInDays(deadline, today);
+            if (diff < 0) return `${Math.abs(diff)}d overdue`;
+            if (diff === 0) return 'Today';
+            return `${diff}d left`;
+        };
+
+        const body = tasks.map((task, index) => [
+            index + 1,
+            task.task_number || '',
+            task.description || '',
+            task.steno_comment || '',
+            task.assigned_employee_name || task.assigned_agency || '',
+            getDueText(task),
+            task.deadline_date ? format(new Date(task.deadline_date), 'd MMM yyyy') : '-',
+            task.status || '',
+        ]);
+
+        const doc = new jsPDF({ orientation: 'landscape' });
+        doc.setFontSize(14);
+        doc.text('Tasks Export', 14, 14);
+        doc.setFontSize(9);
+        doc.text(`Generated: ${format(new Date(), 'd MMM yyyy, h:mm a')}`, 14, 20);
+
+        autoTable(doc, {
+            startY: 24,
+            head: [['S.No', 'Task #', 'Task / Description', 'Comments', 'Assigned', 'Due In', 'Deadline', 'Status']],
+            body,
+            styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
+            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+            columnStyles: {
+                0: { cellWidth: 12 },
+                1: { cellWidth: 24 },
+                2: { cellWidth: 95 },
+                3: { cellWidth: 70 },
+                4: { cellWidth: 42 },
+                5: { cellWidth: 24 },
+                6: { cellWidth: 28 },
+                7: { cellWidth: 22 },
+            },
+            theme: 'grid',
+        });
+
+        doc.save(`tasks_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
     return (
         <Layout user={user} onLogout={onLogout}>
             {/* Header */}
@@ -614,10 +681,43 @@ const Tasks = ({ user, onLogout }) => {
                     <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">Manage and track all assigned tasks</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={exportExcel}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 text-slate-700 dark:text-white font-bold rounded-full shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-white/10">
-                        <FileDown size={16} /> Export
-                    </button>
+                    <div className="relative" ref={exportMenuRef}>
+                        <button
+                            onClick={() => setExportMenuOpen((prev) => !prev)}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 text-slate-700 dark:text-white font-bold rounded-full shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-white/10"
+                        >
+                            <FileDown size={16} /> Export <ChevronDown size={14} />
+                        </button>
+                        <AnimatePresence>
+                            {exportMenuOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                                    className="absolute right-0 mt-2 w-48 rounded-2xl border border-slate-200 bg-white shadow-xl p-2 z-30"
+                                >
+                                    <button
+                                        onClick={() => {
+                                            exportExcel();
+                                            setExportMenuOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Download Excel (.xlsx)
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            exportPdf();
+                                            setExportMenuOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                        Download PDF (.pdf)
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
                     {canManageTasks && (
                         <>
                             <button onClick={() => { setBulkMode(b => !b); setSelectedIds([]); }}

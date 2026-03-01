@@ -82,16 +82,51 @@ const formatDateSafe = (value, fmt = 'd MMMM yyyy', fallback = 'TBD') => {
 
 const getTodayIso = () => format(new Date(), 'yyyy-MM-dd');
 
-const buildPlannerEventWhatsAppMessage = (event) => {
-    const title = event?.title || 'Calendar Event';
-    const dateText = formatDateSafe(event?.date, 'd MMMM yyyy', 'TBD');
-    const timeText = event?.time_slot || 'TBD';
-    const durationText = event?.duration_minutes ? `${event.duration_minutes} min` : '30 min';
-    const venueText = event?.venue ? `\nVenue: ${event.venue}` : '';
-    const attendeesText = event?.attendees ? `\nAttendees: ${event.attendees}` : '';
-    const notesText = event?.description ? `\n\nNotes:\n${event.description}` : '';
+const formatTimeForMessage = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return 'TBD';
+    const match24 = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match24) return text;
+    let hour = parseInt(match24[1], 10);
+    const minute = match24[2];
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${minute} ${suffix}`;
+};
 
-    return `Calendar Event\n\n${title}\nDate: ${dateText}\nTime: ${timeText}\nDuration: ${durationText}${venueText}${attendeesText}${notesText}`;
+const extractTaskNameFromDescription = (description) => {
+    const lines = String(description || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const taskLine = lines.find((line) => /^task\s*:/i.test(line));
+    if (!taskLine) return '';
+    return taskLine.replace(/^task\s*:/i, '').trim();
+};
+
+const buildPlannerEventWhatsAppMessage = (event) => {
+    const title = (event?.title || 'the concerned team').trim();
+    const dateText = formatDateSafe(event?.date, 'd MMMM yyyy', 'TBD');
+    const timeText = formatTimeForMessage(event?.time_slot);
+    const taskName = extractTaskNameFromDescription(event?.description);
+    const venueText = String(event?.venue || '').trim();
+    const attendeesText = String(event?.attendees || '').trim();
+    const notesOnly = String(event?.description || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !/^task\s*:/i.test(line))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    let sentence = `Meeting to be scheduled with ${title} on ${dateText} at ${timeText}`;
+    if (taskName) sentence += ` on task "${taskName}"`;
+    if (venueText) sentence += ` at ${venueText}`;
+    sentence += '.';
+    if (attendeesText) sentence += ` Please coordinate with ${attendeesText}.`;
+    if (notesOnly) sentence += ` Note: ${notesOnly}`;
+
+    return sentence;
 };
 
 const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) => {
@@ -133,6 +168,10 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
             (emp.mobile_number || '').toLowerCase().includes(q)
         );
     });
+    const selectedEmployees = selectedEmployeeIds
+        .map((id) => employees.find((emp) => emp.id === id))
+        .filter(Boolean);
+    const selectableEmployees = visibleEmployees.filter((emp) => !selectedEmployeeIds.includes(emp.id));
 
     const stenoEmployees = employees.filter(isStenoEmployee);
 
@@ -207,6 +246,27 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
                     <div className="p-6 grid md:grid-cols-2 gap-4">
                         <div className="space-y-3">
                             <p className="text-xs font-black uppercase tracking-widest text-slate-400">Recipients</p>
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700 mb-2">Selected recipients ({selectedEmployees.length})</p>
+                                {selectedEmployees.length === 0 ? (
+                                    <p className="text-xs text-emerald-700/70 italic">No recipients selected yet.</p>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedEmployees.map((emp) => (
+                                            <button
+                                                key={emp.id}
+                                                onClick={() => toggleEmployee(emp.id)}
+                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-emerald-200 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                                title="Remove recipient"
+                                            >
+                                                {emp.name}
+                                                <X size={12} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                                 <div className="flex items-center gap-2">
                                     <Search size={14} className="text-slate-400" />
@@ -220,13 +280,13 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
                             </div>
 
                             <div className="max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-                                {visibleEmployees.length === 0 ? (
+                                {selectableEmployees.length === 0 ? (
                                     <p className="px-3 py-3 text-xs text-slate-400 italic">No employees found.</p>
-                                ) : visibleEmployees.map(emp => (
+                                ) : selectableEmployees.map(emp => (
                                     <label key={emp.id} className="px-3 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-slate-50">
                                         <input
                                             type="checkbox"
-                                            checked={selectedEmployeeIds.includes(emp.id)}
+                                            checked={false}
                                             onChange={() => toggleEmployee(emp.id)}
                                             className="w-4 h-4 accent-indigo-600"
                                         />
@@ -342,6 +402,10 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
             (emp.mobile_number || '').toLowerCase().includes(q)
         );
     });
+    const selectedEmployees = selectedEmployeeIds
+        .map((id) => employees.find((emp) => emp.id === id))
+        .filter(Boolean);
+    const selectableEmployees = visibleEmployees.filter((emp) => !selectedEmployeeIds.includes(emp.id));
 
     const stenoEmployees = employees.filter(isStenoEmployee);
 
@@ -419,6 +483,26 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
                                 onChange={(e) => setDay(e.target.value)}
                                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm"
                             />
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700 mb-2">Selected recipients ({selectedEmployees.length})</p>
+                                {selectedEmployees.length === 0 ? (
+                                    <p className="text-xs text-emerald-700/70 italic">No recipients selected yet.</p>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedEmployees.map((emp) => (
+                                            <button
+                                                key={emp.id}
+                                                onClick={() => toggleEmployee(emp.id)}
+                                                className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-emerald-200 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                                title="Remove recipient"
+                                            >
+                                                {emp.name}
+                                                <X size={12} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                                 <div className="flex items-center gap-2">
                                     <Search size={14} className="text-slate-400" />
@@ -431,13 +515,13 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
                                 </div>
                             </div>
                             <div className="max-h-52 overflow-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-                                {visibleEmployees.length === 0 ? (
+                                {selectableEmployees.length === 0 ? (
                                     <p className="px-3 py-3 text-xs text-slate-400 italic">No employees found.</p>
-                                ) : visibleEmployees.map(emp => (
+                                ) : selectableEmployees.map(emp => (
                                     <label key={emp.id} className="px-3 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-slate-50">
                                         <input
                                             type="checkbox"
-                                            checked={selectedEmployeeIds.includes(emp.id)}
+                                            checked={false}
                                             onChange={() => toggleEmployee(emp.id)}
                                             className="w-4 h-4 accent-indigo-600"
                                         />
