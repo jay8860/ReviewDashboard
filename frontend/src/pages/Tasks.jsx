@@ -44,6 +44,7 @@ const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) 
 
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
+const PAGE_SIZE = 50;
 
 // ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
 const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], initial = null }) => {
@@ -323,6 +324,7 @@ const Tasks = ({ user, onLogout }) => {
     const [filterDept, setFilterDept] = useState(searchParams.get('department_id') || '');
     const [filterAgency, setFilterAgency] = useState(searchParams.get('agency') || '');
     const [sortBy, setSortBy] = useState('deadline_date');
+    const [currentPage, setCurrentPage] = useState(1);
 
     // Tabs: all | today | important
     const [tab, setTab] = useState(initialTab);
@@ -382,6 +384,10 @@ const Tasks = ({ user, onLogout }) => {
     }, [applyTabFilter, buildFilters]);
 
     useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -451,6 +457,18 @@ const Tasks = ({ user, onLogout }) => {
     const handleSearch = (e) => {
         if (e.key === 'Enter') load();
     };
+
+    const totalPages = Math.max(1, Math.ceil((tasks.length || 0) / PAGE_SIZE));
+    const pagedTasks = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        return tasks.slice(start, start + PAGE_SIZE);
+    }, [tasks, currentPage]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     const handleSave = async (form) => {
         try {
@@ -717,7 +735,7 @@ const Tasks = ({ user, onLogout }) => {
                         )}
                     </div>
                     <TaskTable
-                        tasks={tasks}
+                        tasks={pagedTasks}
                         departments={departments}
                         employees={employees}
                         onUpdate={handleUpdate}
@@ -726,6 +744,33 @@ const Tasks = ({ user, onLogout }) => {
                         selectedIds={selectedIds}
                         onSelectChange={setSelectedIds}
                         bulkMode={bulkMode} />
+                    <div className="px-4 py-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500">
+                            Showing {tasks.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE) + 1}
+                            {' '}to{' '}
+                            {Math.min(currentPage * PAGE_SIZE, tasks.length)}
+                            {' '}of {tasks.length}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage <= 1}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40"
+                            >
+                                Prev
+                            </button>
+                            <span className="text-xs font-bold text-slate-600">
+                                Page {currentPage} / {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={currentPage >= totalPages}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

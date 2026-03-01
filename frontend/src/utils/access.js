@@ -18,13 +18,13 @@ const normalizeModuleKey = (value) => {
 
 export const getUserModules = (user) => {
     if (!user) return [];
+    if (user.role === 'admin') {
+        return MODULE_KEYS;
+    }
     const rawModules = Array.isArray(user.module_access) ? user.module_access : [];
     const normalized = rawModules
         .map(normalizeModuleKey)
         .filter((item, index, arr) => item && arr.indexOf(item) === index && MODULE_KEYS.includes(item));
-    if (user.role === 'admin') {
-        return normalized.length > 0 ? normalized : MODULE_KEYS;
-    }
     return normalized.length > 0 ? normalized : ['tasks', 'employees'];
 };
 

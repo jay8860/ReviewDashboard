@@ -82,6 +82,9 @@ def normalize_module_access(raw_modules: Optional[List[str]], role: Optional[str
 
 
 def parse_module_access(raw_value: Optional[str], role: Optional[str]) -> List[str]:
+    if role == "admin":
+        return AVAILABLE_MODULES.copy()
+
     if not raw_value:
         return AVAILABLE_MODULES.copy() if role == "admin" else ["tasks", "employees"]
 

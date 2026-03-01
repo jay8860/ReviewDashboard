@@ -366,7 +366,7 @@ const TaskTable = ({
                         const isPinned = task.is_pinned;
                         const isToday = task.is_today;
                         const isImportant = task.priority === 'High' || task.priority === 'Critical';
-                        const isBulkEditable = Boolean(isAdmin && bulkMode && isSelected);
+                        const isBulkEditable = Boolean(isAdmin && bulkMode);
                         const inputCls = "w-full px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/40 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40";
 
                         return (
@@ -594,10 +594,12 @@ const TaskTable = ({
                                             </a>
 
                                             {/* Edit inline */}
-                                            <button onClick={() => setEditId(task.id)} title="Edit"
-                                                className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors">
-                                                <Edit2 size={13} />
-                                            </button>
+                                            {!bulkMode && (
+                                                <button onClick={() => setEditId(task.id)} title="Edit"
+                                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors">
+                                                    <Edit2 size={13} />
+                                                </button>
+                                            )}
 
                                             {/* Extend deadline */}
                                             <button onClick={() => setCalendarId(calendarId === task.id ? null : task.id)} title="Extend deadline"

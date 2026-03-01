@@ -22,11 +22,11 @@ const Layout = ({ children, user, onLogout }) => {
     const menuItems = [
         { icon: LayoutDashboard, label: 'Overview', path: '/', desc: 'Dashboard home', module: 'overview' },
         { icon: ClipboardList, label: 'Tasks', path: '/tasks', desc: 'Action tracking', module: 'tasks' },
-        { icon: BarChart3, label: 'Analytics', path: '/analytics', desc: 'Command center', module: 'analytics' },
         { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews', module: 'departments' },
         { icon: Map, label: 'Field Visits', path: '/field-visits', desc: 'Village visit drafts', module: 'field_visits' },
         { icon: CheckSquare, label: 'To Do List', path: '/todos', desc: 'Personal reminders', module: 'todos' },
         { icon: Calendar, label: 'Planner', path: '/planner', desc: 'Weekly planner', module: 'planner' },
+        { icon: BarChart3, label: 'Analytics', path: '/analytics', desc: 'Command center', module: 'analytics' },
         { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory', module: 'employees' },
         ...(user?.role === 'admin' ? [{ icon: ShieldCheck, label: 'Access Module', path: '/access', desc: 'Users & access' }] : []),
     ].filter((item) => !item.module || canAccessModule(user, item.module));

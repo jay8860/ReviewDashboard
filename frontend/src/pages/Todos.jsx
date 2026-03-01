@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    ArrowDown, ArrowUp, CheckCircle2, ClipboardList, Plus,
+    ArrowDown, ArrowUp, CheckCircle2, ClipboardList,
     RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 
-const PRIORITIES = ['Critical', 'High', 'Normal', 'Low'];
 const parseNotesLines = (raw = '') => {
     return (raw || '')
         .split('\n')
@@ -22,13 +21,11 @@ const Todos = ({ user, onLogout }) => {
     const toast = useToast();
 
     const [items, setItems] = useState([]);
-    const [departments, setDepartments] = useState([]);
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedIds, setSelectedIds] = useState([]);
     const [notesInput, setNotesInput] = useState('');
-    const [importDepartmentId, setImportDepartmentId] = useState('');
-    const [importAssignedEmployeeId, setImportAssignedEmployeeId] = useState('');
+    const [importSelected, setImportSelected] = useState({});
     const [todoTaskOptions, setTodoTaskOptions] = useState({});
 
     const allSelected = useMemo(
@@ -36,17 +33,27 @@ const Todos = ({ user, onLogout }) => {
         [items.length, selectedIds.length]
     );
     const parsedNotesLines = useMemo(() => parseNotesLines(notesInput), [notesInput]);
+    const allParsedSelected = useMemo(() => {
+        if (parsedNotesLines.length === 0) return false;
+        return parsedNotesLines.every((_, idx) => importSelected[idx] !== false);
+    }, [parsedNotesLines, importSelected]);
+
+    useEffect(() => {
+        const next = {};
+        parsedNotesLines.forEach((_, idx) => {
+            next[idx] = true;
+        });
+        setImportSelected(next);
+    }, [notesInput]);
 
     const loadAll = async () => {
         setLoading(true);
         try {
-            const [todoRows, deptRows, employeeRows] = await Promise.all([
+            const [todoRows, employeeRows] = await Promise.all([
                 api.getTodos(),
-                api.getDepartments(),
                 api.getEmployees(),
             ]);
             setItems(todoRows || []);
-            setDepartments(deptRows || []);
             setEmployees(employeeRows || []);
             setSelectedIds(prev => prev.filter(id => (todoRows || []).some(item => item.id === id)));
         } catch (e) {
@@ -61,16 +68,15 @@ const Todos = ({ user, onLogout }) => {
     }, []);
 
     const handleImportNotes = async () => {
-        if (!notesInput.trim()) {
-            toast.error('Paste notes first');
+        const selectedLines = parsedNotesLines.filter((line, idx) => importSelected[idx] !== false);
+        if (selectedLines.length === 0) {
+            toast.error('Select at least one parsed line to import');
             return;
         }
         try {
             const result = await api.importTodosFromText({
-                text: notesInput,
+                text: selectedLines.join('\n'),
                 priority: 'Normal',
-                department_id: importDepartmentId ? parseInt(importDepartmentId, 10) : null,
-                assigned_employee_id: importAssignedEmployeeId ? parseInt(importAssignedEmployeeId, 10) : null,
             });
             const created = result?.items || [];
             if (created.length > 0) {
@@ -79,6 +85,22 @@ const Todos = ({ user, onLogout }) => {
             toast.success(`${result?.created || 0} to-do items imported`);
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to import notes');
+        }
+    };
+
+    const deleteSelected = async () => {
+        if (selectedIds.length === 0) {
+            toast.error('Select at least one item');
+            return;
+        }
+        if (!window.confirm(`Delete ${selectedIds.length} selected to-do item(s)?`)) return;
+        try {
+            await Promise.all(selectedIds.map((id) => api.deleteTodo(id)));
+            setItems((prev) => prev.filter((row) => !selectedIds.includes(row.id)));
+            setSelectedIds([]);
+            toast.success('Selected to-do items deleted');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Delete failed');
         }
     };
 
@@ -201,24 +223,6 @@ const Todos = ({ user, onLogout }) => {
                             <FileUp size={16} className="text-indigo-600" />
                             <h2 className="font-black text-slate-800">Paste Apple Notes To-Dos</h2>
                         </div>
-                        <div className="grid md:grid-cols-2 gap-2 mb-3">
-                            <select
-                                value={importDepartmentId}
-                                onChange={(e) => setImportDepartmentId(e.target.value)}
-                                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                            >
-                                <option value="">No department</option>
-                                {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
-                            </select>
-                            <select
-                                value={importAssignedEmployeeId}
-                                onChange={(e) => setImportAssignedEmployeeId(e.target.value)}
-                                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                            >
-                                <option value="">No employee</option>
-                                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                            </select>
-                        </div>
                         <textarea
                             value={notesInput}
                             onChange={(e) => setNotesInput(e.target.value)}
@@ -227,12 +231,37 @@ const Todos = ({ user, onLogout }) => {
                             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white resize-none"
                         />
                         <div className="mt-2 p-3 rounded-xl border border-slate-200 bg-slate-50">
-                            <p className="text-xs font-bold text-slate-500 mb-1">Parsed list preview ({parsedNotesLines.length})</p>
+                            <div className="flex items-center justify-between mb-1">
+                                <p className="text-xs font-bold text-slate-500">Parsed list preview ({parsedNotesLines.length})</p>
+                                <label className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
+                                    <input
+                                        type="checkbox"
+                                        checked={allParsedSelected}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            const next = {};
+                                            parsedNotesLines.forEach((_, idx) => { next[idx] = checked; });
+                                            setImportSelected(next);
+                                        }}
+                                    />
+                                    Select all
+                                </label>
+                            </div>
                             <div className="max-h-24 overflow-y-auto text-sm text-slate-700 space-y-1">
                                 {parsedNotesLines.length === 0 ? (
                                     <p className="text-slate-400 italic">No parsed lines yet</p>
                                 ) : (
-                                    parsedNotesLines.map((line, idx) => <p key={`${idx}-${line}`}>{idx + 1}. {line}</p>)
+                                    parsedNotesLines.map((line, idx) => (
+                                        <label key={`${idx}-${line}`} className="flex items-start gap-2">
+                                            <input
+                                                type="checkbox"
+                                                className="mt-1"
+                                                checked={importSelected[idx] !== false}
+                                                onChange={(e) => setImportSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                                            />
+                                            <span>{idx + 1}. {line}</span>
+                                        </label>
+                                    ))
                                 )}
                             </div>
                         </div>
@@ -256,12 +285,20 @@ const Todos = ({ user, onLogout }) => {
                                 Select all
                             </label>
                         </div>
-                        <button
-                            onClick={convertSelected}
-                            className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold inline-flex items-center gap-1.5"
-                        >
-                            <ArrowRightCircle size={14} /> Convert Selected To Tasks
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={deleteSelected}
+                                className="px-3 py-2 rounded-xl bg-rose-600 text-white text-sm font-bold inline-flex items-center gap-1.5"
+                            >
+                                <Trash2 size={14} /> Delete Selected
+                            </button>
+                            <button
+                                onClick={convertSelected}
+                                className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold inline-flex items-center gap-1.5"
+                            >
+                                <ArrowRightCircle size={14} /> Convert Selected To Tasks
+                            </button>
+                        </div>
                     </div>
 
                     {loading ? (
@@ -290,39 +327,7 @@ const Todos = ({ user, onLogout }) => {
                                                     onBlur={() => updateInline(item.id, { title: item.title || '' })}
                                                     className={`w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold ${item.status === 'Done' ? 'line-through text-slate-400' : 'text-slate-800'}`}
                                                 />
-                                                <textarea
-                                                    rows={1}
-                                                    value={item.details || ''}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        setItems(prev => prev.map(row => row.id === item.id ? { ...row, details: val } : row));
-                                                    }}
-                                                    onBlur={() => updateInline(item.id, { details: item.details || '' })}
-                                                    placeholder="Details"
-                                                    className="w-full mt-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-600 resize-none"
-                                                />
                                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                                                    <select
-                                                        value={item.priority || 'Normal'}
-                                                        onChange={(e) => updateInline(item.id, { priority: e.target.value })}
-                                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
-                                                    >
-                                                        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-                                                    </select>
-                                                    <input
-                                                        type="date"
-                                                        value={item.due_date || ''}
-                                                        onChange={(e) => updateInline(item.id, { due_date: e.target.value || null })}
-                                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
-                                                    />
-                                                    <select
-                                                        value={item.department_id || ''}
-                                                        onChange={(e) => updateInline(item.id, { department_id: e.target.value ? parseInt(e.target.value, 10) : null })}
-                                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
-                                                    >
-                                                        <option value="">No department</option>
-                                                        {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
-                                                    </select>
                                                     <select
                                                         value={todoTaskOptions[item.id]?.assigned_employee_id || item.assigned_employee_id || ''}
                                                         onChange={(e) => setTodoTaskOptions(prev => ({
