@@ -168,6 +168,12 @@ const statusStyle = {
     Overdue: 'bg-rose-100 text-rose-700',
 };
 
+const buildTaskWhatsAppMessage = (task) => {
+    const taskName = (task?.description || '').trim() || 'Task';
+    const assignedTo = (task?.assigned_employee_name || task?.assigned_agency || '').trim() || 'Unassigned';
+    return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
+};
+
 // ── Main TaskTable ─────────────────────────────────────────────────────────────
 const TaskTable = ({
     tasks = [],
@@ -299,7 +305,6 @@ const TaskTable = ({
                                 className={`group transition-colors hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10
                                     ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}
                                     ${isCompleted ? 'opacity-60' : ''}
-                                    ${isPinned ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}
                                 `}>
 
                                 {/* Checkbox (bulk mode) */}
@@ -332,14 +337,13 @@ const TaskTable = ({
                                 {/* Task Description */}
                                 <td className="px-3 py-3 min-w-[280px] align-top">
                                     <div className="flex flex-col gap-0.5">
-                                        <p className={`text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words ${isCompleted ? 'line-through' : ''}`}>
+                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
                                             {task.description || <span className="text-slate-300 italic">No description</span>}
                                         </p>
                                         <div className="flex items-center gap-1 flex-wrap">
                                             {task.status && (
                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusStyle[task.status]}`}>{task.status}</span>
                                             )}
-                                            {isPinned && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">📌 Pinned</span>}
                                             {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
                                         </div>
                                     </div>
@@ -428,14 +432,15 @@ const TaskTable = ({
                                     <td className="px-3 py-3">
                                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                             {/* WhatsApp */}
-                                            {task.assigned_agency && (
-                                                <a href={`https://wa.me/?text=${encodeURIComponent(`Follow-up: ${task.task_number} – ${task.description || ''}\nDeadline: ${task.deadline_date || 'N/A'}`)}`}
-                                                    target="_blank" rel="noopener noreferrer"
-                                                    title="WhatsApp follow-up"
-                                                    className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors">
-                                                    <WhatsAppIcon />
-                                                </a>
-                                            )}
+                                            <a
+                                                href={`https://wa.me/?text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                title="WhatsApp follow-up"
+                                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors"
+                                            >
+                                                <WhatsAppIcon />
+                                            </a>
 
                                             {/* Edit inline */}
                                             <button onClick={() => setEditId(task.id)} title="Edit"
@@ -469,8 +474,8 @@ const TaskTable = ({
                                             {/* Pin to Today */}
                                             <button onClick={() => handleQuickAction(task.id, {
                                                 is_today: !isToday,
-                                                is_pinned: !isToday ? true : isPinned
-                                            })} title={isToday ? 'Unpin from Today' : 'Pin to Today'}
+                                                is_pinned: false
+                                            })} title={isToday ? 'Unmark Today' : 'Mark Today'}
                                                 className={`p-1.5 rounded-lg transition-colors ${isToday ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-500'}`}>
                                                 <Pin size={13} />
                                             </button>

@@ -76,6 +76,11 @@ const Overview = ({ user, onLogout }) => {
     const [fieldVisitDraftRows, setFieldVisitDraftRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [deptSectionCollapsed, setDeptSectionCollapsed] = useState(false);
+    const [timelineFilters, setTimelineFilters] = useState({
+        tasks: true,
+        reviews: true,
+        visits: true,
+    });
 
     const loadData = async () => {
         setLoading(true);
@@ -157,8 +162,10 @@ const Overview = ({ user, onLogout }) => {
         const weekStart = startOfDay(today);
 
         (taskRows || []).forEach(task => {
-            const due = toSafeDate(task.deadline_date || task.allocated_date);
-            if (!due || due < weekStart) return;
+            if (!task.is_today) return;
+            let due = toSafeDate(task.deadline_date || task.allocated_date);
+            if (!due || task.is_today) due = new Date(today);
+            if (due < weekStart) return;
             items.push({
                 id: `task-${task.id}`,
                 type: 'task',
@@ -242,20 +249,29 @@ const Overview = ({ user, onLogout }) => {
         });
     }, [taskRows, allMeetings, plannerRows, fieldVisitDraftRows, today]);
 
+    const filteredUnifiedItems = useMemo(() => {
+        return unifiedScheduleItems.filter(item => {
+            if (item.type === 'task') return timelineFilters.tasks;
+            if (item.type === 'review') return timelineFilters.reviews;
+            if (item.type === 'visit') return timelineFilters.visits;
+            return true;
+        });
+    }, [unifiedScheduleItems, timelineFilters]);
+
     const thisWeekTimelineItems = useMemo(() => {
         const weekEnd = endOfDay(addDays(today, 6));
-        return unifiedScheduleItems.filter(item => item.date <= weekEnd).slice(0, 20);
-    }, [unifiedScheduleItems, today]);
+        return filteredUnifiedItems.filter(item => item.date <= weekEnd).slice(0, 20);
+    }, [filteredUnifiedItems, today]);
 
     const tomorrow = useMemo(() => addDays(today, 1), [today]);
 
     const scheduledTodayItems = useMemo(() => {
-        return unifiedScheduleItems.filter(item => isSameDay(item.date, today)).slice(0, 8);
-    }, [unifiedScheduleItems, today]);
+        return filteredUnifiedItems.filter(item => isSameDay(item.date, today)).slice(0, 8);
+    }, [filteredUnifiedItems, today]);
 
     const scheduledTomorrowItems = useMemo(() => {
-        return unifiedScheduleItems.filter(item => isSameDay(item.date, tomorrow)).slice(0, 8);
-    }, [unifiedScheduleItems, tomorrow]);
+        return filteredUnifiedItems.filter(item => isSameDay(item.date, tomorrow)).slice(0, 8);
+    }, [filteredUnifiedItems, tomorrow]);
 
     return (
         <Layout user={user} onLogout={onLogout}>
@@ -433,7 +449,32 @@ const Overview = ({ user, onLogout }) => {
                                 <Calendar size={16} className="text-indigo-600" />
                                 <h3 className="font-black text-slate-800 dark:text-white text-sm">This Week Timeline</h3>
                             </div>
-                            <span className="text-[11px] font-bold text-slate-500">{format(today, 'd MMM')} - {format(addDays(today, 6), 'd MMM')}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold text-slate-500">{format(today, 'd MMM')} - {format(addDays(today, 6), 'd MMM')}</span>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                            <button
+                                type="button"
+                                onClick={() => setTimelineFilters(prev => ({ ...prev, tasks: !prev.tasks }))}
+                                className={`px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${timelineFilters.tasks ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                            >
+                                Tasks (Today)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTimelineFilters(prev => ({ ...prev, reviews: !prev.reviews }))}
+                                className={`px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${timelineFilters.reviews ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                            >
+                                Reviews
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTimelineFilters(prev => ({ ...prev, visits: !prev.visits }))}
+                                className={`px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${timelineFilters.visits ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                            >
+                                Field Visits
+                            </button>
                         </div>
 
                         {thisWeekTimelineItems.length === 0 ? (
