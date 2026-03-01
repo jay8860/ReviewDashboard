@@ -385,6 +385,7 @@ const DepartmentCard = ({
     indexInCategory,
     totalInCategory,
     categoryNames,
+    editMode,
     disabled,
     onEdit,
     onDelete,
@@ -397,7 +398,10 @@ const DepartmentCard = ({
     <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-card rounded-3xl overflow-hidden group hover:shadow-premium transition-premium"
+        className={`glass-card rounded-3xl overflow-hidden group transition-premium ${editMode ? 'hover:shadow-premium' : 'hover:shadow-premium cursor-pointer'}`}
+        onClick={() => {
+            if (!editMode) onOpen(dept.id);
+        }}
     >
         <div className={`h-2 bg-gradient-to-r ${colorGrad[dept.color] || colorGrad.indigo}`} />
         <div className="p-5">
@@ -405,36 +409,38 @@ const DepartmentCard = ({
                 <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${colorGrad[dept.color] || colorGrad.indigo} flex items-center justify-center shadow-lg`}>
                     <span className="text-white font-black text-sm">{dept.short_name || dept.name.slice(0, 2).toUpperCase()}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                    <button
-                        disabled={disabled || indexInCategory === 0}
-                        onClick={() => onMove(dept, -1)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                        title="Move up"
-                    >
-                        <ArrowUp size={14} />
-                    </button>
-                    <button
-                        disabled={disabled || indexInCategory === totalInCategory - 1}
-                        onClick={() => onMove(dept, 1)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                        title="Move down"
-                    >
-                        <ArrowDown size={14} />
-                    </button>
-                    <button
-                        onClick={() => onEdit(dept)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors"
-                    >
-                        <Edit2 size={14} />
-                    </button>
-                    <button
-                        onClick={() => onDelete(dept.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                    >
-                        <Trash2 size={14} />
-                    </button>
-                </div>
+                {editMode && (
+                    <div className="flex items-center gap-1">
+                        <button
+                            disabled={disabled || indexInCategory === 0}
+                            onClick={() => onMove(dept, -1)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                            title="Move up"
+                        >
+                            <ArrowUp size={14} />
+                        </button>
+                        <button
+                            disabled={disabled || indexInCategory === totalInCategory - 1}
+                            onClick={() => onMove(dept, 1)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                            title="Move down"
+                        >
+                            <ArrowDown size={14} />
+                        </button>
+                        <button
+                            onClick={() => onEdit(dept)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors"
+                        >
+                            <Edit2 size={14} />
+                        </button>
+                        <button
+                            onClick={() => onDelete(dept.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
+                )}
             </div>
 
             <h3 className="font-black text-lg text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
@@ -450,37 +456,44 @@ const DepartmentCard = ({
                 {dept.open_tasks > 0 && <span className="text-xs text-slate-400 ml-auto">{dept.open_tasks} tasks</span>}
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-3">
-                <select
-                    value={normalizePriority(dept.priority_level)}
-                    onChange={(e) => onPriorityChange(dept, e.target.value)}
-                    className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-indigo-100 bg-indigo-50/70 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                    {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level} Priority</option>)}
-                </select>
-                <select
-                    value={dept.category_name || 'General'}
-                    onChange={(e) => onCategoryChange(dept, e.target.value)}
-                    className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                    {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
-                    <option value="__new__">+ New Category…</option>
-                </select>
-            </div>
+            {editMode && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                    <select
+                        value={normalizePriority(dept.priority_level)}
+                        onChange={(e) => onPriorityChange(dept, e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-indigo-100 bg-indigo-50/70 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    >
+                        {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level} Priority</option>)}
+                    </select>
+                    <select
+                        value={dept.category_name || 'General'}
+                        onChange={(e) => onCategoryChange(dept, e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    >
+                        {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
+                        <option value="__new__">+ New Category…</option>
+                    </select>
+                </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid gap-2 ${editMode ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <button
-                    onClick={() => onQuickSchedule(dept)}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onQuickSchedule(dept);
+                    }}
                     className="w-full inline-flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-xs hover:bg-violet-200 transition-colors"
                 >
                     <CalendarPlus size={13} /> Schedule
                 </button>
-                <button
-                    onClick={() => onOpen(dept.id)}
-                    className="w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 font-semibold text-xs hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors group/btn"
-                >
-                    Open <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
-                </button>
+                {editMode && (
+                    <button
+                        onClick={() => onOpen(dept.id)}
+                        className="w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 font-semibold text-xs hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors group/btn"
+                    >
+                        Open <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
+                    </button>
+                )}
             </div>
         </div>
     </motion.div>
@@ -491,6 +504,7 @@ const DepartmentListRow = ({
     indexInCategory,
     totalInCategory,
     categoryNames,
+    editMode,
     disabled,
     onEdit,
     onDelete,
@@ -502,7 +516,12 @@ const DepartmentListRow = ({
 }) => (
     <div className="rounded-2xl border border-indigo-100/70 bg-white/80 dark:bg-white/5 dark:border-indigo-500/20 px-4 py-3">
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-            <div className="min-w-0 flex-1">
+            <div
+                className={`min-w-0 flex-1 ${editMode ? '' : 'cursor-pointer'}`}
+                onClick={() => {
+                    if (!editMode) onOpen(dept.id);
+                }}
+            >
                 <div className="flex items-center gap-2">
                     <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${colorGrad[dept.color] || colorGrad.indigo} flex items-center justify-center shadow`}>
                         <span className="text-white font-black text-[10px]">{dept.short_name || dept.name.slice(0, 2).toUpperCase()}</span>
@@ -515,51 +534,58 @@ const DepartmentListRow = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-                <select
-                    value={normalizePriority(dept.priority_level)}
-                    onChange={(e) => onPriorityChange(dept, e.target.value)}
-                    className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                    {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level}</option>)}
-                </select>
-                <select
-                    value={dept.category_name || 'General'}
-                    onChange={(e) => onCategoryChange(dept, e.target.value)}
-                    className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                >
-                    {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
-                    <option value="__new__">+ New Category…</option>
-                </select>
+                {editMode && (
+                    <>
+                        <select
+                            value={normalizePriority(dept.priority_level)}
+                            onChange={(e) => onPriorityChange(dept, e.target.value)}
+                            className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        >
+                            {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level}</option>)}
+                        </select>
+                        <select
+                            value={dept.category_name || 'General'}
+                            onChange={(e) => onCategoryChange(dept, e.target.value)}
+                            className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        >
+                            {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            <option value="__new__">+ New Category…</option>
+                        </select>
+                        <button
+                            disabled={disabled || indexInCategory === 0}
+                            onClick={() => onMove(dept, -1)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
+                            title="Move up"
+                        >
+                            <ArrowUp size={14} />
+                        </button>
+                        <button
+                            disabled={disabled || indexInCategory === totalInCategory - 1}
+                            onClick={() => onMove(dept, 1)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
+                            title="Move down"
+                        >
+                            <ArrowDown size={14} />
+                        </button>
+                        <button onClick={() => onEdit(dept)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">
+                            <Edit2 size={14} />
+                        </button>
+                        <button onClick={() => onDelete(dept.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                            <Trash2 size={14} />
+                        </button>
+                        <button
+                            onClick={() => onOpen(dept.id)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-1"
+                        >
+                            Open <ArrowRight size={12} />
+                        </button>
+                    </>
+                )}
                 <button
-                    disabled={disabled || indexInCategory === 0}
-                    onClick={() => onMove(dept, -1)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
-                    title="Move up"
-                >
-                    <ArrowUp size={14} />
-                </button>
-                <button
-                    disabled={disabled || indexInCategory === totalInCategory - 1}
-                    onClick={() => onMove(dept, 1)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
-                    title="Move down"
-                >
-                    <ArrowDown size={14} />
-                </button>
-                <button onClick={() => onEdit(dept)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">
-                    <Edit2 size={14} />
-                </button>
-                <button onClick={() => onDelete(dept.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
-                    <Trash2 size={14} />
-                </button>
-                <button
-                    onClick={() => onOpen(dept.id)}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-1"
-                >
-                    Open <ArrowRight size={12} />
-                </button>
-                <button
-                    onClick={() => onQuickSchedule(dept)}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onQuickSchedule(dept);
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors inline-flex items-center gap-1"
                 >
                     <CalendarPlus size={12} /> Schedule
@@ -577,6 +603,7 @@ const Departments = ({ user, onLogout }) => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editDept, setEditDept] = useState(null);
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('department_view_mode') || 'grid');
+    const [editMode, setEditMode] = useState(false);
     const [busy, setBusy] = useState(false);
     const [quickDept, setQuickDept] = useState(null);
     const [quickMeetingOpen, setQuickMeetingOpen] = useState(false);
@@ -804,11 +831,19 @@ const Departments = ({ user, onLogout }) => {
                             </button>
                         </div>
                         <button
-                            onClick={handleCreateCategory}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors"
+                            onClick={() => setEditMode(v => !v)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${editMode ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                         >
-                            <FolderPlus size={14} /> New Category
+                            <Edit2 size={14} /> {editMode ? 'Done Editing' : 'Edit Mode'}
                         </button>
+                        {editMode && (
+                            <button
+                                onClick={handleCreateCategory}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors"
+                            >
+                                <FolderPlus size={14} /> New Category
+                            </button>
+                        )}
                         <button
                             onClick={() => { setEditDept(null); setModalOpen(true); }}
                             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-all"
@@ -849,29 +884,33 @@ const Departments = ({ user, onLogout }) => {
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                    <button
-                                        disabled={busy || categoryIdx === 0}
-                                        onClick={() => handleMoveCategory(bucket.name, -1)}
-                                        className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
-                                        title="Move category up"
-                                    >
-                                        <ArrowUp size={14} />
-                                    </button>
-                                    <button
-                                        disabled={busy || categoryIdx === groupedCategories.length - 1}
-                                        onClick={() => handleMoveCategory(bucket.name, 1)}
-                                        className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
-                                        title="Move category down"
-                                    >
-                                        <ArrowDown size={14} />
-                                    </button>
-                                    <button
-                                        disabled={busy}
-                                        onClick={() => handleRenameCategory(bucket.name)}
-                                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                                    >
-                                        Rename
-                                    </button>
+                                    {editMode && (
+                                        <>
+                                            <button
+                                                disabled={busy || categoryIdx === 0}
+                                                onClick={() => handleMoveCategory(bucket.name, -1)}
+                                                className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
+                                                title="Move category up"
+                                            >
+                                                <ArrowUp size={14} />
+                                            </button>
+                                            <button
+                                                disabled={busy || categoryIdx === groupedCategories.length - 1}
+                                                onClick={() => handleMoveCategory(bucket.name, 1)}
+                                                className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30"
+                                                title="Move category down"
+                                            >
+                                                <ArrowDown size={14} />
+                                            </button>
+                                            <button
+                                                disabled={busy}
+                                                onClick={() => handleRenameCategory(bucket.name)}
+                                                className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                            >
+                                                Rename
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
@@ -884,6 +923,7 @@ const Departments = ({ user, onLogout }) => {
                                             indexInCategory={idx}
                                             totalInCategory={bucket.departments.length}
                                             categoryNames={categoryNames}
+                                            editMode={editMode}
                                             disabled={busy}
                                             onEdit={(row) => { setEditDept(row); setModalOpen(true); }}
                                             onDelete={handleDelete}
@@ -904,6 +944,7 @@ const Departments = ({ user, onLogout }) => {
                                             indexInCategory={idx}
                                             totalInCategory={bucket.departments.length}
                                             categoryNames={categoryNames}
+                                            editMode={editMode}
                                             disabled={busy}
                                             onEdit={(row) => { setEditDept(row); setModalOpen(true); }}
                                             onDelete={handleDelete}
