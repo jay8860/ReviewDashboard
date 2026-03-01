@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar,
+    Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarPlus,
     MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { api } from '../services/api';
 
 // WhatsApp SVG icon
 const WhatsAppIcon = () => (
@@ -159,6 +158,157 @@ const buildTaskWhatsAppMessage = (task) => {
     return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
 };
 
+const getTodayIso = () => new Date().toISOString().slice(0, 10);
+
+const ScheduleTaskMeetingModal = ({ isOpen, task, departments = [], onClose, onSave }) => {
+    const [form, setForm] = useState({
+        title: '',
+        date: getTodayIso(),
+        time_slot: '10:00',
+        duration_minutes: 30,
+        venue: '',
+        department_id: '',
+    });
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen || !task) return;
+        setForm({
+            title: (task.description || task.task_number || 'Task Meeting').slice(0, 120),
+            date: getTodayIso(),
+            time_slot: '10:00',
+            duration_minutes: 30,
+            venue: '',
+            department_id: task.department_id || '',
+        });
+        setSaving(false);
+    }, [isOpen, task]);
+
+    if (!isOpen || !task) return null;
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!form.date || !form.time_slot) return;
+        setSaving(true);
+        try {
+            await onSave({
+                ...form,
+                duration_minutes: parseInt(form.duration_minutes, 10) || 30,
+                department_id: form.department_id ? parseInt(form.department_id, 10) : null,
+            });
+            onClose();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30';
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-md shadow-premium-lg"
+                >
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-white">
+                        <div>
+                            <h3 className="text-lg font-black text-slate-800">Schedule Task Meeting</h3>
+                            <p className="text-xs text-slate-400">Create a planner slot from this task</p>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100">
+                            <X size={16} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <form onSubmit={submit} className="p-6 space-y-3">
+                        <div>
+                            <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Title</label>
+                            <input
+                                required
+                                value={form.title}
+                                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                                className={inputCls}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Date</label>
+                                <input
+                                    type="date"
+                                    value={form.date}
+                                    onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                                    className={inputCls}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Time</label>
+                                <input
+                                    type="time"
+                                    value={form.time_slot}
+                                    onChange={(e) => setForm((prev) => ({ ...prev, time_slot: e.target.value }))}
+                                    className={inputCls}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Duration</label>
+                                <select
+                                    value={form.duration_minutes}
+                                    onChange={(e) => setForm((prev) => ({ ...prev, duration_minutes: e.target.value }))}
+                                    className={inputCls}
+                                >
+                                    <option value={30}>30m</option>
+                                    <option value={60}>60m</option>
+                                    <option value={90}>90m</option>
+                                    <option value={120}>120m</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Department</label>
+                                <select
+                                    value={form.department_id}
+                                    onChange={(e) => setForm((prev) => ({ ...prev, department_id: e.target.value }))}
+                                    className={inputCls}
+                                >
+                                    <option value="">None</option>
+                                    {departments.map((dept) => (
+                                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Venue</label>
+                            <input
+                                value={form.venue}
+                                onChange={(e) => setForm((prev) => ({ ...prev, venue: e.target.value }))}
+                                placeholder="Meeting room / location"
+                                className={inputCls}
+                            />
+                        </div>
+
+                        <div className="pt-2 flex gap-2">
+                            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50">
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60">
+                                {saving ? 'Scheduling…' : 'Schedule'}
+                            </button>
+                        </div>
+                    </form>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
 // ── Main TaskTable ─────────────────────────────────────────────────────────────
 const TaskTable = ({
     tasks = [],
@@ -166,6 +316,7 @@ const TaskTable = ({
     employees = [],
     onUpdate,
     onDelete,
+    onScheduleTask,
     isAdmin = false,
     selectedIds = [],
     onSelectChange,
@@ -177,6 +328,7 @@ const TaskTable = ({
     const [sort, setSort] = useState({ key: 'deadline_date', dir: 'asc' });
     const [bulkDrafts, setBulkDrafts] = useState({});
     const [savingCells, setSavingCells] = useState({});
+    const [scheduleTask, setScheduleTask] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
 
@@ -607,6 +759,15 @@ const TaskTable = ({
                                                 <Calendar size={13} />
                                             </button>
 
+                                            {/* Schedule task meeting */}
+                                            <button
+                                                onClick={() => setScheduleTask(task)}
+                                                title="Schedule meeting in planner"
+                                                className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
+                                            >
+                                                <CalendarPlus size={13} />
+                                            </button>
+
                                             {/* Quick Complete */}
                                             <button onClick={() => handleQuickAction(task.id, {
                                                 status: isCompleted ? 'Pending' : 'Completed',
@@ -646,6 +807,14 @@ const TaskTable = ({
                     })}
                 </tbody>
             </table>
+
+            <ScheduleTaskMeetingModal
+                isOpen={Boolean(scheduleTask)}
+                task={scheduleTask}
+                departments={departments}
+                onClose={() => setScheduleTask(null)}
+                onSave={(payload) => onScheduleTask ? onScheduleTask(scheduleTask, payload) : Promise.resolve()}
+            />
         </div>
     );
 };

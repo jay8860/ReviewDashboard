@@ -150,8 +150,11 @@ def get_tasks(
     if agency:
         q = q.filter(models.Task.assigned_agency == agency)
     if status:
-        statuses = [s.strip() for s in status.split(',')]
-        q = q.filter(models.Task.status.in_(statuses))
+        raw_statuses = [s.strip() for s in status.split(',') if s.strip()]
+        statuses = [_normalize_task_status(s) for s in raw_statuses]
+        statuses = [s for s in statuses if s]
+        if statuses:
+            q = q.filter(models.Task.status.in_(statuses))
     if priority:
         q = q.filter(models.Task.priority == priority)
     if is_today is not None:
@@ -193,7 +196,8 @@ def get_stats(db: Session = Depends(get_db)):
         or_(models.Task.status == "Completed", models.Task.completion_date != None)
     ).scalar()
     pending = db.query(func.count(models.Task.id)).filter(
-        models.Task.status == "Pending", models.Task.completion_date == None
+        models.Task.completion_date == None,
+        or_(models.Task.status == None, models.Task.status != "Completed")
     ).scalar()
     overdue = db.query(func.count(models.Task.id)).filter(
         models.Task.status == "Overdue", models.Task.completion_date == None

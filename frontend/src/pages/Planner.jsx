@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ChevronLeft, ChevronRight, Plus, Trash2, X, RefreshCw, Settings, GripVertical,
-    CalendarClock, CheckCircle2, Link2, Search
+    CalendarClock, Link2, Search
 } from 'lucide-react';
 import {
     format, startOfWeek, addDays, addWeeks, subWeeks, parseISO, isSameDay, getISODay,
@@ -79,6 +79,8 @@ const formatDateSafe = (value, fmt = 'd MMMM yyyy', fallback = 'TBD') => {
         return fallback;
     }
 };
+
+const getTodayIso = () => format(new Date(), 'yyyy-MM-dd');
 
 const buildPlannerEventWhatsAppMessage = (event) => {
     const title = event?.title || 'Calendar Event';
@@ -279,6 +281,232 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
     );
 };
 
+const buildDayScheduleMessage = (dateValue, items) => {
+    const headingDate = formatDateSafe(dateValue, 'd MMMM yyyy', 'TBD');
+    if (!items.length) {
+        return `Schedule for ${headingDate}\nNo events scheduled.`;
+    }
+
+    const lines = items.map((event, idx) => {
+        const timeText = event.time_slot || 'TBD';
+        const typeText = (event.event_type || 'event').replace('-', ' ');
+        const deptText = event.department_name ? ` · ${event.department_name}` : '';
+        return `${idx + 1}. ${timeText} - ${event.title} (${typeText})${deptText}`;
+    });
+
+    return `Schedule the following for ${headingDate}:\n${lines.join('\n')}`;
+};
+
+const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [], defaultDate }) => {
+    const [day, setDay] = useState(defaultDate || getTodayIso());
+    const [message, setMessage] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const [includeStenoCopy, setIncludeStenoCopy] = useState(true);
+
+    const dayEvents = useMemo(() => {
+        if (!day) return [];
+        const parsedDay = parseDateSafe(day);
+        if (!parsedDay) return [];
+        return [...events]
+            .filter((event) => {
+                const parsedDate = parseDateSafe(event?.date);
+                if (!parsedDate) return false;
+                return isSameDay(parsedDate, parsedDay) && normalizeStatus(event?.status) !== 'Cancelled';
+            })
+            .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+    }, [events, day]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setDay(defaultDate || getTodayIso());
+        setSearchTerm('');
+        setSelectedEmployeeIds([]);
+        const hasSteno = employees.some(isStenoEmployee);
+        setIncludeStenoCopy(hasSteno);
+    }, [isOpen, defaultDate, employees]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setMessage(buildDayScheduleMessage(day, dayEvents));
+    }, [isOpen, day, dayEvents]);
+
+    if (!isOpen) return null;
+
+    const visibleEmployees = employees.filter((emp) => {
+        const q = searchTerm.trim().toLowerCase();
+        if (!q) return true;
+        return (
+            (emp.name || '').toLowerCase().includes(q) ||
+            (emp.display_username || '').toLowerCase().includes(q) ||
+            (emp.mobile_number || '').toLowerCase().includes(q)
+        );
+    });
+
+    const stenoEmployees = employees.filter(isStenoEmployee);
+
+    const toggleEmployee = (id) => {
+        setSelectedEmployeeIds((prev) => (
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        ));
+    };
+
+    const buildRecipientNumbers = () => {
+        const numbers = [];
+        const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
+        selectedEmployeeIds.forEach((id) => {
+            const mobile = employeeMap.get(id)?.mobile_number;
+            if (mobile) numbers.push(mobile);
+        });
+        if (includeStenoCopy) {
+            stenoEmployees.forEach((emp) => {
+                if (emp.mobile_number) numbers.push(emp.mobile_number);
+            });
+        }
+        return [...new Set(numbers.map((num) => String(num || '').replace(/\D/g, '')).filter(Boolean))];
+    };
+
+    const handleSend = () => {
+        const draft = (message || '').trim();
+        if (!draft) {
+            window.alert('Message draft cannot be empty');
+            return;
+        }
+        const recipients = buildRecipientNumbers();
+        if (!recipients.length) {
+            window.alert('Select at least one recipient');
+            return;
+        }
+        const encoded = encodeURIComponent(draft);
+        recipients.forEach((number, idx) => {
+            setTimeout(() => {
+                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+            }, idx * 250);
+        });
+        onClose();
+    };
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-4xl shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar"
+                >
+                    <div className="px-6 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                <WAIcon />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">Day Schedule Message</h2>
+                                <p className="text-xs text-slate-400">Send one combined message for a selected date</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                            <X size={18} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <div className="p-6 grid md:grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Recipients</p>
+                            <input
+                                type="date"
+                                value={day}
+                                onChange={(e) => setDay(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm"
+                            />
+                            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                    <Search size={14} className="text-slate-400" />
+                                    <input
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        placeholder="Search employees..."
+                                        className="w-full text-sm text-slate-700 bg-transparent focus:outline-none"
+                                    />
+                                </div>
+                            </div>
+                            <div className="max-h-52 overflow-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+                                {visibleEmployees.length === 0 ? (
+                                    <p className="px-3 py-3 text-xs text-slate-400 italic">No employees found.</p>
+                                ) : visibleEmployees.map(emp => (
+                                    <label key={emp.id} className="px-3 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-slate-50">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedEmployeeIds.includes(emp.id)}
+                                            onChange={() => toggleEmployee(emp.id)}
+                                            className="w-4 h-4 accent-indigo-600"
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-slate-700 truncate">{emp.name}</p>
+                                            <p className="text-[11px] text-slate-400 truncate">{emp.mobile_number} · {emp.display_username}</p>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    checked={includeStenoCopy}
+                                    onChange={(e) => setIncludeStenoCopy(e.target.checked)}
+                                    className="w-4 h-4 accent-indigo-600"
+                                    disabled={stenoEmployees.length === 0}
+                                />
+                                Send copy to steno {stenoEmployees.length ? `(${stenoEmployees.length})` : '(not found)'}
+                            </label>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Selected Day Events</p>
+                                {dayEvents.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">No events scheduled for this day.</p>
+                                ) : (
+                                    <ol className="space-y-1">
+                                        {dayEvents.map((event, idx) => (
+                                            <li key={event.id} className="text-xs text-slate-600">
+                                                {idx + 1}. {event.time_slot || 'TBD'} - {event.title}
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Message Draft (Editable)</p>
+                            <textarea
+                                rows={17}
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                className="w-full text-sm px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="px-6 pb-6 flex items-center justify-end gap-2">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSend}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-2"
+                        >
+                            <WAIcon /> Send WhatsApp
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
 const toMinutes = (timeStr) => {
     const [h, m] = (timeStr || '00:00').split(':').map(Number);
     return (h * 60) + m;
@@ -296,6 +524,11 @@ const normalizeStatus = (status) => {
     if (s === 'confirmed') return 'Confirmed';
     if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
     return 'Draft';
+};
+
+const normalizeModalStatus = (status) => {
+    const normalized = normalizeStatus(status);
+    return normalized === 'Cancelled' ? 'Cancelled' : 'Confirmed';
 };
 
 const buildSlots = (dayStart, dayEnd, slotMinutes, gapMinutes) => {
@@ -338,7 +571,7 @@ const EventModal = ({
         time_slot: defaultTime,
         duration_minutes: defaultSlotMinutes,
         event_type: 'meeting',
-        status: 'Draft',
+        status: 'Confirmed',
         color: 'indigo',
         description: '',
         venue: '',
@@ -356,7 +589,7 @@ const EventModal = ({
                 time_slot: eventData.time_slot || defaultTime,
                 duration_minutes: eventData.duration_minutes || defaultSlotMinutes,
                 event_type: eventData.event_type || 'meeting',
-                status: normalizeStatus(eventData.status),
+                status: normalizeModalStatus(eventData.status),
                 color: eventData.color || 'indigo',
                 description: eventData.description || '',
                 venue: eventData.venue || '',
@@ -372,7 +605,7 @@ const EventModal = ({
                 time_slot: prefillData.time_slot || defaultTime,
                 duration_minutes: prefillData.duration_minutes || defaultSlotMinutes,
                 event_type: prefillData.event_type || 'meeting',
-                status: normalizeStatus(prefillData.status),
+                status: normalizeModalStatus(prefillData.status),
                 color: prefillData.color || 'indigo',
                 description: prefillData.description || '',
                 venue: prefillData.venue || '',
@@ -387,7 +620,7 @@ const EventModal = ({
             time_slot: defaultTime,
             duration_minutes: defaultSlotMinutes,
             event_type: 'meeting',
-            status: 'Draft',
+            status: 'Confirmed',
             color: 'indigo',
             description: '',
             venue: '',
@@ -488,7 +721,6 @@ const EventModal = ({
                                     onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
                                     className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 >
-                                    <option value="Draft">Draft</option>
                                     <option value="Confirmed">Confirmed</option>
                                     <option value="Cancelled">Cancelled</option>
                                 </select>
@@ -550,7 +782,7 @@ const EventModal = ({
                                 className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
                             />
                         </div>
-                        {form.event_type === 'meeting' && form.department_id && (
+                        {(form.event_type === 'meeting' || form.event_type === 'review') && form.department_id && (
                             <div className="rounded-xl bg-violet-50 border border-violet-100 p-3 text-xs text-violet-700 font-semibold">
                                 Confirmed department meetings auto-create Meeting Workspace entries.
                             </div>
@@ -610,6 +842,7 @@ const Planner = ({ user, onLogout }) => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editEvent, setEditEvent] = useState(null);
     const [prefillData, setPrefillData] = useState(null);
+    const [dayMessageModalOpen, setDayMessageModalOpen] = useState(false);
     const [clickedDate, setClickedDate] = useState(null);
     const [clickedTime, setClickedTime] = useState(null);
     const [dragEventId, setDragEventId] = useState(null);
@@ -698,7 +931,7 @@ const Planner = ({ user, onLogout }) => {
                     time_slot: settings.day_start || '10:00',
                     duration_minutes: draft.est_duration_minutes || settings.slot_minutes || 30,
                     event_type: 'field-visit',
-                    status: 'Draft',
+                    status: 'Confirmed',
                     color: 'emerald',
                     description: details,
                     venue: draft.location || '',
@@ -752,10 +985,19 @@ const Planner = ({ user, onLogout }) => {
 
     const handleSaveEvent = async (payload) => {
         try {
+            const normalizedType = String(payload.event_type || '').toLowerCase();
+            if ((normalizedType === 'meeting' || normalizedType === 'review') && !payload.department_id) {
+                toast.error('Select a department for meeting/review events');
+                return;
+            }
+            const normalizedPayload = {
+                ...payload,
+                status: payload.status === 'Cancelled' ? 'Cancelled' : 'Confirmed',
+            };
             if (editEvent) {
-                await api.updatePlannerEvent(editEvent.id, payload);
+                await api.updatePlannerEvent(editEvent.id, normalizedPayload);
             } else {
-                await api.createPlannerEvent(payload);
+                await api.createPlannerEvent(normalizedPayload);
             }
             setModalOpen(false);
             setEditEvent(null);
@@ -789,16 +1031,6 @@ const Planner = ({ user, onLogout }) => {
             await loadEvents();
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to move event');
-        }
-    };
-
-    const handleConfirmDraft = async (event) => {
-        try {
-            await api.updatePlannerEvent(event.id, { status: 'Confirmed' });
-            await loadEvents();
-            toast.success('Event confirmed');
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || 'Failed to confirm event');
         }
     };
 
@@ -863,6 +1095,9 @@ const Planner = ({ user, onLogout }) => {
                         <button onClick={() => setWeekStart(addWeeks(weekStart, 1))} className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500"><ChevronRight size={18} /></button>
                         <button onClick={manualSync} className="px-4 py-2 rounded-xl bg-sky-100 text-sky-700 text-sm font-bold hover:bg-sky-200 inline-flex items-center gap-1.5">
                             <Link2 size={14} /> Sync ICS
+                        </button>
+                        <button onClick={() => setDayMessageModalOpen(true)} className="px-4 py-2 rounded-xl bg-emerald-100 text-emerald-700 text-sm font-bold hover:bg-emerald-200 inline-flex items-center gap-1.5">
+                            <WAIcon /> Day Message
                         </button>
                         <button onClick={loadEvents} className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500">
                             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -1022,14 +1257,6 @@ const Planner = ({ user, onLogout }) => {
                                                                     </div>
                                                                 </div>
                                                                 <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                    {!event.is_locked && normalizeStatus(event.status) === 'Draft' && (
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); handleConfirmDraft(event); }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-bold"
-                                                                        >
-                                                                            <CheckCircle2 size={10} /> Confirm
-                                                                        </button>
-                                                                    )}
                                                                     {event.department_meeting_id && event.department_id && (
                                                                         <button
                                                                             onClick={(e) => {
@@ -1105,6 +1332,13 @@ const Planner = ({ user, onLogout }) => {
                 defaultSlotMinutes={settings.slot_minutes || 30}
                 departments={departments}
                 employees={employees}
+            />
+            <PlannerDayWhatsAppModal
+                isOpen={dayMessageModalOpen}
+                onClose={() => setDayMessageModalOpen(false)}
+                events={events}
+                employees={employees}
+                defaultDate={format(new Date(), 'yyyy-MM-dd')}
             />
         </Layout>
     );

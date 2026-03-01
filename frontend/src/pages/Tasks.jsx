@@ -332,7 +332,7 @@ const Tasks = ({ user, onLogout }) => {
     const activeStat = useMemo(() => {
         if (tab === 'important') return 'important';
         if (filterStatus === 'Completed') return 'completed';
-        if (filterStatus === 'Pending') return 'pending';
+        if (filterStatus === 'Pending,Overdue') return 'pending';
         if (filterStatus === 'Overdue') return 'overdue';
         if (tab === 'all' && !filterStatus) return 'total';
         return null;
@@ -445,7 +445,7 @@ const Tasks = ({ user, onLogout }) => {
         }
         if (key === 'pending') {
             setTab('all');
-            setFilterStatus('Pending');
+            setFilterStatus('Pending,Overdue');
             return;
         }
         if (key === 'overdue') {
@@ -526,6 +526,40 @@ const Tasks = ({ user, onLogout }) => {
             load();
         } catch {
             toast.error('Failed to delete task');
+        }
+    };
+
+    const handleScheduleTaskMeeting = async (task, schedulePayload) => {
+        try {
+            const titleText = (schedulePayload?.title || task?.description || task?.task_number || 'Task Meeting').trim();
+            const notes = [
+                task?.description ? `Task: ${task.description}` : '',
+                task?.steno_comment ? `Comments: ${task.steno_comment}` : '',
+                task?.task_number ? `Task ID: ${task.task_number}` : '',
+            ].filter(Boolean).join('\n');
+
+            const attendees = (task?.assigned_employee_name || '').trim()
+                || (task?.assigned_agency || '').trim()
+                || '';
+
+            await api.createPlannerEvent({
+                title: titleText,
+                date: schedulePayload.date,
+                time_slot: schedulePayload.time_slot,
+                duration_minutes: parseInt(schedulePayload.duration_minutes, 10) || 30,
+                event_type: 'meeting',
+                status: 'Confirmed',
+                color: 'indigo',
+                description: notes || null,
+                venue: schedulePayload.venue || '',
+                attendees,
+                department_id: schedulePayload.department_id || task?.department_id || null,
+                source: 'task_schedule',
+            });
+            toast.success('Task meeting scheduled in planner');
+        } catch (err) {
+            toast.error(err?.response?.data?.detail || 'Failed to schedule task meeting');
+            throw err;
         }
     };
 
@@ -671,6 +705,7 @@ const Tasks = ({ user, onLogout }) => {
                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                         className="px-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none text-sm font-bold text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer">
                         <option value="">All Statuses</option>
+                        <option value="Pending,Overdue">Open (Pending + Overdue)</option>
                         {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
                     </select>
 
@@ -740,6 +775,7 @@ const Tasks = ({ user, onLogout }) => {
                         employees={employees}
                         onUpdate={handleUpdate}
                         onDelete={handleDelete}
+                        onScheduleTask={handleScheduleTaskMeeting}
                         isAdmin={canManageTasks}
                         selectedIds={selectedIds}
                         onSelectChange={setSelectedIds}
