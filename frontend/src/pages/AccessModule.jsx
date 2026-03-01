@@ -222,11 +222,14 @@ const AccessModule = ({ user, onLogout }) => {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [userRows, modules] = await Promise.all([api.getUsers(), api.getAccessModules()]);
-            setUsers(userRows);
+            const modules = await api.getAccessModules();
             setModuleOptions(modules);
+            const userRows = await api.getUsers();
+            setUsers(userRows);
         } catch (error) {
-            toast.error(error?.response?.data?.detail || 'Failed to load access module data');
+            if (error?.response?.status !== 401) {
+                toast.error(error?.response?.data?.detail || 'Failed to load access module data');
+            }
         } finally {
             setLoading(false);
         }

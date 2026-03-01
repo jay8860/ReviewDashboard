@@ -13,9 +13,33 @@ const TODO_URL = `${BASE_URL}/api/todos`;
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (token && token !== 'undefined' && token !== 'null') {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
 });
+
+// If backend rejects JWT, force fresh login
+axios.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
+        const detail = error?.response?.data?.detail;
+        const isAuthError = status === 401 && (
+            detail === 'Invalid token' ||
+            detail === 'Unauthorized' ||
+            detail === 'Invalid token payload'
+        );
+        if (isAuthError) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+                window.location.assign('/login');
+            }
+        }
+        return Promise.reject(error);
+    }
+);
 
 export const api = {
     // ── Auth ──────────────────────────────────────────────────────────────────
