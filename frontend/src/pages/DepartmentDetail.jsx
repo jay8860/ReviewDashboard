@@ -1206,9 +1206,14 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                             >
                                                 <td className="px-4 py-3 text-xs text-slate-400 font-bold">{i + 1}</td>
                                                 <td className="px-3 py-3">
-                                                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
-                                                        {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
-                                                    </span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">
+                                                            {format(new Date(m.scheduled_date), 'dd/MM/yyyy')}
+                                                        </span>
+                                                        {m.scheduled_time && (
+                                                            <span className="text-[11px] text-slate-400">{m.scheduled_time}</span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-3 py-3 hidden sm:table-cell">
                                                     <span className="text-xs text-slate-500">{m.venue || <span className="text-slate-300 dark:text-white/20">—</span>}</span>

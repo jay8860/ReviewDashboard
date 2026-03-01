@@ -697,6 +697,7 @@ def bulk_delete_agenda_points(dept_id: int, data: AgendaPointBulkDelete, db: Ses
 
 class MeetingCreate(BaseModel):
     scheduled_date: date
+    scheduled_time: Optional[str] = None
     venue: Optional[str] = None
     attendees: Optional[str] = None
     notes: Optional[str] = None
@@ -709,6 +710,7 @@ class MeetingCreate(BaseModel):
 
 class MeetingUpdate(BaseModel):
     scheduled_date: Optional[date] = None
+    scheduled_time: Optional[str] = None
     venue: Optional[str] = None
     attendees: Optional[str] = None
     notes: Optional[str] = None
@@ -722,7 +724,7 @@ class MeetingUpdate(BaseModel):
 def get_meetings(dept_id: int, db: Session = Depends(get_db)):
     meetings = db.query(models.DepartmentMeeting).filter(
         models.DepartmentMeeting.department_id == dept_id
-    ).order_by(models.DepartmentMeeting.scheduled_date.desc()).all()
+    ).order_by(models.DepartmentMeeting.scheduled_date.desc(), models.DepartmentMeeting.scheduled_time.desc()).all()
 
     result = []
     for m in meetings:
@@ -733,6 +735,7 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
             "id": m.id,
             "department_id": m.department_id,
             "scheduled_date": str(m.scheduled_date),
+            "scheduled_time": m.scheduled_time,
             "venue": m.venue,
             "attendees": m.attendees,
             "notes": m.notes,
@@ -765,6 +768,7 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
     meeting = models.DepartmentMeeting(
         department_id=dept_id,
         scheduled_date=data.scheduled_date,
+        scheduled_time=data.scheduled_time,
         venue=data.venue,
         attendees=data.attendees,
         notes=data.notes,
@@ -783,6 +787,7 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
         "id": meeting.id,
         "department_id": meeting.department_id,
         "scheduled_date": str(meeting.scheduled_date),
+        "scheduled_time": meeting.scheduled_time,
         "venue": meeting.venue,
         "attendees": meeting.attendees,
         "notes": meeting.notes,
@@ -817,6 +822,7 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
         "id": meeting.id,
         "department_id": meeting.department_id,
         "scheduled_date": str(meeting.scheduled_date),
+        "scheduled_time": meeting.scheduled_time,
         "venue": meeting.venue,
         "attendees": meeting.attendees,
         "notes": meeting.notes,

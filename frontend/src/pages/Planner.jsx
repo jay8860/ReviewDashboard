@@ -1,126 +1,302 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    ChevronLeft, ChevronRight, Plus, Trash2, X,
-    Calendar, Clock, Tag, RefreshCw
+    ChevronLeft, ChevronRight, Plus, Trash2, X, RefreshCw, Settings, GripVertical,
+    CalendarClock, CheckCircle2, Link2
 } from 'lucide-react';
-import { format, startOfWeek, addDays, addWeeks, subWeeks, parseISO, isSameDay } from 'date-fns';
+import {
+    format, startOfWeek, addDays, addWeeks, subWeeks, parseISO, isSameDay, getISODay,
+} from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
+import { useToast } from '../components/Toast';
 
 const EVENT_TYPES = ['meeting', 'review', 'task', 'reminder', 'field-visit', 'other'];
-const EVENT_COLORS = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet'];
+const EVENT_COLORS = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'teal', 'orange'];
 
-const colorBg = {
-    indigo: 'bg-indigo-100 border-indigo-300 text-indigo-800',
-    emerald: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-    amber: 'bg-amber-100 border-amber-300 text-amber-800',
-    rose: 'bg-rose-100 border-rose-300 text-rose-800',
-    sky: 'bg-sky-100 border-sky-300 text-sky-800',
-    violet: 'bg-violet-100 border-violet-300 text-violet-800',
+const statusStyles = {
+    Draft: 'bg-indigo-50 border border-dashed border-indigo-200 text-indigo-700',
+    Confirmed: 'bg-indigo-200 border border-indigo-300 text-indigo-900',
+    Cancelled: 'bg-slate-100 border border-slate-200 text-slate-500 line-through',
 };
 
-const colorDot = {
+const externalStyle = 'bg-sky-100 border border-sky-300 text-sky-900';
+
+const colorDots = {
     indigo: 'bg-indigo-500',
     emerald: 'bg-emerald-500',
     amber: 'bg-amber-500',
     rose: 'bg-rose-500',
     sky: 'bg-sky-500',
     violet: 'bg-violet-500',
+    teal: 'bg-teal-500',
+    orange: 'bg-orange-500',
 };
 
-const TIME_SLOTS = Array.from({ length: 14 }, (_, i) => {
-    const h = i + 7;
-    return `${String(h).padStart(2, '0')}:00`;
-});
+const toMinutes = (timeStr) => {
+    const [h, m] = (timeStr || '00:00').split(':').map(Number);
+    return (h * 60) + m;
+};
 
-// ── Event Modal ────────────────────────────────────────────────────────────────
-const EventModal = ({ isOpen, onClose, onSave, initial = null, defaultDate = null }) => {
-    const today = defaultDate || new Date().toISOString().split('T')[0];
+const toTime = (minutes) => {
+    const m = Math.max(0, Math.min(23 * 60 + 59, minutes));
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+
+const normalizeStatus = (status) => {
+    const s = (status || '').toLowerCase();
+    if (s === 'confirmed') return 'Confirmed';
+    if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
+    return 'Draft';
+};
+
+const buildSlots = (dayStart, dayEnd, slotMinutes, gapMinutes) => {
+    const slots = [];
+    let cursor = toMinutes(dayStart);
+    const end = toMinutes(dayEnd);
+    let i = 0;
+    while (cursor + slotMinutes <= end) {
+        slots.push({
+            index: i,
+            start: toTime(cursor),
+            end: toTime(cursor + slotMinutes),
+            startMinutes: cursor,
+            endMinutes: cursor + slotMinutes,
+        });
+        cursor += slotMinutes + gapMinutes;
+        i += 1;
+    }
+    return slots;
+};
+
+const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
+
+const EventModal = ({
+    isOpen,
+    onClose,
+    onSave,
+    eventData = null,
+    defaultDate,
+    defaultTime,
+    defaultSlotMinutes,
+    departments,
+}) => {
     const [form, setForm] = useState({
-        title: '', date: today, time_slot: '09:00',
-        duration_minutes: 60, event_type: 'meeting',
-        color: 'indigo', description: ''
+        title: '',
+        date: defaultDate,
+        time_slot: defaultTime,
+        duration_minutes: defaultSlotMinutes,
+        event_type: 'meeting',
+        status: 'Draft',
+        color: 'indigo',
+        description: '',
+        venue: '',
+        attendees: '',
+        department_id: '',
     });
 
     useEffect(() => {
-        if (initial) setForm({
-            title: initial.title || '',
-            date: initial.date || today,
-            time_slot: initial.time_slot || '09:00',
-            duration_minutes: initial.duration_minutes || 60,
-            event_type: initial.event_type || 'meeting',
-            color: initial.color || 'indigo',
-            description: initial.description || ''
+        if (!isOpen) return;
+        if (eventData) {
+            setForm({
+                title: eventData.title || '',
+                date: eventData.date || defaultDate,
+                time_slot: eventData.time_slot || defaultTime,
+                duration_minutes: eventData.duration_minutes || defaultSlotMinutes,
+                event_type: eventData.event_type || 'meeting',
+                status: normalizeStatus(eventData.status),
+                color: eventData.color || 'indigo',
+                description: eventData.description || '',
+                venue: eventData.venue || '',
+                attendees: eventData.attendees || '',
+                department_id: eventData.department_id || '',
+            });
+            return;
+        }
+        setForm({
+            title: '',
+            date: defaultDate,
+            time_slot: defaultTime,
+            duration_minutes: defaultSlotMinutes,
+            event_type: 'meeting',
+            status: 'Draft',
+            color: 'indigo',
+            description: '',
+            venue: '',
+            attendees: '',
+            department_id: '',
         });
-        else setForm({ title: '', date: defaultDate || today, time_slot: '09:00', duration_minutes: 60, event_type: 'meeting', color: 'indigo', description: '' });
-    }, [initial, isOpen, defaultDate]);
+    }, [isOpen, eventData, defaultDate, defaultTime, defaultSlotMinutes]);
 
     if (!isOpen) return null;
+
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-8 w-full max-w-md shadow-premium-lg">
-                    <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-black dark:text-white">{initial ? 'Edit' : 'New'} Event</h2>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={20} className="text-slate-400" /></button>
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="glass-card rounded-3xl p-7 w-full max-w-lg shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar"
+                >
+                    <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-2xl font-black text-slate-800 dark:text-white">{eventData ? 'Edit Event' : 'New Event'}</h3>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                            <X size={18} className="text-slate-400" />
+                        </button>
                     </div>
-                    <form onSubmit={e => { e.preventDefault(); onSave(form); }} className="space-y-4">
+
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            onSave({
+                                ...form,
+                                duration_minutes: parseInt(form.duration_minutes, 10),
+                                department_id: form.department_id ? parseInt(form.department_id, 10) : null,
+                            });
+                        }}
+                        className="space-y-4"
+                    >
                         <div>
                             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Title *</label>
-                            <input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
+                            <input
+                                required
+                                value={form.title}
+                                onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
                                 placeholder="Event title"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+
+                        <div className="grid grid-cols-3 gap-3">
                             <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date *</label>
-                                <input required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date</label>
+                                <input
+                                    type="date"
+                                    value={form.date}
+                                    onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Time</label>
-                                <input type="time" value={form.time_slot} onChange={e => setForm({ ...form, time_slot: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Duration (min)</label>
-                                <input type="number" min={15} step={15} value={form.duration_minutes}
-                                    onChange={e => setForm({ ...form, duration_minutes: parseInt(e.target.value) })}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all" />
+                                <input
+                                    type="time"
+                                    value={form.time_slot}
+                                    onChange={e => setForm(prev => ({ ...prev, time_slot: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
                             </div>
                             <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Type</label>
-                                <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all capitalize">
-                                    {EVENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Duration</label>
+                                <select
+                                    value={form.duration_minutes}
+                                    onChange={e => setForm(prev => ({ ...prev, duration_minutes: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                >
+                                    <option value={30}>30m</option>
+                                    <option value={60}>60m</option>
+                                    <option value={90}>90m</option>
+                                    <option value={120}>120m</option>
                                 </select>
                             </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Color</label>
-                            <div className="flex gap-2">
-                                {EVENT_COLORS.map(c => (
-                                    <button type="button" key={c} onClick={() => setForm({ ...form, color: c })}
-                                        className={`w-7 h-7 rounded-full ${colorDot[c]} transition-all ${form.color === c ? 'ring-2 ring-offset-2 ring-slate-400 scale-125' : 'opacity-60 hover:opacity-100'}`} />
-                                ))}
+
+                        <div className="grid grid-cols-3 gap-3">
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Type</label>
+                                <select
+                                    value={form.event_type}
+                                    onChange={e => setForm(prev => ({ ...prev, event_type: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 capitalize"
+                                >
+                                    {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Status</label>
+                                <select
+                                    value={form.status}
+                                    onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                >
+                                    <option value="Draft">Draft</option>
+                                    <option value="Confirmed">Confirmed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Color</label>
+                                <div className="flex items-center gap-1 mt-1">
+                                    {EVENT_COLORS.map(c => (
+                                        <button
+                                            key={c}
+                                            type="button"
+                                            onClick={() => setForm(prev => ({ ...prev, color: c }))}
+                                            className={`w-6 h-6 rounded-full ${colorDots[c]} ${form.color === c ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : 'opacity-60 hover:opacity-100'}`}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Description</label>
-                            <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                                rows={2} placeholder="Optional notes..."
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all resize-none" />
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Department (optional)</label>
+                                <select
+                                    value={form.department_id}
+                                    onChange={e => setForm(prev => ({ ...prev, department_id: e.target.value }))}
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                >
+                                    <option value="">None</option>
+                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Venue</label>
+                                <input
+                                    value={form.venue}
+                                    onChange={e => setForm(prev => ({ ...prev, venue: e.target.value }))}
+                                    placeholder="Meeting room"
+                                    className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
+                            </div>
                         </div>
-                        <div className="flex gap-3 pt-2">
-                            <button type="button" onClick={onClose}
-                                className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-50 transition-colors">Cancel</button>
-                            <button type="submit"
-                                className="flex-1 py-3 rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-500/20">
-                                {initial ? 'Save' : 'Add Event'}
+
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Attendees</label>
+                            <input
+                                value={form.attendees}
+                                onChange={e => setForm(prev => ({ ...prev, attendees: e.target.value }))}
+                                placeholder="Comma separated names"
+                                className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Description / Notes</label>
+                            <textarea
+                                rows={3}
+                                value={form.description}
+                                onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+                                placeholder="Notes, agenda, comments..."
+                                className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                            />
+                        </div>
+                        {form.event_type === 'meeting' && form.department_id && (
+                            <div className="rounded-xl bg-violet-50 border border-violet-100 p-3 text-xs text-violet-700 font-semibold">
+                                Confirmed department meetings auto-create Meeting Workspace entries.
+                            </div>
+                        )}
+
+                        <div className="flex gap-2 pt-2">
+                            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50">
+                                Cancel
+                            </button>
+                            <button type="submit" className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700">
+                                Save Event
                             </button>
                         </div>
                     </form>
@@ -131,184 +307,440 @@ const EventModal = ({ isOpen, onClose, onSave, initial = null, defaultDate = nul
 };
 
 const Planner = ({ user, onLogout }) => {
+    const navigate = useNavigate();
+    const toast = useToast();
+
     const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
     const [events, setEvents] = useState([]);
+    const [departments, setDepartments] = useState([]);
+    const [settings, setSettings] = useState(null);
+    const [settingsDraft, setSettingsDraft] = useState(null);
+    const [showSettings, setShowSettings] = useState(false);
     const [loading, setLoading] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [editEvent, setEditEvent] = useState(null);
     const [clickedDate, setClickedDate] = useState(null);
+    const [clickedTime, setClickedTime] = useState(null);
+    const [dragEventId, setDragEventId] = useState(null);
 
-    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+    const today = new Date();
 
-    const load = useCallback(async () => {
+    const slots = useMemo(() => {
+        if (!settings) return [];
+        return buildSlots(
+            settings.day_start || '10:00',
+            settings.day_end || '18:00',
+            settings.slot_minutes || 30,
+            settings.slot_gap_minutes ?? 15
+        );
+    }, [settings]);
+
+    const recurringBlocks = useMemo(() => settings?.recurring_blocks || [], [settings]);
+
+    const loadSettings = useCallback(async () => {
+        const cfg = await api.getPlannerSettings();
+        setSettings(cfg);
+        setSettingsDraft(cfg);
+    }, []);
+
+    const loadDepartments = useCallback(async () => {
+        const rows = await api.getDepartments();
+        setDepartments(rows || []);
+    }, []);
+
+    const loadEvents = useCallback(async () => {
         setLoading(true);
         try {
             const start = format(weekStart, 'yyyy-MM-dd');
             const end = format(addDays(weekStart, 6), 'yyyy-MM-dd');
+            if (settings?.apple_ics_url) {
+                try {
+                    await api.syncPlannerIcs({ start_date: start, end_date: end });
+                } catch (e) {
+                    console.warn('ICS sync skipped:', e);
+                }
+            }
             const data = await api.getPlannerEvents(start, end);
-            setEvents(data);
-        } finally { setLoading(false); }
-    }, [weekStart]);
+            setEvents(data || []);
+        } finally {
+            setLoading(false);
+        }
+    }, [weekStart, settings?.apple_ics_url]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => {
+        Promise.all([loadSettings(), loadDepartments()]);
+    }, [loadSettings, loadDepartments]);
 
-    const handleSave = async (form) => {
+    useEffect(() => {
+        if (!settings) return;
+        loadEvents();
+    }, [settings, loadEvents]);
+
+    const saveSettings = async () => {
         try {
-            if (editEvent) await api.updatePlannerEvent(editEvent.id, form);
-            else await api.createPlannerEvent(form);
+            const payload = {
+                ...settingsDraft,
+                slot_minutes: parseInt(settingsDraft.slot_minutes, 10),
+                slot_gap_minutes: parseInt(settingsDraft.slot_gap_minutes, 10),
+            };
+            const saved = await api.updatePlannerSettings(payload);
+            setSettings(saved);
+            setSettingsDraft(saved);
+            toast.success('Planner settings saved');
+        } catch {
+            toast.error('Failed to save planner settings');
+        }
+    };
+
+    const manualSync = async () => {
+        try {
+            const start = format(weekStart, 'yyyy-MM-dd');
+            const end = format(addDays(weekStart, 6), 'yyyy-MM-dd');
+            const result = await api.syncPlannerIcs({ start_date: start, end_date: end });
+            toast.success(`ICS synced: +${result.created}, updated ${result.updated}`);
+            loadEvents();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'ICS sync failed');
+        }
+    };
+
+    const handleSaveEvent = async (payload) => {
+        try {
+            if (editEvent) {
+                await api.updatePlannerEvent(editEvent.id, payload);
+            } else {
+                await api.createPlannerEvent(payload);
+            }
             setModalOpen(false);
             setEditEvent(null);
-            load();
-        } catch { alert('Error saving event'); }
+            setClickedDate(null);
+            setClickedTime(null);
+            await loadEvents();
+            toast.success('Event saved');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to save event');
+        }
     };
 
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this event?')) return;
-        await api.deletePlannerEvent(id);
-        load();
+        try {
+            await api.deletePlannerEvent(id);
+            await loadEvents();
+            toast.success('Event deleted');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to delete event');
+        }
     };
 
-    const getEventsForDay = (day) =>
-        events.filter(e => isSameDay(parseISO(e.date), day))
-              .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+    const handleDropEvent = async (eventId, dateStr, timeSlot) => {
+        if (!eventId) return;
+        const event = events.find(e => e.id === eventId);
+        if (!event || event.is_locked) return;
+        try {
+            await api.updatePlannerEvent(eventId, { date: dateStr, time_slot: timeSlot });
+            await loadEvents();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to move event');
+        }
+    };
 
-    const today = new Date();
+    const handleConfirmDraft = async (event) => {
+        try {
+            await api.updatePlannerEvent(event.id, { status: 'Confirmed' });
+            await loadEvents();
+            toast.success('Event confirmed');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to confirm event');
+        }
+    };
+
+    const getDayEvents = (day) =>
+        events
+            .filter(e => isSameDay(parseISO(e.date), day))
+            .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+
+    const isLunchBlocked = (slot) => {
+        if (!settings?.lunch_start || !settings?.lunch_end) return false;
+        return overlaps(
+            slot.startMinutes,
+            slot.endMinutes,
+            toMinutes(settings.lunch_start),
+            toMinutes(settings.lunch_end)
+        );
+    };
+
+    const getRecurringBlockAtSlot = (day, slot) => {
+        const dayIso = getISODay(day);
+        for (const block of recurringBlocks) {
+            const days = Array.isArray(block.days) ? block.days : [];
+            if (!days.includes(dayIso)) continue;
+            if (overlaps(slot.startMinutes, slot.endMinutes, toMinutes(block.start), toMinutes(block.end))) {
+                return block;
+            }
+        }
+        return null;
+    };
+
+    if (!settings) {
+        return (
+            <Layout user={user} onLogout={onLogout}>
+                <div className="flex items-center justify-center h-64 text-slate-400">
+                    <RefreshCw size={24} className="animate-spin mr-2" /> Loading planner...
+                </div>
+            </Layout>
+        );
+    }
 
     return (
         <Layout user={user} onLogout={onLogout}>
-            {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-4xl font-black dark:text-white tracking-tight">Weekly Planner</h1>
-                    <p className="text-slate-500 dark:text-dark-muted mt-1">
-                        {format(weekStart, 'd MMM')} — {format(addDays(weekStart, 6), 'd MMM yyyy')}
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/20 transition-colors">
-                        Today
-                    </button>
-                    <div className="flex gap-1">
-                        <button onClick={() => setWeekStart(subWeeks(weekStart, 1))}
-                            className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
-                            <ChevronLeft size={18} />
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-4xl font-black dark:text-white tracking-tight">Weekly Planner</h1>
+                        <p className="text-slate-500 mt-1">
+                            {format(weekStart, 'd MMM')} — {format(addDays(weekStart, 6), 'd MMM yyyy')} · 30 min slots · 15 min breaks
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+                            className="px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        >
+                            Today
                         </button>
-                        <button onClick={() => setWeekStart(addWeeks(weekStart, 1))}
-                            className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
-                            <ChevronRight size={18} />
+                        <button onClick={() => setWeekStart(subWeeks(weekStart, 1))} className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500"><ChevronLeft size={18} /></button>
+                        <button onClick={() => setWeekStart(addWeeks(weekStart, 1))} className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500"><ChevronRight size={18} /></button>
+                        <button onClick={manualSync} className="px-4 py-2 rounded-xl bg-sky-100 text-sky-700 text-sm font-bold hover:bg-sky-200 inline-flex items-center gap-1.5">
+                            <Link2 size={14} /> Sync ICS
+                        </button>
+                        <button onClick={loadEvents} className="p-2.5 rounded-xl hover:bg-slate-100 text-slate-500">
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        </button>
+                        <button onClick={() => setShowSettings(v => !v)} className="px-4 py-2 rounded-xl bg-violet-100 text-violet-700 text-sm font-bold hover:bg-violet-200 inline-flex items-center gap-1.5">
+                            <Settings size={14} /> Settings
+                        </button>
+                        <button
+                            onClick={() => {
+                                setEditEvent(null);
+                                setClickedDate(format(new Date(), 'yyyy-MM-dd'));
+                                setClickedTime(settings.day_start || '10:00');
+                                setModalOpen(true);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 inline-flex items-center gap-1.5"
+                        >
+                            <Plus size={14} /> Add Event
                         </button>
                     </div>
-                    {user?.role === 'admin' && (
-                        <button onClick={() => { setEditEvent(null); setClickedDate(null); setModalOpen(true); }}
-                            className="flex items-center gap-2 px-5 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors">
-                            <Plus size={18} /> Add Event
-                        </button>
-                    )}
-                    <button onClick={load} className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                    </button>
                 </div>
-            </div>
 
-            {/* Calendar Grid */}
-            <div className="glass-card rounded-3xl overflow-hidden">
-                {/* Day Headers */}
-                <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/10">
-                    {weekDays.map((day, i) => {
-                        const isToday = isSameDay(day, today);
-                        return (
-                            <div key={i} className={`p-4 text-center border-r last:border-r-0 border-slate-100 dark:border-white/10 ${isToday ? 'bg-indigo-50 dark:bg-indigo-500/10' : ''}`}>
-                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">
-                                    {format(day, 'EEE')}
-                                </p>
-                                <p className={`text-2xl font-black mt-1 ${isToday ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-white'}`}>
-                                    {format(day, 'd')}
-                                </p>
+                {showSettings && (
+                    <div className="glass-card rounded-2xl p-4 border border-indigo-100">
+                        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Day Start</label>
+                                <input type="time" value={settingsDraft.day_start || '10:00'} onChange={e => setSettingsDraft(prev => ({ ...prev, day_start: e.target.value }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
                             </div>
-                        );
-                    })}
-                </div>
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Day End</label>
+                                <input type="time" value={settingsDraft.day_end || '18:00'} onChange={e => setSettingsDraft(prev => ({ ...prev, day_end: e.target.value }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Slot (min)</label>
+                                <input type="number" min={15} step={15} value={settingsDraft.slot_minutes || 30} onChange={e => setSettingsDraft(prev => ({ ...prev, slot_minutes: parseInt(e.target.value, 10) || 30 }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Gap (min)</label>
+                                <input type="number" min={0} step={5} value={settingsDraft.slot_gap_minutes ?? 15} onChange={e => setSettingsDraft(prev => ({ ...prev, slot_gap_minutes: parseInt(e.target.value, 10) || 0 }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Lunch Start</label>
+                                <input type="time" value={settingsDraft.lunch_start || '13:30'} onChange={e => setSettingsDraft(prev => ({ ...prev, lunch_start: e.target.value }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Lunch End</label>
+                                <input type="time" value={settingsDraft.lunch_end || '14:30'} onChange={e => setSettingsDraft(prev => ({ ...prev, lunch_end: e.target.value }))} className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                            <div className="md:col-span-2 xl:col-span-2">
+                                <label className="text-[11px] font-black uppercase tracking-wide text-slate-400 block mb-1">Apple ICS URL</label>
+                                <input value={settingsDraft.apple_ics_url || ''} onChange={e => setSettingsDraft(prev => ({ ...prev, apple_ics_url: e.target.value }))} placeholder="https://.../calendar.ics" className="w-full px-2.5 py-2 rounded-lg border border-slate-200 text-sm" />
+                            </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button onClick={saveSettings} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700">Save Settings</button>
+                            <span className="text-xs text-slate-500">Default: 10:00-18:00, 30 min slots, 15 min break, lunch 13:30-14:30.</span>
+                        </div>
+                    </div>
+                )}
 
-                {/* Day Columns */}
-                <div className="grid grid-cols-7 min-h-[60vh]">
-                    {weekDays.map((day, i) => {
-                        const dayEvents = getEventsForDay(day);
-                        const isToday = isSameDay(day, today);
-                        return (
-                            <div key={i}
-                                className={`border-r last:border-r-0 border-slate-100 dark:border-white/10 p-3 space-y-2 ${isToday ? 'bg-indigo-50/30 dark:bg-indigo-500/5' : ''}`}
-                                onClick={() => {
-                                    if (user?.role === 'admin') {
-                                        setClickedDate(format(day, 'yyyy-MM-dd'));
-                                        setEditEvent(null);
-                                        setModalOpen(true);
-                                    }
-                                }}
-                            >
-                                {dayEvents.map(event => (
-                                    <motion.div
-                                        key={event.id}
-                                        initial={{ opacity: 0, y: 4 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        onClick={e => e.stopPropagation()}
-                                        className={`p-2.5 rounded-xl border text-xs font-semibold cursor-pointer group relative ${colorBg[event.color] || colorBg.indigo}`}
-                                    >
-                                        <div className="flex items-start justify-between gap-1">
-                                            <div className="flex-1 min-w-0">
-                                                {event.time_slot && (
-                                                    <p className="font-bold opacity-60 mb-0.5">{event.time_slot}</p>
-                                                )}
-                                                <p className="font-bold leading-tight truncate">{event.title}</p>
-                                                {event.event_type && (
-                                                    <p className="opacity-60 capitalize text-[10px] mt-0.5">{event.event_type}</p>
-                                                )}
-                                            </div>
-                                            {user?.role === 'admin' && (
-                                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                    <button onClick={() => { setEditEvent(event); setModalOpen(true); }}
-                                                        className="p-1 rounded-md hover:bg-white/50 transition-colors">
-                                                        ✎
-                                                    </button>
-                                                    <button onClick={() => handleDelete(event.id)}
-                                                        className="p-1 rounded-md hover:bg-white/50 transition-colors">
-                                                        ✕
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                        {event.description && (
-                                            <p className="opacity-60 text-[10px] mt-1 leading-tight line-clamp-2">{event.description}</p>
-                                        )}
-                                        {event.duration_minutes && event.duration_minutes !== 60 && (
-                                            <p className="opacity-50 text-[10px] mt-0.5">{event.duration_minutes} min</p>
-                                        )}
-                                    </motion.div>
-                                ))}
-                                {dayEvents.length === 0 && user?.role === 'admin' && (
-                                    <div className="h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                        <span className="text-slate-300 text-xs">+ Add</span>
+                <div className="glass-card rounded-3xl overflow-auto">
+                    <div className="grid grid-cols-7 border-b border-slate-100">
+                        {weekDays.map((day, i) => {
+                            const isToday = isSameDay(day, today);
+                            return (
+                                <div key={i} className={`p-3 text-center border-r last:border-r-0 border-slate-100 ${isToday ? 'bg-indigo-50' : ''}`}>
+                                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">{format(day, 'EEE')}</p>
+                                    <p className={`text-xl font-black mt-0.5 ${isToday ? 'text-indigo-700' : 'text-slate-700'}`}>{format(day, 'd')}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="grid grid-cols-7 min-w-[980px]">
+                        {weekDays.map((day, dayIdx) => {
+                            const dayEvents = getDayEvents(day);
+                            const eventByTime = new Map();
+                            const unslotted = [];
+                            dayEvents.forEach(evt => {
+                                if (slots.some(s => s.start === evt.time_slot)) eventByTime.set(evt.time_slot, evt);
+                                else unslotted.push(evt);
+                            });
+                            const dayStr = format(day, 'yyyy-MM-dd');
+
+                            return (
+                                <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
+                                    <div className="space-y-1.5">
+                                        {slots.map((slot, slotIdx) => {
+                                            const event = eventByTime.get(slot.start);
+                                            const lunchBlocked = isLunchBlocked(slot);
+                                            const recurringBlock = getRecurringBlockAtSlot(day, slot);
+                                            const blockedLabel = lunchBlocked
+                                                ? 'Lunch Break'
+                                                : recurringBlock
+                                                    ? recurringBlock.name
+                                                    : null;
+
+                                            return (
+                                                <React.Fragment key={`${dayStr}-${slot.start}`}>
+                                                    <div
+                                                        className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${blockedLabel ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
+                                                        onClick={() => {
+                                                            if (blockedLabel || event) return;
+                                                            setEditEvent(null);
+                                                            setClickedDate(dayStr);
+                                                            setClickedTime(slot.start);
+                                                            setModalOpen(true);
+                                                        }}
+                                                        onDragOver={(e) => {
+                                                            if (blockedLabel) return;
+                                                            e.preventDefault();
+                                                        }}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            if (blockedLabel) return;
+                                                            const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                                                            handleDropEvent(draggedId, dayStr, slot.start);
+                                                            setDragEventId(null);
+                                                        }}
+                                                    >
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <p className="text-[10px] font-black text-slate-400">{slot.start} - {slot.end}</p>
+                                                            {!event && !blockedLabel && <span className="text-[10px] text-slate-300">Draft Slot</span>}
+                                                        </div>
+
+                                                        {blockedLabel && !event && (
+                                                            <p className="text-[11px] font-semibold text-slate-500">{blockedLabel}</p>
+                                                        )}
+
+                                                        {event && (
+                                                            <motion.div
+                                                                layout
+                                                                draggable={!event.is_locked}
+                                                                onDragStart={(e) => {
+                                                                    if (event.is_locked) return;
+                                                                    setDragEventId(event.id);
+                                                                    e.dataTransfer.setData('text/plain', String(event.id));
+                                                                }}
+                                                                className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold cursor-pointer ${event.is_locked ? externalStyle : statusStyles[normalizeStatus(event.status)] || statusStyles.Draft} ${dragEventId === event.id ? 'opacity-50' : ''}`}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditEvent(event);
+                                                                    setModalOpen(true);
+                                                                }}
+                                                            >
+                                                                <div className="flex items-start gap-1">
+                                                                    {!event.is_locked && <GripVertical size={12} className="mt-0.5 opacity-60" />}
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="font-black truncate">{event.title}</p>
+                                                                        <p className="text-[10px] opacity-70 capitalize">{event.event_type} · {normalizeStatus(event.status)}</p>
+                                                                        {event.department_name && (
+                                                                            <p className="text-[10px] opacity-70 truncate">{event.department_name}</p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                    {!event.is_locked && normalizeStatus(event.status) === 'Draft' && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleConfirmDraft(event); }}
+                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-bold"
+                                                                        >
+                                                                            <CheckCircle2 size={10} /> Confirm
+                                                                        </button>
+                                                                    )}
+                                                                    {event.department_meeting_id && event.department_id && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                navigate(`/departments/${event.department_id}/meetings/${event.department_meeting_id}`);
+                                                                            }}
+                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold"
+                                                                        >
+                                                                            <CalendarClock size={10} /> Workspace
+                                                                        </button>
+                                                                    )}
+                                                                    {!event.is_locked && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
+                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold"
+                                                                        >
+                                                                            <Trash2 size={10} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </motion.div>
+                                                        )}
+                                                    </div>
+                                                    {slotIdx < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
+                                                        <div className="h-4 flex items-center justify-center">
+                                                            <span className="text-[9px] uppercase tracking-wide text-slate-300">
+                                                                {(settings.slot_gap_minutes ?? 15)}m break
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
                                     </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                                    {unslotted.length > 0 && (
+                                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Outside Slots</p>
+                                            <div className="space-y-1">
+                                                {unslotted.map(evt => (
+                                                    <div key={evt.id} className="text-[11px] text-slate-600 font-semibold">
+                                                        {evt.time_slot || '—'} {evt.title}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
-            {/* Legend */}
-            <div className="mt-4 flex flex-wrap gap-3">
-                {EVENT_TYPES.map(type => (
-                    <span key={type} className="text-xs text-slate-400 capitalize flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-slate-300" />
-                        {type}
-                    </span>
-                ))}
-            </div>
-
-            <EventModal isOpen={modalOpen}
-                onClose={() => { setModalOpen(false); setEditEvent(null); setClickedDate(null); }}
-                onSave={handleSave} initial={editEvent} defaultDate={clickedDate} />
+            <EventModal
+                isOpen={modalOpen}
+                onClose={() => { setModalOpen(false); setEditEvent(null); }}
+                onSave={handleSaveEvent}
+                eventData={editEvent}
+                defaultDate={clickedDate || format(new Date(), 'yyyy-MM-dd')}
+                defaultTime={clickedTime || settings.day_start || '10:00'}
+                defaultSlotMinutes={settings.slot_minutes || 30}
+                departments={departments}
+            />
         </Layout>
     );
 };

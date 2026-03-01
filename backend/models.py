@@ -240,6 +240,7 @@ class DepartmentMeeting(Base):
     id = Column(Integer, primary_key=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
     scheduled_date = Column(Date, nullable=False)
+    scheduled_time = Column(String, nullable=True)      # e.g. "10:00"
     venue = Column(String, nullable=True)
     attendees = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
@@ -313,8 +314,37 @@ class PlannerEvent(Base):
     time_slot = Column(String, nullable=True)          # e.g. "09:00"
     duration_minutes = Column(Integer, default=60)
     event_type = Column(String, default="meeting")     # meeting | review | task | reminder
+    status = Column(String, default="Draft")           # Draft | Confirmed | Cancelled
     color = Column(String, default="indigo")
     description = Column(Text, nullable=True)
+    venue = Column(String, nullable=True)
+    attendees = Column(Text, nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
+    department_meeting_id = Column(Integer, ForeignKey("department_meetings.id"), nullable=True, index=True)
+    source = Column(String, default="manual")          # manual | department_meeting | external_calendar | template
+    external_uid = Column(String, nullable=True, index=True)
+    external_calendar = Column(String, nullable=True)
+    is_locked = Column(Boolean, default=False)         # True for synced external events
     # Link to review session if this is a scheduled review
     review_session_id = Column(Integer, ForeignKey("review_sessions.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ─── Planner Settings ────────────────────────────────────────────────────────
+
+class PlannerSettings(Base):
+    __tablename__ = "planner_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    slot_minutes = Column(Integer, default=30)
+    slot_gap_minutes = Column(Integer, default=15)
+    day_start = Column(String, default="10:00")
+    day_end = Column(String, default="18:00")
+    lunch_start = Column(String, default="13:30")
+    lunch_end = Column(String, default="14:30")
+    timezone = Column(String, default="Asia/Kolkata")
+    apple_ics_url = Column(Text, nullable=True)
+    recurring_blocks = Column(Text, default='[{"name":"Filework Time","days":[1,2,3,4,5],"start":"17:00","end":"18:00","color":"violet"}]')
+    last_ics_sync_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

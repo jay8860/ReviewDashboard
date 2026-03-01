@@ -301,6 +301,18 @@ export const api = {
         const res = await axios.get(`${PLAN_URL}/?${params.toString()}`);
         return res.data;
     },
+    getPlannerSettings: async () => {
+        const res = await axios.get(`${PLAN_URL}/settings`);
+        return res.data;
+    },
+    updatePlannerSettings: async (data) => {
+        const res = await axios.put(`${PLAN_URL}/settings`, data);
+        return res.data;
+    },
+    syncPlannerIcs: async (data = {}) => {
+        const res = await axios.post(`${PLAN_URL}/sync-ics`, data);
+        return res.data;
+    },
     createPlannerEvent: async (data) => {
         const res = await axios.post(`${PLAN_URL}/`, data);
         return res.data;

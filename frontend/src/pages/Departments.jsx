@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Building2, Plus, Trash2, Edit2, ArrowRight, X,
     AlertTriangle, CheckCircle2, Clock, BookOpen, LayoutGrid,
-    List, ArrowUp, ArrowDown, FolderPlus
+    List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
@@ -46,6 +46,14 @@ const normalizeDepartment = (dept, idx) => ({
     display_order: Number.isFinite(dept.display_order) ? dept.display_order : idx,
     priority_level: normalizePriority(dept.priority_level),
 });
+
+const reviewTickerText = (dept) => {
+    const days = dept?.review_health?.days_since_last_review;
+    if (days === null || days === undefined) return 'Last review: Never reviewed';
+    if (days === 0) return 'Last review: Today';
+    if (days === 1) return 'Last review: 1 day ago';
+    return `Last review: ${days} days ago`;
+};
 
 const buildCategoryBuckets = (departments) => {
     const map = new Map();
@@ -244,6 +252,134 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null }) => {
     );
 };
 
+const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
+    const [form, setForm] = useState({
+        date: new Date().toISOString().split('T')[0],
+        time_slot: '10:00',
+        duration_minutes: 30,
+        venue: '',
+        attendees: '',
+        notes: '',
+    });
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setForm({
+            date: new Date().toISOString().split('T')[0],
+            time_slot: '10:00',
+            duration_minutes: 30,
+            venue: '',
+            attendees: '',
+            notes: '',
+        });
+    }, [isOpen, department?.id]);
+
+    if (!isOpen || !department) return null;
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="glass-card rounded-3xl p-7 w-full max-w-md shadow-premium-lg"
+                >
+                    <div className="flex items-center justify-between mb-5">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-800 dark:text-white">Schedule Meeting</h3>
+                            <p className="text-xs text-slate-500">{department.name}</p>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                            <X size={18} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date</label>
+                                <input
+                                    type="date"
+                                    value={form.date}
+                                    onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Time</label>
+                                <input
+                                    type="time"
+                                    value={form.time_slot}
+                                    onChange={e => setForm(prev => ({ ...prev, time_slot: e.target.value }))}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Duration</label>
+                                <select
+                                    value={form.duration_minutes}
+                                    onChange={e => setForm(prev => ({ ...prev, duration_minutes: parseInt(e.target.value, 10) }))}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                >
+                                    <option value={30}>30 min</option>
+                                    <option value={60}>60 min</option>
+                                    <option value={90}>90 min</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Venue</label>
+                                <input
+                                    value={form.venue}
+                                    onChange={e => setForm(prev => ({ ...prev, venue: e.target.value }))}
+                                    placeholder="Meeting room"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Attendees</label>
+                            <input
+                                value={form.attendees}
+                                onChange={e => setForm(prev => ({ ...prev, attendees: e.target.value }))}
+                                placeholder="Comma separated names"
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Notes</label>
+                            <textarea
+                                rows={3}
+                                value={form.notes}
+                                onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
+                                placeholder="Agenda context / notes"
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-5">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={() => onConfirm(form)}
+                            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
+                        >
+                            Confirm Meeting
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
 const DepartmentCard = ({
     dept,
     indexInCategory,
@@ -256,6 +392,7 @@ const DepartmentCard = ({
     onMove,
     onPriorityChange,
     onCategoryChange,
+    onQuickSchedule,
 }) => (
     <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -302,6 +439,7 @@ const DepartmentCard = ({
 
             <h3 className="font-black text-lg text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
             {dept.head_name && <p className="text-xs text-slate-400 mb-3">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
+            <p className="text-[11px] font-semibold text-violet-600 mb-3">{reviewTickerText(dept)}</p>
 
             <div className="flex items-center gap-2 mb-3">
                 <HealthIcon status={dept.review_health?.status} />
@@ -330,13 +468,20 @@ const DepartmentCard = ({
                 </select>
             </div>
 
-            <button
-                onClick={() => onOpen(dept.id)}
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 font-semibold text-sm hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors group/btn"
-            >
-                Open Department Workspace
-                <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+                <button
+                    onClick={() => onQuickSchedule(dept)}
+                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-xs hover:bg-violet-200 transition-colors"
+                >
+                    <CalendarPlus size={13} /> Schedule
+                </button>
+                <button
+                    onClick={() => onOpen(dept.id)}
+                    className="w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 font-semibold text-xs hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors group/btn"
+                >
+                    Open <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
+                </button>
+            </div>
         </div>
     </motion.div>
 );
@@ -353,6 +498,7 @@ const DepartmentListRow = ({
     onMove,
     onPriorityChange,
     onCategoryChange,
+    onQuickSchedule,
 }) => (
     <div className="rounded-2xl border border-indigo-100/70 bg-white/80 dark:bg-white/5 dark:border-indigo-500/20 px-4 py-3">
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -364,6 +510,7 @@ const DepartmentListRow = ({
                     <p className="font-black text-slate-800 dark:text-white truncate">{dept.name}</p>
                     <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>
                 </div>
+                <p className="text-[11px] font-semibold text-violet-600 mt-1">{reviewTickerText(dept)}</p>
                 {dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             </div>
 
@@ -411,6 +558,12 @@ const DepartmentListRow = ({
                 >
                     Open <ArrowRight size={12} />
                 </button>
+                <button
+                    onClick={() => onQuickSchedule(dept)}
+                    className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors inline-flex items-center gap-1"
+                >
+                    <CalendarPlus size={12} /> Schedule
+                </button>
             </div>
         </div>
     </div>
@@ -425,6 +578,8 @@ const Departments = ({ user, onLogout }) => {
     const [editDept, setEditDept] = useState(null);
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('department_view_mode') || 'grid');
     const [busy, setBusy] = useState(false);
+    const [quickDept, setQuickDept] = useState(null);
+    const [quickMeetingOpen, setQuickMeetingOpen] = useState(false);
 
     const groupedCategories = useMemo(() => buildCategoryBuckets(departments), [departments]);
     const categoryNames = useMemo(() => groupedCategories.map(c => c.name), [groupedCategories]);
@@ -598,6 +753,31 @@ const Departments = ({ user, onLogout }) => {
         toast.info(`Category "${nextName}" created. Assign any department to it using the Category dropdown on a card.`);
     };
 
+    const handleQuickSchedule = async (form) => {
+        if (!quickDept) return;
+        try {
+            await api.createPlannerEvent({
+                title: `${quickDept.short_name || quickDept.name} Review Meeting`,
+                date: form.date,
+                time_slot: form.time_slot,
+                duration_minutes: form.duration_minutes || 30,
+                event_type: 'meeting',
+                status: 'Confirmed',
+                color: quickDept.color || 'indigo',
+                description: form.notes || '',
+                venue: form.venue || null,
+                attendees: form.attendees || null,
+                department_id: quickDept.id,
+                source: 'department_meeting',
+            });
+            toast.success('Meeting scheduled from department card');
+            setQuickMeetingOpen(false);
+            setQuickDept(null);
+        } catch {
+            toast.error('Failed to schedule meeting');
+        }
+    };
+
     return (
         <Layout user={user} onLogout={onLogout}>
             <div className="flex flex-col gap-4 mb-8">
@@ -711,6 +891,7 @@ const Departments = ({ user, onLogout }) => {
                                             onMove={handleMoveDepartment}
                                             onPriorityChange={handlePriorityChange}
                                             onCategoryChange={handleDepartmentCategoryChange}
+                                            onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
                                         />
                                     ))}
                                 </div>
@@ -730,6 +911,7 @@ const Departments = ({ user, onLogout }) => {
                                             onMove={handleMoveDepartment}
                                             onPriorityChange={handlePriorityChange}
                                             onCategoryChange={handleDepartmentCategoryChange}
+                                            onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
                                         />
                                     ))}
                                 </div>
@@ -744,6 +926,12 @@ const Departments = ({ user, onLogout }) => {
                 onClose={() => { setModalOpen(false); setEditDept(null); }}
                 onSave={handleSave}
                 initial={editDept}
+            />
+            <QuickScheduleModal
+                department={quickDept}
+                isOpen={quickMeetingOpen}
+                onClose={() => { setQuickMeetingOpen(false); setQuickDept(null); }}
+                onConfirm={handleQuickSchedule}
             />
         </Layout>
     );
