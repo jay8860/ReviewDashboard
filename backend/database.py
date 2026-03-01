@@ -58,6 +58,7 @@ def apply_non_destructive_migrations():
         "users": [
             ("email", "VARCHAR"),
             ("role", "VARCHAR DEFAULT 'viewer'"),
+            ("module_access", "TEXT"),
             ("hint", "VARCHAR"),
             ("reset_token", "VARCHAR"),
             ("reset_token_expiry", "TIMESTAMP"),

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -12,8 +12,9 @@ import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
+import { canAccessModule } from '../utils/access';
 
-const StatPill = ({ icon: Icon, label, value, color }) => {
+const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) => {
     const colorStyles = {
         indigo: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-500/10 dark:text-indigo-400',
         emerald: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400',
@@ -22,7 +23,14 @@ const StatPill = ({ icon: Icon, label, value, color }) => {
         orange: 'text-orange-700 bg-orange-50 dark:bg-orange-500/10 dark:text-orange-400'
     };
     return (
-        <div className="flex items-center gap-4 bg-white dark:bg-slate-800 px-6 py-4 rounded-full shadow-sm border border-slate-100 dark:border-white/5 flex-1 min-w-[200px]">
+        <button
+            type="button"
+            onClick={onClick}
+            className={`flex items-center gap-4 px-6 py-4 rounded-full shadow-sm border flex-1 min-w-[200px] transition-all text-left ${active
+                ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/30 shadow-indigo-500/20'
+                : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-white/5 hover:border-indigo-200 dark:hover:border-indigo-500/20'
+                }`}
+        >
             <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${colorStyles[color] || colorStyles.indigo}`}>
                 <Icon size={24} strokeWidth={2.5} />
             </div>
@@ -30,7 +38,7 @@ const StatPill = ({ icon: Icon, label, value, color }) => {
                 <span className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tight">{value}</span>
                 <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-1">{label}</span>
             </div>
-        </div>
+        </button>
     );
 };
 
@@ -341,6 +349,7 @@ const Tab = ({ label, icon: Icon, active, onClick, count }) => (
 // ── Main Page ──────────────────────────────────────────────────────────────────
 const Tasks = ({ user, onLogout }) => {
     const toast = useToast();
+    const canManageTasks = canAccessModule(user, 'tasks');
     const [searchParams] = useSearchParams();
     const [tasks, setTasks] = useState([]);
     const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0, important: 0 });
@@ -358,6 +367,15 @@ const Tasks = ({ user, onLogout }) => {
 
     // Tabs: all | today | important
     const [tab, setTab] = useState('all');
+
+    const activeStat = useMemo(() => {
+        if (tab === 'important') return 'important';
+        if (filterStatus === 'Completed') return 'completed';
+        if (filterStatus === 'Pending') return 'pending';
+        if (filterStatus === 'Overdue') return 'overdue';
+        if (tab === 'all' && !filterStatus) return 'total';
+        return null;
+    }, [filterStatus, tab]);
 
     // Modal
     const [modalOpen, setModalOpen] = useState(false);
@@ -393,6 +411,33 @@ const Tasks = ({ user, onLogout }) => {
     }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
 
     useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+
+    const applyStatFilter = (key) => {
+        if (key === 'total') {
+            setTab('all');
+            setFilterStatus('');
+            return;
+        }
+        if (key === 'important') {
+            setTab('important');
+            setFilterStatus('');
+            return;
+        }
+        if (key === 'completed') {
+            setTab('all');
+            setFilterStatus('Completed');
+            return;
+        }
+        if (key === 'pending') {
+            setTab('all');
+            setFilterStatus('Pending');
+            return;
+        }
+        if (key === 'overdue') {
+            setTab('all');
+            setFilterStatus('Overdue');
+        }
+    };
 
     const handleSearch = (e) => {
         if (e.key === 'Enter') load();
@@ -509,7 +554,7 @@ const Tasks = ({ user, onLogout }) => {
                         className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-white/5 text-slate-700 dark:text-white font-bold rounded-full shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-white/10">
                         <FileDown size={16} /> Export
                     </button>
-                    {user?.role === 'admin' && (
+                    {canManageTasks && (
                         <>
                             <button onClick={() => { setBulkMode(b => !b); setSelectedIds([]); }}
                                 className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-full shadow-sm hover:shadow-md transition-all border ${bulkMode
@@ -529,11 +574,46 @@ const Tasks = ({ user, onLogout }) => {
 
             {/* Stat Cards */}
             <div className="flex flex-wrap gap-4 mb-8">
-                <StatPill label="Total Tasks" value={stats.total} icon={ClipboardList} color="indigo" />
-                <StatPill label="Completed" value={stats.completed} icon={CheckCircle2} color="emerald" />
-                <StatPill label="Pending" value={stats.pending} icon={Clock} color="amber" />
-                <StatPill label="Overdue" value={stats.overdue} icon={AlertTriangle} color="rose" />
-                <StatPill label="Important" value={stats.important} icon={Flame} color="orange" />
+                <StatPill
+                    label="Total Tasks"
+                    value={stats.total}
+                    icon={ClipboardList}
+                    color="indigo"
+                    active={activeStat === 'total'}
+                    onClick={() => applyStatFilter('total')}
+                />
+                <StatPill
+                    label="Completed"
+                    value={stats.completed}
+                    icon={CheckCircle2}
+                    color="emerald"
+                    active={activeStat === 'completed'}
+                    onClick={() => applyStatFilter('completed')}
+                />
+                <StatPill
+                    label="Pending"
+                    value={stats.pending}
+                    icon={Clock}
+                    color="amber"
+                    active={activeStat === 'pending'}
+                    onClick={() => applyStatFilter('pending')}
+                />
+                <StatPill
+                    label="Overdue"
+                    value={stats.overdue}
+                    icon={AlertTriangle}
+                    color="rose"
+                    active={activeStat === 'overdue'}
+                    onClick={() => applyStatFilter('overdue')}
+                />
+                <StatPill
+                    label="Important"
+                    value={stats.important}
+                    icon={Flame}
+                    color="orange"
+                    active={activeStat === 'important'}
+                    onClick={() => applyStatFilter('important')}
+                />
             </div>
 
             <div className="mb-6">
@@ -606,7 +686,7 @@ const Tasks = ({ user, onLogout }) => {
                     <ClipboardList size={52} className="text-slate-200 mx-auto mb-4" />
                     <p className="text-xl font-black text-slate-400 mb-2">No tasks found</p>
                     <p className="text-slate-300 text-sm">Try adjusting your filters or add a new task</p>
-                    {user?.role === 'admin' && (
+                    {canManageTasks && (
                         <button onClick={() => { setEditTask(null); setModalOpen(true); }}
                             className="mt-6 flex items-center gap-2 px-6 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors mx-auto">
                             <Plus size={18} /> Create First Task
@@ -631,7 +711,7 @@ const Tasks = ({ user, onLogout }) => {
                         employees={employees}
                         onUpdate={handleUpdate}
                         onDelete={handleDelete}
-                        isAdmin={user?.role === 'admin'}
+                        isAdmin={canManageTasks}
                         selectedIds={selectedIds}
                         onSelectChange={setSelectedIds}
                         bulkMode={bulkMode} />

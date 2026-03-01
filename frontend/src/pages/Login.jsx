@@ -4,11 +4,11 @@ import { motion } from 'framer-motion';
 import { Lock, User, Calendar as CalendarIcon, Moon, Sun } from 'lucide-react';
 
 import { api } from '../services/api';
+import { getDefaultPathForUser } from '../utils/access';
 
 const Login = ({ onLogin }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [role, setRole] = useState('admin');
     const [darkMode, setDarkMode] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -31,25 +31,17 @@ const Login = ({ onLogin }) => {
         e.preventDefault();
         setError('');
         setHint('');
-
-        if (role === 'viewer') {
-            const user = { username, role };
-            localStorage.setItem('user', JSON.stringify(user));
-            onLogin(user);
-            navigate('/');
-        } else {
-            setLoading(true);
-            try {
-                const data = await api.login({ username, password });
-                localStorage.setItem('user', JSON.stringify(data.user));
-                localStorage.setItem('token', data.access_token);
-                onLogin(data.user);
-                navigate('/');
-            } catch (err) {
-                setError("Invalid credentials.");
-            } finally {
-                setLoading(false);
-            }
+        setLoading(true);
+        try {
+            const data = await api.login({ username, password });
+            localStorage.setItem('user', JSON.stringify(data.user));
+            localStorage.setItem('token', data.access_token);
+            onLogin(data.user);
+            navigate(getDefaultPathForUser(data.user));
+        } catch (err) {
+            setError("Invalid credentials.");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -147,23 +139,6 @@ const Login = ({ onLogin }) => {
                         {showForgot ? 'Enter your email to receive a reset link.' : 'Please sign in to continue.'}
                     </p>
 
-                    {!showForgot && (
-                        <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-8">
-                            <button
-                                onClick={() => setRole('admin')}
-                                className={`flex-1 py-3 rounded-lg text-sm font-semibold transition-all shadow-sm ${role === 'admin' ? 'bg-white dark:bg-indigo-700 text-indigo-700 dark:text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                            >
-                                Admin View
-                            </button>
-                            <button
-                                onClick={() => setRole('viewer')}
-                                className={`flex-1 py-3 rounded-lg text-sm font-semibold transition-all shadow-sm ${role === 'viewer' ? 'bg-white dark:bg-indigo-700 text-indigo-700 dark:text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
-                            >
-                                Agency View
-                            </button>
-                        </div>
-                    )}
-
                     {showForgot ? (
                         <form onSubmit={handleForgot} className="space-y-6">
                             <div>
@@ -198,7 +173,7 @@ const Login = ({ onLogin }) => {
                     ) : (
                         <form onSubmit={handleLogin} className="space-y-6">
                             <div>
-                                <label className="block text-base font-semibold text-slate-700 dark:text-slate-200 mb-2">Username / Agency</label>
+                                <label className="block text-base font-semibold text-slate-700 dark:text-slate-200 mb-2">Username</label>
                                 <div className="relative group">
                                     <User className="absolute left-4 top-4 h-6 w-6 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                                     <input
@@ -207,36 +182,34 @@ const Login = ({ onLogin }) => {
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value)}
                                         className="w-full pl-12 pr-4 py-4 text-lg rounded-xl border-2 border-slate-200 dark:border-slate-700 dark:bg-dark-card dark:text-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all"
-                                        placeholder="Enter your name"
+                                        placeholder="Enter username"
                                     />
                                 </div>
                             </div>
 
-                            {role === 'admin' && (
-                                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                                    <label className="block text-base font-semibold text-slate-700 dark:text-slate-200 mb-2">Password</label>
-                                    <div className="relative group">
-                                        <Lock className="absolute left-4 top-4 h-6 w-6 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                                        <input
-                                            type="password"
-                                            required
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className="w-full pl-12 pr-4 py-4 text-lg rounded-xl border-2 border-slate-200 dark:border-slate-700 dark:bg-dark-card dark:text-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all"
-                                            placeholder="••••••••"
-                                        />
-                                    </div>
-                                    <div className="flex justify-between items-center mt-2 px-1">
-                                        <button type="button" onClick={fetchHint} className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">
-                                            Need a hint?
-                                        </button>
-                                        <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">
-                                            Forgot Password?
-                                        </button>
-                                    </div>
-                                    {hint && <div className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium bg-amber-50 dark:bg-amber-900/20 p-2 rounded">Hint: {hint}</div>}
-                                </motion.div>
-                            )}
+                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                                <label className="block text-base font-semibold text-slate-700 dark:text-slate-200 mb-2">Password</label>
+                                <div className="relative group">
+                                    <Lock className="absolute left-4 top-4 h-6 w-6 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                                    <input
+                                        type="password"
+                                        required
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full pl-12 pr-4 py-4 text-lg rounded-xl border-2 border-slate-200 dark:border-slate-700 dark:bg-dark-card dark:text-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all"
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center mt-2 px-1">
+                                    <button type="button" onClick={fetchHint} className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium">
+                                        Need a hint?
+                                    </button>
+                                    <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">
+                                        Forgot Password?
+                                    </button>
+                                </div>
+                                {hint && <div className="text-xs text-amber-600 dark:text-amber-400 mt-1 font-medium bg-amber-50 dark:bg-amber-900/20 p-2 rounded">Hint: {hint}</div>}
+                            </motion.div>
 
                             {error && <div className="text-red-500 text-center font-medium bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">{error}</div>}
 

@@ -35,6 +35,26 @@ export const api = {
         const res = await axios.post(`${AUTH_URL}/reset-password`, data);
         return res.data;
     },
+    getAccessModules: async () => {
+        const res = await axios.get(`${AUTH_URL}/modules`);
+        return res.data;
+    },
+    getUsers: async () => {
+        const res = await axios.get(`${AUTH_URL}/users`);
+        return res.data;
+    },
+    createUser: async (data) => {
+        const res = await axios.post(`${AUTH_URL}/users`, data);
+        return res.data;
+    },
+    updateUser: async (id, data) => {
+        const res = await axios.put(`${AUTH_URL}/users/${id}`, data);
+        return res.data;
+    },
+    deleteUser: async (id) => {
+        const res = await axios.delete(`${AUTH_URL}/users/${id}`);
+        return res.data;
+    },
 
     // ── Departments ───────────────────────────────────────────────────────────
     getDepartments: async () => {

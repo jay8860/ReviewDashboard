@@ -13,15 +13,20 @@ import Employees from './pages/Employees';
 import ResetPassword from './pages/ResetPassword';
 import FieldVisits from './pages/FieldVisits';
 import Todos from './pages/Todos';
-
-const ProtectedRoute = ({ children, user }) => {
-    if (!user) return <Navigate to="/login" replace />;
-    return children;
-};
+import AccessModule from './pages/AccessModule';
+import { canAccessModule, getDefaultPathForUser } from './utils/access';
 
 const AdminRoute = ({ children, user }) => {
     if (!user) return <Navigate to="/login" replace />;
     if (user.role !== 'admin') return <Navigate to="/" replace />;
+    return children;
+};
+
+const ModuleRoute = ({ children, user, moduleKey }) => {
+    if (!user) return <Navigate to="/login" replace />;
+    if (!canAccessModule(user, moduleKey)) {
+        return <Navigate to={getDefaultPathForUser(user)} replace />;
+    }
     return children;
 };
 
@@ -49,70 +54,75 @@ function App() {
         <BrowserRouter>
             <Routes>
                 <Route path="/login" element={
-                    user ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} />
+                    user ? <Navigate to={getDefaultPathForUser(user)} replace /> : <Login onLogin={handleLogin} />
                 } />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="overview">
                         <Overview user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/departments" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <Departments user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/departments/:deptId" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <DepartmentDetail user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/departments/:deptId/meetings/:meetingId" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <MeetingWorkspace user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/departments/:deptId/documents/:docId/analysis" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <DocumentAnalysisWorkspace user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/departments/:deptId/meetings/:meetingId/documents/:docId/analysis" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <DocumentAnalysisWorkspace user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/reviews/:sessionId" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="departments">
                         <ReviewDetail user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/tasks" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="tasks">
                         <Tasks user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/field-visits" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="field_visits">
                         <FieldVisits user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/todos" element={
-                    <ProtectedRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="todos">
                         <Todos user={user} onLogout={handleLogout} />
-                    </ProtectedRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/planner" element={
-                    <AdminRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="planner">
                         <Planner user={user} onLogout={handleLogout} />
-                    </AdminRoute>
+                    </ModuleRoute>
                 } />
                 <Route path="/employees" element={
-                    <AdminRoute user={user}>
+                    <ModuleRoute user={user} moduleKey="employees">
                         <Employees user={user} onLogout={handleLogout} />
+                    </ModuleRoute>
+                } />
+                <Route path="/access" element={
+                    <AdminRoute user={user}>
+                        <AccessModule user={user} onLogout={handleLogout} />
                     </AdminRoute>
                 } />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to={getDefaultPathForUser(user)} replace />} />
             </Routes>
         </BrowserRouter>
     );

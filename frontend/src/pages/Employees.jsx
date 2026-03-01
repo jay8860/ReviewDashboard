@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
+import { canAccessModule } from '../utils/access';
 
 const EmployeeModal = ({ isOpen, onClose, onSave, departments, initial }) => {
     const [form, setForm] = useState({
@@ -94,6 +95,7 @@ const EmployeeModal = ({ isOpen, onClose, onSave, departments, initial }) => {
 
 const Employees = ({ user, onLogout }) => {
     const toast = useToast();
+    const canManageEmployees = canAccessModule(user, 'employees');
     const [employees, setEmployees] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -156,7 +158,7 @@ const Employees = ({ user, onLogout }) => {
                     <h1 className="text-4xl font-black dark:text-white tracking-tight">Employees</h1>
                     <p className="text-slate-500 dark:text-dark-muted mt-1">Manage personnel for task assignment</p>
                 </div>
-                {user?.role === 'admin' && (
+                {canManageEmployees && (
                     <button onClick={() => { setEditEmp(null); setModalOpen(true); }}
                         className="flex items-center gap-2 px-5 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors w-fit">
                         <Plus size={18} /> Add Employee
@@ -192,7 +194,7 @@ const Employees = ({ user, onLogout }) => {
                                 <th className="px-6 py-4">Display Username</th>
                                 <th className="px-6 py-4">Mobile</th>
                                 <th className="px-6 py-4">Department</th>
-                                {user?.role === 'admin' && <th className="px-6 py-4 text-right">Actions</th>}
+                                {canManageEmployees && <th className="px-6 py-4 text-right">Actions</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-white/10">
@@ -218,7 +220,7 @@ const Employees = ({ user, onLogout }) => {
                                                 </span>
                                             ) : '--'}
                                         </td>
-                                        {user?.role === 'admin' && (
+                                        {canManageEmployees && (
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button onClick={() => { setEditEmp(emp); setModalOpen(true); }}

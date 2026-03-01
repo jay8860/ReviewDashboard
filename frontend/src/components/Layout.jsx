@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard, Building2, ClipboardList, Calendar, LogOut,
-    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare, Map
+    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare, Map, ShieldCheck
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { canAccessModule } from '../utils/access';
 
 const Layout = ({ children, user, onLogout }) => {
     const [isDark, setIsDark] = useState(false);
@@ -18,18 +19,16 @@ const Layout = ({ children, user, onLogout }) => {
         document.documentElement.classList.toggle('dark');
     };
 
-    // All admins see everything; viewers see Overview, Departments, Tasks only
     const menuItems = [
-        { icon: LayoutDashboard, label: 'Overview', path: '/', desc: 'Dashboard home' },
-        { icon: ClipboardList, label: 'Tasks', path: '/tasks', desc: 'Action tracking' },
-        { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews' },
-        { icon: Map, label: 'Field Visits', path: '/field-visits', desc: 'Village visit drafts' },
-        { icon: CheckSquare, label: 'To Do List', path: '/todos', desc: 'Personal reminders' },
-        ...(user?.role === 'admin' ? [
-            { icon: Calendar, label: 'Planner', path: '/planner', desc: 'Weekly planner' },
-            { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory' },
-        ] : []),
-    ];
+        { icon: LayoutDashboard, label: 'Overview', path: '/', desc: 'Dashboard home', module: 'overview' },
+        { icon: ClipboardList, label: 'Tasks', path: '/tasks', desc: 'Action tracking', module: 'tasks' },
+        { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews', module: 'departments' },
+        { icon: Map, label: 'Field Visits', path: '/field-visits', desc: 'Village visit drafts', module: 'field_visits' },
+        { icon: CheckSquare, label: 'To Do List', path: '/todos', desc: 'Personal reminders', module: 'todos' },
+        { icon: Calendar, label: 'Planner', path: '/planner', desc: 'Weekly planner', module: 'planner' },
+        { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory', module: 'employees' },
+        ...(user?.role === 'admin' ? [{ icon: ShieldCheck, label: 'Access Module', path: '/access', desc: 'Users & access' }] : []),
+    ].filter((item) => !item.module || canAccessModule(user, item.module));
 
     const isActive = (path) => {
         if (path === '/') return location.pathname === '/';

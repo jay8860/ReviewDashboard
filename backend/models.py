@@ -41,6 +41,7 @@ class User(Base):
     email = Column(String, nullable=True)
     hashed_password = Column(String)
     role = Column(String, default="viewer")  # admin | viewer
+    module_access = Column(Text, nullable=True, default="[]")  # JSON array of module keys
     hint = Column(String, nullable=True)
     reset_token = Column(String, nullable=True)
     reset_token_expiry = Column(DateTime, nullable=True)
