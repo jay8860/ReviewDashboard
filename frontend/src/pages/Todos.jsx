@@ -16,6 +16,12 @@ const parseNotesLines = (raw = '') => {
         .filter(Boolean);
 };
 
+const getEmployeeDisplayLabel = (employee) => {
+    const displayName = String(employee?.display_username || '').trim();
+    if (displayName) return displayName;
+    return String(employee?.name || '').trim() || `Employee ${employee?.id || ''}`.trim();
+};
+
 const Todos = ({ user, onLogout }) => {
     const navigate = useNavigate();
     const toast = useToast();
@@ -31,6 +37,10 @@ const Todos = ({ user, onLogout }) => {
     const allSelected = useMemo(
         () => items.length > 0 && selectedIds.length === items.length,
         [items.length, selectedIds.length]
+    );
+    const sortedEmployees = useMemo(
+        () => [...employees].sort((a, b) => getEmployeeDisplayLabel(a).localeCompare(getEmployeeDisplayLabel(b), undefined, { sensitivity: 'base' })),
+        [employees]
     );
     const parsedNotesLines = useMemo(() => parseNotesLines(notesInput), [notesInput]);
     const allParsedSelected = useMemo(() => {
@@ -340,7 +350,7 @@ const Todos = ({ user, onLogout }) => {
                                                         className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
                                                     >
                                                         <option value="">Task employee: none</option>
-                                                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                                                        {sortedEmployees.map(emp => <option key={emp.id} value={emp.id}>{getEmployeeDisplayLabel(emp)}</option>)}
                                                     </select>
                                                     {item.linked_task_number && (
                                                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">

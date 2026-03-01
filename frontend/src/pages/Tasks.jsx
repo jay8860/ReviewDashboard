@@ -48,6 +48,18 @@ const STATUS_OPTIONS = ['Pending', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
 const PAGE_SIZE = 50;
 
+const getEmployeeDisplayLabel = (employee) => {
+    const displayName = String(employee?.display_username || '').trim();
+    if (displayName) return displayName;
+    return String(employee?.name || '').trim() || `Employee ${employee?.id || ''}`.trim();
+};
+
+const sortEmployeesByDisplay = (rows = []) => (
+    [...rows].sort((a, b) => (
+        getEmployeeDisplayLabel(a).localeCompare(getEmployeeDisplayLabel(b), undefined, { sensitivity: 'base' })
+    ))
+);
+
 // ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
 const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], initial = null }) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -60,6 +72,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
     };
     const [form, setForm] = useState(blank);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const sortedEmployees = useMemo(() => sortEmployeesByDisplay(employees), [employees]);
 
     useEffect(() => {
         if (initial) {
@@ -159,7 +172,9 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                                     <label className={labelCls}>Assigned Employee</label>
                                     <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={inputCls}>
                                         <option value="">None</option>
-                                        {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.display_username})</option>)}
+                                        {sortedEmployees.map((e) => (
+                                            <option key={e.id} value={e.id}>{getEmployeeDisplayLabel(e)}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 {!initial ? (

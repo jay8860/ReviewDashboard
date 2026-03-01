@@ -97,6 +97,7 @@ const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] 
 
     const inputCls = "w-full px-2 py-1 rounded-lg border border-indigo-300 dark:border-indigo-500/50 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50";
     const selectCls = "w-full px-2 py-1 rounded-lg border border-indigo-300 dark:border-indigo-500/50 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/50";
+    const sortedEmployees = sortEmployeesForSelect(employees);
 
     return (
         <tr className="bg-indigo-50/60 dark:bg-indigo-900/20 border-y-2 border-indigo-200 dark:border-indigo-500/30">
@@ -112,7 +113,7 @@ const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] 
             <td className="px-2 py-2 min-w-32 flex flex-col gap-1">
                 <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={selectCls}>
                     <option value="">No Employee</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {sortedEmployees.map((e) => <option key={e.id} value={e.id}>{getEmployeeSelectLabel(e)}</option>)}
                 </select>
                 <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
             </td>
@@ -158,6 +159,19 @@ const buildTaskWhatsAppMessage = (task) => {
     return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
 };
 
+const getEmployeeSelectLabel = (employee) => {
+    const displayName = String(employee?.display_username || '').trim();
+    if (displayName) return displayName;
+    const fallback = String(employee?.name || '').trim();
+    return fallback || `Employee ${employee?.id || ''}`.trim();
+};
+
+const sortEmployeesForSelect = (rows = []) => (
+    [...rows].sort((a, b) => (
+        getEmployeeSelectLabel(a).localeCompare(getEmployeeSelectLabel(b), undefined, { sensitivity: 'base' })
+    ))
+);
+
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 const normalizeWhatsAppNumber = (value) => {
     let digits = String(value || '').replace(/\D/g, '');
@@ -189,6 +203,7 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
     const [primaryRecipientId, setPrimaryRecipientId] = useState('');
     const [messageDraft, setMessageDraft] = useState('');
     const [saving, setSaving] = useState(false);
+    const sortedEmployees = sortEmployeesForSelect(employees);
 
     useEffect(() => {
         if (!isOpen || !task) return;
@@ -238,7 +253,7 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
             window.alert('Message draft cannot be empty');
             return;
         }
-        window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener,noreferrer');
+        window.open(`https://api.whatsapp.com/send/?phone=${phone}&text=${text}&type=phone_number&app_absent=0`, '_blank', 'noopener,noreferrer');
     };
 
     const submit = async (e) => {
@@ -357,8 +372,8 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
                         className={inputCls}
                     >
                         <option value="">Select person</option>
-                        {employees.map((emp) => (
-                            <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        {sortedEmployees.map((emp) => (
+                            <option key={emp.id} value={emp.id}>{getEmployeeSelectLabel(emp)}</option>
                         ))}
                     </select>
                     {currentRecipient?.mobile_number && (
@@ -556,6 +571,8 @@ const TaskTable = ({
     };
 
     const sorted = tasks;
+    const sortedEmployees = sortEmployeesForSelect(employees);
+    const employeeById = new Map(sortedEmployees.map((emp) => [String(emp.id), emp]));
 
     if (tasks.length === 0) return null;
 
@@ -599,6 +616,11 @@ const TaskTable = ({
                         const isToday = task.is_today;
                         const isImportant = task.priority === 'High' || task.priority === 'Critical';
                         const isBulkEditable = Boolean(isAdmin && bulkMode);
+                        const taskAssignedEmployee = employeeById.get(String(task.assigned_employee_id || ''));
+                        const taskPhone = normalizeWhatsAppNumber(taskAssignedEmployee?.mobile_number);
+                        const quickWaHref = taskPhone
+                            ? `https://api.whatsapp.com/send/?phone=${taskPhone}&text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}&type=phone_number&app_absent=0`
+                            : `https://api.whatsapp.com/send/?text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}&type=custom_url&app_absent=0`;
                         const inputCls = "w-full px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/40 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40";
 
                         return (
@@ -723,8 +745,8 @@ const TaskTable = ({
                                                 className={inputCls}
                                             >
                                                 <option value="">No employee</option>
-                                                {employees.map((emp) => (
-                                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                                {sortedEmployees.map((emp) => (
+                                                    <option key={emp.id} value={emp.id}>{getEmployeeSelectLabel(emp)}</option>
                                                 ))}
                                             </select>
                                             <input
@@ -816,7 +838,7 @@ const TaskTable = ({
                                         <div className={`flex items-center gap-0.5 transition-opacity ${scheduleTask?.id === task.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                             {/* WhatsApp */}
                                             <a
-                                                href={`https://wa.me/?text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}`}
+                                                href={quickWaHref}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 title="WhatsApp follow-up"

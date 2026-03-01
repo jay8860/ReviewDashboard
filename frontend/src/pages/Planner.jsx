@@ -41,6 +41,7 @@ const WAIcon = () => (
 );
 
 const normalizeText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const tokenizeText = (value) => normalizeText(value).split(' ').filter((token) => token.length >= 3);
 
 const normalizeWhatsAppNumber = (value) => {
     let digits = String(value || '').replace(/\D/g, '');
@@ -49,6 +50,14 @@ const normalizeWhatsAppNumber = (value) => {
     if (digits.startsWith('0') && digits.length > 10) digits = digits.replace(/^0+/, '');
     if (digits.length === 10) digits = `91${digits}`;
     return digits;
+};
+
+const buildWhatsAppSendUrl = (number, message) => {
+    const encoded = encodeURIComponent(String(message || '').trim());
+    if (!number) {
+        return `https://api.whatsapp.com/send/?text=${encoded}&type=custom_url&app_absent=0`;
+    }
+    return `https://api.whatsapp.com/send/?phone=${number}&text=${encoded}&type=phone_number&app_absent=0`;
 };
 
 const splitAttendeeNames = (attendees) =>
@@ -73,8 +82,20 @@ const eventCandidateStrings = (event) => {
     candidates.push(...splitAttendeeNames(event.attendees));
     if (event.title) candidates.push(event.title);
     if (event.description) candidates.push(event.description);
+    if (event.venue) candidates.push(event.venue);
+    if (event.department_name) candidates.push(event.department_name);
     return candidates.filter(Boolean);
 };
+
+const getEmployeeSortLabel = (employee) => {
+    const label = String(employee?.display_username || '').trim();
+    if (label) return label;
+    return String(employee?.name || '').trim() || `Employee ${employee?.id || ''}`.trim();
+};
+
+const sortEmployeesForLists = (rows = []) => (
+    [...rows].sort((a, b) => getEmployeeSortLabel(a).localeCompare(getEmployeeSortLabel(b), undefined, { sensitivity: 'base' }))
+);
 
 const autoSelectRecipientsForEvents = (events = [], employees = []) => {
     if (!employees.length) return [];
@@ -84,24 +105,40 @@ const autoSelectRecipientsForEvents = (events = [], employees = []) => {
         const pickedBefore = picked.size;
         const deptId = event?.department_id ? Number(event.department_id) : null;
         const candidates = eventCandidateStrings(event).map(normalizeText).filter(Boolean);
+        const candidateTokens = new Set(candidates.flatMap((candidate) => tokenizeText(candidate)));
+        const employeeIdFromEvent = event?.assigned_employee_id ? Number(event.assigned_employee_id) : null;
+        let matchedThisEvent = false;
+
+        if (employeeIdFromEvent) {
+            picked.add(employeeIdFromEvent);
+            matchedThisEvent = true;
+        }
+
         employees.forEach((emp) => {
             const empName = normalizeText(emp?.name);
             const empUsername = normalizeText(emp?.display_username);
             const empMobile = normalizeWhatsAppNumber(emp?.mobile_number);
+            const empTokens = new Set([
+                ...tokenizeText(empName),
+                ...tokenizeText(empUsername),
+            ]);
 
             const matchByText = candidates.some((candidate) => (
                 (empName && candidate.includes(empName)) ||
+                (empName && empName.includes(candidate)) ||
                 (empUsername && candidate.includes(empUsername)) ||
                 (empMobile && candidate.includes(empMobile))
             ));
+            const matchByToken = [...empTokens].some((token) => candidateTokens.has(token));
 
-            if (matchByText) {
+            if (matchByText || matchByToken) {
                 picked.add(emp.id);
+                matchedThisEvent = true;
             }
         });
 
         // Fallback: if no explicit attendee match and department is set, include department employees.
-        if (deptId && picked.size === pickedBefore) {
+        if (deptId && !matchedThisEvent && picked.size === pickedBefore) {
             employees.forEach((emp) => {
                 if (Number(emp?.department_id || 0) === deptId) picked.add(emp.id);
             });
@@ -212,6 +249,7 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const sortedEmployees = useMemo(() => sortEmployeesForLists(employees), [employees]);
 
     useEffect(() => {
         if (!isOpen || !event) return;
@@ -222,7 +260,7 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
 
     if (!isOpen || !event) return null;
 
-    const visibleEmployees = employees.filter(emp => {
+    const visibleEmployees = sortedEmployees.filter(emp => {
         if (!searchTerm.trim()) return true;
         const q = searchTerm.toLowerCase();
         return (
@@ -266,10 +304,9 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
             return;
         }
 
-        const encoded = encodeURIComponent(finalMessage);
         recipients.forEach((number, idx) => {
             setTimeout(() => {
-                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+                window.open(buildWhatsAppSendUrl(number, finalMessage), '_blank', 'noopener,noreferrer');
             }, idx * 250);
         });
         onClose();
@@ -410,6 +447,7 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const sortedEmployees = useMemo(() => sortEmployeesForLists(employees), [employees]);
 
     const dayEvents = useMemo(() => {
         if (!day) return [];
@@ -442,7 +480,7 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
 
     if (!isOpen) return null;
 
-    const visibleEmployees = employees.filter((emp) => {
+    const visibleEmployees = sortedEmployees.filter((emp) => {
         const q = searchTerm.trim().toLowerCase();
         if (!q) return true;
         return (
@@ -483,10 +521,9 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
             window.alert('Select at least one recipient');
             return;
         }
-        const encoded = encodeURIComponent(draft);
         recipients.forEach((number, idx) => {
             setTimeout(() => {
-                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+                window.open(buildWhatsAppSendUrl(number, draft), '_blank', 'noopener,noreferrer');
             }, idx * 250);
         });
         onClose();
