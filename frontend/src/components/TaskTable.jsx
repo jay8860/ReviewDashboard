@@ -77,7 +77,7 @@ const StenoPopup = ({ value, onSave, onClose }) => {
 
 // ── Inline Edit Row ────────────────────────────────────────────────────────────
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
-const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
+const STATUS_OPTIONS = ['Pending', 'Completed', 'Overdue'];
 
 const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] }) => {
     const [form, setForm] = useState({
@@ -343,7 +343,7 @@ const TaskTable = ({
                         <ColHeader label="Task #" sortKey="task_number" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Due In" sortKey="deadline_date" currentSort={sort} onSort={handleSort} className="w-20" />
                         <ColHeader label="Task / Description" sortKey="description" currentSort={sort} onSort={handleSort} />
-                        <ColHeader label="Comments" className="w-36" />
+                        <ColHeader label="Comments" className="w-[28rem]" />
                         <ColHeader label="Assigned" sortKey="assigned_agency" currentSort={sort} onSort={handleSort} className="w-32" />
                         <ColHeader label="Alloc." sortKey="allocated_date" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Time" className="w-20" />
@@ -406,7 +406,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Task Description */}
-                                <td className="px-3 py-3 min-w-[280px] align-top">
+                                <td className="px-3 py-3 min-w-[320px] align-middle">
                                     {isBulkEditable ? (
                                         <div className="space-y-1">
                                             <textarea
@@ -422,7 +422,7 @@ const TaskTable = ({
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col gap-0.5">
+                                        <div className="min-h-[64px] flex flex-col justify-center gap-0.5">
                                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
@@ -434,7 +434,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Steno Comment */}
-                                <td className="px-3 py-3 max-w-[140px]" ref={stenoId === task.id ? stenoRef : null}>
+                                <td className="px-3 py-3 min-w-[260px] max-w-[360px]" ref={stenoId === task.id ? stenoRef : null}>
                                     {isBulkEditable ? (
                                         <div className="space-y-1">
                                             <textarea

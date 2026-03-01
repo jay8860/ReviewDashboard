@@ -1041,6 +1041,17 @@ const Planner = ({ user, onLogout }) => {
                                                                             <CalendarClock size={10} /> Workspace
                                                                         </button>
                                                                     )}
+                                                                    {event.field_visit_draft_id && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                navigate('/field-visits');
+                                                                            }}
+                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
+                                                                        >
+                                                                            <Link2 size={10} /> Visit Plan
+                                                                        </button>
+                                                                    )}
                                                                     {!event.is_locked && (
                                                                         <button
                                                                             onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}

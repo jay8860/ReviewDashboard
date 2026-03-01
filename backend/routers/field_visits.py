@@ -303,6 +303,7 @@ def _serialize_draft(draft: models.FieldVisitDraft) -> dict:
         "visit_places_note": draft.visit_places_note,
         "people_going": draft.people_going,
         "status": _normalize_status(draft.status),
+        "planner_event_id": draft.planner_event_id,
         "order_index": draft.order_index if draft.order_index is not None else 0,
         "created_at": draft.created_at,
         "updated_at": draft.updated_at,

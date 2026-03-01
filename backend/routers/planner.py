@@ -176,7 +176,11 @@ def _serialize_settings(settings: models.PlannerSettings) -> dict:
     }
 
 
-def _serialize_event(event: models.PlannerEvent, dept_name: Optional[str] = None) -> dict:
+def _serialize_event(
+    event: models.PlannerEvent,
+    dept_name: Optional[str] = None,
+    field_visit_draft_id: Optional[int] = None,
+) -> dict:
     return {
         "id": event.id,
         "title": event.title,
@@ -192,11 +196,17 @@ def _serialize_event(event: models.PlannerEvent, dept_name: Optional[str] = None
         "department_id": event.department_id,
         "department_name": dept_name,
         "department_meeting_id": event.department_meeting_id,
+        "field_visit_draft_id": field_visit_draft_id,
         "review_session_id": event.review_session_id,
         "source": event.source,
         "external_uid": event.external_uid,
         "external_calendar": event.external_calendar,
         "is_locked": bool(event.is_locked),
+        "workspace_route": (
+            f"/departments/{event.department_id}/meetings/{event.department_meeting_id}"
+            if event.department_id and event.department_meeting_id
+            else None
+        ),
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "updated_at": event.updated_at.isoformat() if event.updated_at else None,
     }
@@ -211,7 +221,7 @@ def _build_agenda_snapshot(db: Session, department_id: int) -> str:
 
 
 def _sync_department_meeting_from_event(event: models.PlannerEvent, db: Session):
-    is_meeting = _normalize_event_type(event.event_type) == "meeting"
+    is_meeting = _normalize_event_type(event.event_type) in {"meeting", "review"}
     planner_status = _normalize_status(event.status)
     if not (is_meeting and event.department_id):
         return
@@ -255,6 +265,93 @@ def _sync_department_meeting_from_event(event: models.PlannerEvent, db: Session)
 
     if (event.source or "") != "external_calendar":
         event.source = "department_meeting"
+
+
+def _extract_first_non_empty_line(text: Optional[str]) -> Optional[str]:
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line:
+            return line
+    return None
+
+
+def _sync_field_visit_draft_from_event(event: models.PlannerEvent, db: Session) -> Optional[int]:
+    if event.is_locked:
+        return None
+
+    normalized_type = _normalize_event_type(event.event_type)
+    linked_draft = db.query(models.FieldVisitDraft).filter(
+        models.FieldVisitDraft.planner_event_id == event.id
+    ).first()
+    if not linked_draft:
+        source_text = (event.source or "").strip()
+        source_match = re.match(r"^field_visit_draft:(\d+)$", source_text)
+        if source_match:
+            source_draft_id = int(source_match.group(1))
+            linked_draft = db.query(models.FieldVisitDraft).filter(
+                models.FieldVisitDraft.id == source_draft_id
+            ).first()
+
+    if normalized_type != "field-visit":
+        if linked_draft:
+            linked_draft.planner_event_id = None
+            linked_draft.status = "Draft"
+            linked_draft.planned_date = None
+            linked_draft.planned_time = None
+        return None
+
+    visit_note = (event.description or "").strip()
+    first_line = _extract_first_non_empty_line(visit_note)
+    location_hint = (event.venue or "").strip() or (first_line or "")
+    desired_status = "Planned" if _normalize_status(event.status) != "Cancelled" else "Draft"
+
+    if not linked_draft:
+        linked_draft = db.query(models.FieldVisitDraft).filter(
+            models.FieldVisitDraft.planner_event_id == None,
+            models.FieldVisitDraft.title == event.title,
+            models.FieldVisitDraft.planned_date == event.date,
+            models.FieldVisitDraft.planned_time == event.time_slot,
+        ).order_by(models.FieldVisitDraft.updated_at.desc()).first()
+
+    if linked_draft:
+        linked_draft.title = event.title
+        linked_draft.department_id = event.department_id
+        linked_draft.est_duration_minutes = max(30, int(event.duration_minutes or 30))
+        linked_draft.planned_date = event.date
+        linked_draft.planned_time = event.time_slot
+        linked_draft.status = desired_status
+        linked_draft.planner_event_id = event.id
+        if visit_note:
+            linked_draft.visit_places_note = visit_note
+            linked_draft.focus_points = visit_note
+        if event.attendees:
+            linked_draft.people_going = event.attendees
+        if location_hint:
+            linked_draft.location = location_hint
+        return linked_draft.id
+
+    max_order_row = db.query(models.FieldVisitDraft.order_index).order_by(
+        models.FieldVisitDraft.order_index.desc()
+    ).first()
+    next_order = ((max_order_row[0] if max_order_row and max_order_row[0] is not None else 0) + 1)
+    new_draft = models.FieldVisitDraft(
+        title=event.title or "Field Visit",
+        theme="General",
+        location=location_hint or None,
+        department_id=event.department_id,
+        focus_points=visit_note or None,
+        est_duration_minutes=max(30, int(event.duration_minutes or 30)),
+        planned_date=event.date,
+        planned_time=event.time_slot,
+        visit_places_note=visit_note or None,
+        people_going=event.attendees or None,
+        status=desired_status,
+        order_index=next_order,
+        planner_event_id=event.id,
+    )
+    db.add(new_draft)
+    db.flush()
+    return new_draft.id
 
 
 def _unfold_ics_lines(raw_text: str) -> List[str]:
@@ -488,7 +585,22 @@ def get_events(start_date: Optional[date] = None, end_date: Optional[date] = Non
         depts = db.query(models.Department).filter(models.Department.id.in_(dept_ids)).all()
         dept_names = {d.id: d.name for d in depts}
 
-    return [_serialize_event(row, dept_names.get(row.department_id)) for row in rows]
+    event_ids = [row.id for row in rows]
+    draft_rows = []
+    if event_ids:
+        draft_rows = db.query(models.FieldVisitDraft.id, models.FieldVisitDraft.planner_event_id).filter(
+            models.FieldVisitDraft.planner_event_id.in_(event_ids)
+        ).all()
+    draft_by_event_id = {planner_event_id: draft_id for draft_id, planner_event_id in draft_rows if planner_event_id}
+
+    return [
+        _serialize_event(
+            row,
+            dept_names.get(row.department_id),
+            draft_by_event_id.get(row.id),
+        )
+        for row in rows
+    ]
 
 
 @router.post("/")
@@ -503,13 +615,19 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
     db.add(event)
     db.flush()
     _sync_department_meeting_from_event(event, db)
+    draft_id = _sync_field_visit_draft_from_event(event, db)
     db.commit()
     db.refresh(event)
     dept_name = None
     if event.department_id:
         dept = db.query(models.Department).filter(models.Department.id == event.department_id).first()
         dept_name = dept.name if dept else None
-    return _serialize_event(event, dept_name)
+    if draft_id is None:
+        linked_draft = db.query(models.FieldVisitDraft.id).filter(
+            models.FieldVisitDraft.planner_event_id == event.id
+        ).first()
+        draft_id = linked_draft[0] if linked_draft else None
+    return _serialize_event(event, dept_name, draft_id)
 
 
 @router.put("/{event_id}")
@@ -533,10 +651,16 @@ def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)
     for k, v in payload.items():
         setattr(event, k, v)
 
-    if (_normalize_event_type(event.event_type) != "meeting" or not event.department_id) and event.department_meeting_id:
+    if (_normalize_event_type(event.event_type) not in {"meeting", "review"} or not event.department_id) and event.department_meeting_id:
+        linked_meeting = db.query(models.DepartmentMeeting).filter(
+            models.DepartmentMeeting.id == event.department_meeting_id
+        ).first()
+        if linked_meeting:
+            db.delete(linked_meeting)
         event.department_meeting_id = None
 
     _sync_department_meeting_from_event(event, db)
+    draft_id = _sync_field_visit_draft_from_event(event, db)
     db.commit()
     db.refresh(event)
 
@@ -544,7 +668,12 @@ def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)
     if event.department_id:
         dept = db.query(models.Department).filter(models.Department.id == event.department_id).first()
         dept_name = dept.name if dept else None
-    return _serialize_event(event, dept_name)
+    if draft_id is None:
+        linked_draft = db.query(models.FieldVisitDraft.id).filter(
+            models.FieldVisitDraft.planner_event_id == event.id
+        ).first()
+        draft_id = linked_draft[0] if linked_draft else None
+    return _serialize_event(event, dept_name, draft_id)
 
 
 @router.delete("/{event_id}")
@@ -561,6 +690,15 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
         ).first()
         if linked:
             db.delete(linked)
+
+    linked_field_visit = db.query(models.FieldVisitDraft).filter(
+        models.FieldVisitDraft.planner_event_id == event.id
+    ).first()
+    if linked_field_visit:
+        linked_field_visit.planner_event_id = None
+        linked_field_visit.status = "Draft"
+        linked_field_visit.planned_date = None
+        linked_field_visit.planned_time = None
 
     db.delete(event)
     db.commit()

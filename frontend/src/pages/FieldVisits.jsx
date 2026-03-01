@@ -705,12 +705,28 @@ const FieldVisits = ({ user, onLogout }) => {
                 venue: firstPlace || null,
                 attendees: modalForm.people_going || null,
                 description: `Visit Places:\n${modalForm.visit_places_note}\n\nPeople Going: ${modalForm.people_going || '-'}`,
-                source: 'field_visit',
+                source: scheduleContext?.type === 'draft' && scheduleContext?.sourceDraftId
+                    ? `field_visit_draft:${scheduleContext.sourceDraftId}`
+                    : 'field_visit',
             };
-            await api.createPlannerEvent(eventPayload);
+            const plannerEvent = await api.createPlannerEvent(eventPayload);
+            const linkedDraftId = plannerEvent?.field_visit_draft_id || null;
 
             if (scheduleContext?.type === 'draft' && scheduleContext?.sourceDraftId) {
                 await api.updateFieldVisitDraft(scheduleContext.sourceDraftId, {
+                    title: cleanText(modalForm.title),
+                    planned_date: modalForm.date,
+                    planned_time: modalForm.time_slot,
+                    est_duration_minutes: Math.max(30, parseInt(modalForm.duration_minutes, 10) || 120),
+                    department_id: deptId,
+                    visit_places_note: modalForm.visit_places_note,
+                    people_going: modalForm.people_going,
+                    location: firstPlace || null,
+                    focus_points: modalForm.visit_places_note,
+                    status: 'Planned',
+                });
+            } else if (linkedDraftId) {
+                await api.updateFieldVisitDraft(linkedDraftId, {
                     title: cleanText(modalForm.title),
                     planned_date: modalForm.date,
                     planned_time: modalForm.time_slot,

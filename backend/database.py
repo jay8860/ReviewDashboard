@@ -196,6 +196,7 @@ def apply_non_destructive_migrations():
             ("planned_time", "VARCHAR"),
             ("visit_places_note", "TEXT"),
             ("people_going", "TEXT"),
+            ("planner_event_id", "INTEGER"),
         ],
     }
 

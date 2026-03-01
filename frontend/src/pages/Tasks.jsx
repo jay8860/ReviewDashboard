@@ -42,7 +42,7 @@ const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) 
     );
 };
 
-const STATUS_OPTIONS = ['Pending', 'In Progress', 'Completed', 'Overdue'];
+const STATUS_OPTIONS = ['Pending', 'Completed', 'Overdue'];
 const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
 const PAGE_SIZE = 50;
 

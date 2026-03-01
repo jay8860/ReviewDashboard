@@ -52,6 +52,21 @@ class BulkUpdateRequest(BaseModel):
     updates: List[dict]
 
 
+def _normalize_task_status(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"in progress", "in_progress", "progress"}:
+        return "Pending"
+    if text in {"completed", "done"}:
+        return "Completed"
+    if text in {"overdue"}:
+        return "Overdue"
+    if text in {"pending", ""}:
+        return "Pending"
+    return "Pending"
+
+
 def generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
     prefix = "TSK"
     if assigned_agency:
@@ -120,8 +135,11 @@ def get_tasks(
 ):
     today = date.today()
     db.query(models.Task).filter(
+        models.Task.status == "In Progress"
+    ).update({"status": "Pending"}, synchronize_session=False)
+    db.query(models.Task).filter(
         models.Task.deadline_date < today,
-        models.Task.status.in_(["Pending", "In Progress"]),
+        models.Task.status == "Pending",
         models.Task.completion_date == None
     ).update({"status": "Overdue"}, synchronize_session=False)
     db.commit()
@@ -200,6 +218,7 @@ def get_agencies(db: Session = Depends(get_db)):
 @router.post("/")
 def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     task_data = data.dict()
+    task_data["status"] = _normalize_task_status(task_data.get("status"))
     if not task_data.get("task_number"):
         task_data["task_number"] = generate_task_number(db, task_data.get("assigned_agency"), task_data.get("department_id"))
     if not task_data.get("allocated_date"):
@@ -222,6 +241,8 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
         if task:
             for k, v in item.items():
                 if k != "id" and hasattr(task, k):
+                    if k == "status":
+                        v = _normalize_task_status(v)
                     setattr(task, k, v)
             if item.get("completion_date"):
                 task.status = "Completed"
@@ -235,7 +256,10 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    for k, v in data.dict(exclude_none=True).items():
+    payload = data.dict(exclude_none=True)
+    if "status" in payload:
+        payload["status"] = _normalize_task_status(payload.get("status"))
+    for k, v in payload.items():
         setattr(task, k, v)
     if data.completion_date:
         task.status = "Completed"

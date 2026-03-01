@@ -352,6 +352,7 @@ class FieldVisitDraft(Base):
     visit_places_note = Column(Text, nullable=True)    # Concise place list / itinerary
     people_going = Column(Text, nullable=True)         # Names of accompanying people
     status = Column(String, default="Draft")           # Draft | Planned | Done
+    planner_event_id = Column(Integer, ForeignKey("planner_events.id"), nullable=True, index=True)
     order_index = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
