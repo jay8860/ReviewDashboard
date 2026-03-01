@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
     Building2, Plus, Trash2, Edit2, ArrowRight, X,
-    AlertTriangle, CheckCircle2, Clock, BookOpen, LayoutGrid,
+    LayoutGrid,
     List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus
 } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -22,13 +22,6 @@ const colorGrad = {
     violet: 'from-violet-500 to-violet-700',
     teal: 'from-teal-500 to-teal-700',
     orange: 'from-orange-500 to-orange-700',
-};
-
-const HealthIcon = ({ status }) => {
-    if (status === 'ok') return <CheckCircle2 size={16} className="text-emerald-500" />;
-    if (status === 'warning') return <Clock size={16} className="text-amber-500" />;
-    if (status === 'critical') return <AlertTriangle size={16} className="text-rose-500" />;
-    return <BookOpen size={16} className="text-slate-400" />;
 };
 
 const normalizePriority = (value) => {
@@ -443,17 +436,10 @@ const DepartmentCard = ({
             </div>
 
             <h3 className="font-black text-lg text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
-            {dept.head_name && <p className="text-xs text-slate-400 mb-3">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             <p className="text-[11px] font-semibold text-violet-600 mb-3">{reviewTickerText(dept)}</p>
-
-            <div className="flex items-center gap-2 mb-3">
-                <HealthIcon status={dept.review_health?.status} />
-                <span className="text-xs font-semibold text-slate-500">
-                    {dept.program_count} program{dept.program_count !== 1 ? 's' : ''}
-                    {dept.review_health?.overdue_reviews > 0 && <span className="text-rose-500 ml-2">· {dept.review_health.overdue_reviews} overdue</span>}
-                </span>
-                {dept.open_tasks > 0 && <span className="text-xs text-slate-400 ml-auto">{dept.open_tasks} tasks</span>}
-            </div>
+            {editMode && dept.head_name && (
+                <p className="text-xs text-slate-400 mb-3">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
+            )}
 
             {editMode && (
                 <div className="mb-3">
@@ -468,7 +454,7 @@ const DepartmentCard = ({
                 </div>
             )}
 
-            <div className={`grid gap-2 ${editMode ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className="grid gap-2 grid-cols-2">
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
@@ -478,14 +464,17 @@ const DepartmentCard = ({
                 >
                     <CalendarPlus size={13} /> Schedule
                 </button>
-                {editMode && (
-                    <button
-                        onClick={() => onOpen(dept.id)}
-                        className="w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 font-semibold text-xs hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600 transition-colors group/btn"
-                    >
-                        Open <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
-                    </button>
-                )}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(dept.id);
+                    }}
+                    className={`w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl font-bold text-xs transition-colors group/btn ${editMode
+                        ? 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                >
+                    Open <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
+                </button>
             </div>
         </div>
     </motion.div>
@@ -518,10 +507,10 @@ const DepartmentListRow = ({
                         <span className="text-white font-black text-[10px]">{dept.short_name || dept.name.slice(0, 2).toUpperCase()}</span>
                     </div>
                     <p className="font-black text-slate-800 dark:text-white truncate">{dept.name}</p>
-                    <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>
+                    {editMode && <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>}
                 </div>
                 <p className="text-[11px] font-semibold text-violet-600 mt-1">{reviewTickerText(dept)}</p>
-                {dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
+                {editMode && dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -557,12 +546,6 @@ const DepartmentListRow = ({
                         <button onClick={() => onDelete(dept.id)} className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
                             <Trash2 size={14} />
                         </button>
-                        <button
-                            onClick={() => onOpen(dept.id)}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-1"
-                        >
-                            Open <ArrowRight size={12} />
-                        </button>
                     </>
                 )}
                 <button
@@ -573,6 +556,15 @@ const DepartmentListRow = ({
                     className="px-3 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors inline-flex items-center gap-1"
                 >
                     <CalendarPlus size={12} /> Schedule
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(dept.id);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-1"
+                >
+                    Open <ArrowRight size={12} />
                 </button>
             </div>
         </div>

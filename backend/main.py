@@ -8,7 +8,7 @@ from database import engine, Base, apply_non_destructive_migrations
 import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
-from routers import auth, departments, reviews, tasks, planner, employees
+from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -41,6 +41,8 @@ app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(planner.router, prefix="/api/planner", tags=["planner"])
 app.include_router(employees.router, prefix="/api/employees", tags=["employees"])
+app.include_router(field_visits.router, prefix="/api/field-visits", tags=["field-visits"])
+app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 
 # Serve React frontend
 frontend_dist = os.path.join(os.path.dirname(__file__), "static")

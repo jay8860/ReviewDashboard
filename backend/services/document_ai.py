@@ -7,10 +7,25 @@ import urllib.request
 from typing import Optional, Tuple
 from datetime import date
 
-import openpyxl
-from docx import Document
-from pypdf import PdfReader
-from pptx import Presentation
+try:
+    from docx import Document
+except Exception:
+    Document = None
+
+try:
+    import openpyxl
+except Exception:
+    openpyxl = None
+
+try:
+    from pypdf import PdfReader
+except Exception:
+    PdfReader = None
+
+try:
+    from pptx import Presentation
+except Exception:
+    Presentation = None
 
 SUPPORTED_EXTENSIONS = {
     ".txt", ".md", ".csv", ".json",
@@ -48,6 +63,8 @@ def _read_text_file(path: str) -> str:
 
 
 def _read_docx(path: str) -> str:
+    if Document is None:
+        raise RuntimeError("python-docx is not installed. Install dependency to analyze .docx files.")
     doc = Document(path)
     chunks = []
     for para in doc.paragraphs:
@@ -65,6 +82,8 @@ def _read_docx(path: str) -> str:
 
 
 def _read_pptx(path: str) -> str:
+    if Presentation is None:
+        raise RuntimeError("python-pptx is not installed. Install dependency to analyze .pptx files.")
     presentation = Presentation(path)
     chunks = []
     for slide_no, slide in enumerate(presentation.slides, start=1):
@@ -81,6 +100,8 @@ def _read_pptx(path: str) -> str:
 
 
 def _read_pdf(path: str) -> str:
+    if PdfReader is None:
+        raise RuntimeError("pypdf is not installed. Install dependency to analyze .pdf files.")
     reader = PdfReader(path)
     chunks = []
     for i, page in enumerate(reader.pages, start=1):
@@ -92,6 +113,8 @@ def _read_pdf(path: str) -> str:
 
 
 def _read_xlsx(path: str) -> str:
+    if openpyxl is None:
+        raise RuntimeError("openpyxl is not installed. Install dependency to analyze .xlsx files.")
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     chunks = []
     for ws in wb.worksheets[:6]:

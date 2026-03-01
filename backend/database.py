@@ -169,6 +169,32 @@ def apply_non_destructive_migrations():
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "field_visit_planning_notes": [
+            ("note_text", "TEXT"),
+            ("home_base", "VARCHAR DEFAULT 'Collectorate, Dantewada'"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
+        "todo_items": [
+            ("title", "VARCHAR"),
+            ("details", "TEXT"),
+            ("due_date", "DATE"),
+            ("reminder_at", "TIMESTAMP"),
+            ("status", "VARCHAR DEFAULT 'Open'"),
+            ("priority", "VARCHAR DEFAULT 'Normal'"),
+            ("order_index", "INTEGER DEFAULT 0"),
+            ("source", "VARCHAR DEFAULT 'manual'"),
+            ("department_id", "INTEGER"),
+            ("linked_task_id", "INTEGER"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
+        "field_visit_drafts": [
+            ("planned_date", "DATE"),
+            ("planned_time", "VARCHAR"),
+            ("visit_places_note", "TEXT"),
+            ("people_going", "TEXT"),
+        ],
     }
 
     with engine.begin() as conn:

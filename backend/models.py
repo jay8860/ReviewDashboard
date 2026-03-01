@@ -73,6 +73,8 @@ class Department(Base):
     employees = relationship("Employee", back_populates="department")
     data_grid = relationship("DeptDataGrid", back_populates="department", uselist=False, cascade="all, delete-orphan")
     document_attachments = relationship("DocumentAttachment", back_populates="department", cascade="all, delete-orphan")
+    field_visit_drafts = relationship("FieldVisitDraft", back_populates="department", cascade="all, delete-orphan")
+    todo_items = relationship("TodoItem", back_populates="department")
 
 # ─── Employee ─────────────────────────────────────────────────────────────────
 
@@ -215,6 +217,29 @@ class Task(Base):
     assigned_employee = relationship("Employee", back_populates="tasks")
 
 
+# ─── Personal To-do Items ─────────────────────────────────────────────────────
+# Lightweight reminder list; selected rows can be converted into formal tasks
+
+class TodoItem(Base):
+    __tablename__ = "todo_items"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    details = Column(Text, nullable=True)
+    due_date = Column(Date, nullable=True)
+    reminder_at = Column(DateTime, nullable=True)
+    status = Column(String, default="Open")            # Open | Done
+    priority = Column(String, default="Normal")        # Critical | High | Normal | Low
+    order_index = Column(Integer, default=0)
+    source = Column(String, default="manual")          # manual | imported_notes | converted_to_task
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    linked_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="todo_items")
+    linked_task = relationship("Task")
+
+
 # ─── Department Agenda Point ──────────────────────────────────────────────────
 # Agenda points live at the Department level, independent of any meeting/session
 
@@ -302,6 +327,45 @@ class DocumentAttachment(Base):
 
     department = relationship("Department", back_populates="document_attachments")
     meeting = relationship("DepartmentMeeting", back_populates="document_attachments")
+
+
+# ─── Field Visit Drafts ───────────────────────────────────────────────────────
+# Draft pool of villages/themes that can later be scheduled in weekly planner
+
+class FieldVisitDraft(Base):
+    __tablename__ = "field_visit_drafts"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    theme = Column(String, nullable=True, default="General")
+    location = Column(String, nullable=True)           # Village / cluster / landmark
+    village = Column(String, nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
+    focus_points = Column(Text, nullable=True)         # What to inspect during visit
+    preferred_day = Column(String, nullable=True)      # e.g. Monday, Wed AM
+    map_link = Column(Text, nullable=True)             # Optional Google Maps link
+    est_duration_minutes = Column(Integer, default=120)
+    planned_date = Column(Date, nullable=True)
+    planned_time = Column(String, nullable=True)       # e.g. "10:00"
+    visit_places_note = Column(Text, nullable=True)    # Concise place list / itinerary
+    people_going = Column(Text, nullable=True)         # Names of accompanying people
+    status = Column(String, default="Draft")           # Draft | Planned | Done
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    department = relationship("Department", back_populates="field_visit_drafts")
+
+
+# ─── Field Visit Planning Notes ───────────────────────────────────────────────
+# Singleton scratchpad used for worst GP / high-priority project planning input
+
+class FieldVisitPlanningNote(Base):
+    __tablename__ = "field_visit_planning_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    note_text = Column(Text, nullable=True)
+    home_base = Column(String, default="Collectorate, Dantewada")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────

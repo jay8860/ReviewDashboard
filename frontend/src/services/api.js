@@ -1,12 +1,14 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://127.0.0.1:8000');
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://127.0.0.1:8001');
 const AUTH_URL = `${BASE_URL}/api/auth`;
 const DEPT_URL = `${BASE_URL}/api/departments`;
 const REVIEW_URL = `${BASE_URL}/api/reviews`;
 const TASK_URL = `${BASE_URL}/api/tasks`;
 const PLAN_URL = `${BASE_URL}/api/planner`;
 const EMP_URL = `${BASE_URL}/api/employees`;
+const FIELD_VISIT_URL = `${BASE_URL}/api/field-visits`;
+const TODO_URL = `${BASE_URL}/api/todos`;
 
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
@@ -323,6 +325,80 @@ export const api = {
     },
     deletePlannerEvent: async (id) => {
         const res = await axios.delete(`${PLAN_URL}/${id}`);
+        return res.data;
+    },
+
+    // ── Field Visits ──────────────────────────────────────────────────────────
+    getFieldVisitDrafts: async () => {
+        const res = await axios.get(`${FIELD_VISIT_URL}/drafts`);
+        return res.data;
+    },
+    getFieldVisitDraft: async (id) => {
+        const res = await axios.get(`${FIELD_VISIT_URL}/drafts/${id}`);
+        return res.data;
+    },
+    createFieldVisitDraft: async (data) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/drafts`, data);
+        return res.data;
+    },
+    updateFieldVisitDraft: async (id, data) => {
+        const res = await axios.put(`${FIELD_VISIT_URL}/drafts/${id}`, data);
+        return res.data;
+    },
+    deleteFieldVisitDraft: async (id) => {
+        const res = await axios.delete(`${FIELD_VISIT_URL}/drafts/${id}`);
+        return res.data;
+    },
+    reorderFieldVisitDrafts: async (ordered_ids = []) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/drafts/reorder`, { ordered_ids });
+        return res.data;
+    },
+    getFieldVisitPlanningNotes: async () => {
+        const res = await axios.get(`${FIELD_VISIT_URL}/planning-notes`);
+        return res.data;
+    },
+    getFieldVisitPlanningNoteItems: async () => {
+        const res = await axios.get(`${FIELD_VISIT_URL}/planning-notes/items`);
+        return res.data;
+    },
+    updateFieldVisitPlanningNotes: async (data) => {
+        const res = await axios.put(`${FIELD_VISIT_URL}/planning-notes`, data);
+        return res.data;
+    },
+    getFieldVisitSuggestions: async (data = {}) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/suggestions`, data);
+        return res.data;
+    },
+
+    // ── To Do List ───────────────────────────────────────────────────────────
+    getTodos: async (filters = {}) => {
+        const params = new URLSearchParams();
+        if (filters.status) params.append('status', filters.status);
+        const res = await axios.get(`${TODO_URL}/?${params.toString()}`);
+        return res.data;
+    },
+    createTodo: async (data) => {
+        const res = await axios.post(`${TODO_URL}/`, data);
+        return res.data;
+    },
+    updateTodo: async (id, data) => {
+        const res = await axios.put(`${TODO_URL}/${id}`, data);
+        return res.data;
+    },
+    deleteTodo: async (id) => {
+        const res = await axios.delete(`${TODO_URL}/${id}`);
+        return res.data;
+    },
+    importTodosFromText: async (data) => {
+        const res = await axios.post(`${TODO_URL}/import-text`, data);
+        return res.data;
+    },
+    reorderTodos: async (ordered_ids = []) => {
+        const res = await axios.post(`${TODO_URL}/reorder`, { ordered_ids });
+        return res.data;
+    },
+    convertTodoToTask: async (id, data = {}) => {
+        const res = await axios.post(`${TODO_URL}/${id}/convert-to-task`, data);
         return res.data;
     },
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard, Building2, ClipboardList, Calendar, LogOut,
-    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare
+    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare, Map
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -21,11 +21,13 @@ const Layout = ({ children, user, onLogout }) => {
     // All admins see everything; viewers see Overview, Departments, Tasks only
     const menuItems = [
         { icon: LayoutDashboard, label: 'Overview', path: '/', desc: 'Dashboard home' },
-        { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews' },
         { icon: ClipboardList, label: 'Tasks', path: '/tasks', desc: 'Action tracking' },
+        { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews' },
+        { icon: Map, label: 'Field Visits', path: '/field-visits', desc: 'Village visit drafts' },
+        { icon: CheckSquare, label: 'To Do List', path: '/todos', desc: 'Personal reminders' },
         ...(user?.role === 'admin' ? [
-            { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory' },
             { icon: Calendar, label: 'Planner', path: '/planner', desc: 'Weekly planner' },
+            { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory' },
         ] : []),
     ];
 

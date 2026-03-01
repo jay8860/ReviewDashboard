@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ChevronLeft, ChevronRight, Plus, Trash2, X, RefreshCw, Settings, GripVertical,
-    CalendarClock, CheckCircle2, Link2
+    CalendarClock, CheckCircle2, Link2, Search
 } from 'lucide-react';
 import {
     format, startOfWeek, addDays, addWeeks, subWeeks, parseISO, isSameDay, getISODay,
 } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
@@ -32,6 +32,216 @@ const colorDots = {
     violet: 'bg-violet-500',
     teal: 'bg-teal-500',
     orange: 'bg-orange-500',
+};
+
+const WAIcon = () => (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+);
+
+const isStenoEmployee = (emp) => {
+    const haystack = `${emp?.name || ''} ${emp?.display_username || ''}`.toLowerCase();
+    return haystack.includes('steno') || haystack.includes('secretary');
+};
+
+const buildPlannerEventWhatsAppMessage = (event) => {
+    const title = event?.title || 'Calendar Event';
+    const dateText = event?.date ? format(parseISO(event.date), 'd MMMM yyyy') : 'TBD';
+    const timeText = event?.time_slot || 'TBD';
+    const durationText = event?.duration_minutes ? `${event.duration_minutes} min` : '30 min';
+    const venueText = event?.venue ? `\n📍 Venue: ${event.venue}` : '';
+    const attendeesText = event?.attendees ? `\n👥 Attendees: ${event.attendees}` : '';
+    const notesText = event?.description ? `\n\n📝 Notes:\n${event.description}` : '';
+
+    return `📅 *Calendar Event*\n\n*${title}*\n📆 Date: ${dateText}\n⏰ Time: ${timeText}\n⏱ Duration: ${durationText}${venueText}${attendeesText}${notesText}`;
+};
+
+const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) => {
+    const [message, setMessage] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const [includeStenoCopy, setIncludeStenoCopy] = useState(true);
+
+    useEffect(() => {
+        if (!isOpen || !event) return;
+        setMessage(buildPlannerEventWhatsAppMessage(event));
+        setSearchTerm('');
+        const initialSelected = [];
+        const attendeeTokens = String(event.attendees || '')
+            .split(',')
+            .map(token => token.trim().toLowerCase())
+            .filter(Boolean);
+        if (attendeeTokens.length > 0) {
+            employees.forEach(emp => {
+                const name = (emp.name || '').toLowerCase();
+                if (attendeeTokens.some(token => token && name.includes(token))) {
+                    initialSelected.push(emp.id);
+                }
+            });
+        }
+        setSelectedEmployeeIds(initialSelected);
+        const hasSteno = employees.some(isStenoEmployee);
+        setIncludeStenoCopy(hasSteno);
+    }, [isOpen, event, employees]);
+
+    if (!isOpen || !event) return null;
+
+    const visibleEmployees = employees.filter(emp => {
+        if (!searchTerm.trim()) return true;
+        const q = searchTerm.toLowerCase();
+        return (
+            (emp.name || '').toLowerCase().includes(q) ||
+            (emp.display_username || '').toLowerCase().includes(q) ||
+            (emp.mobile_number || '').toLowerCase().includes(q)
+        );
+    });
+
+    const stenoEmployees = employees.filter(isStenoEmployee);
+
+    const toggleEmployee = (id) => {
+        setSelectedEmployeeIds(prev => (
+            prev.includes(id)
+                ? prev.filter(item => item !== id)
+                : [...prev, id]
+        ));
+    };
+
+    const buildRecipientNumbers = () => {
+        const numbers = [];
+        const employeeMap = new Map(employees.map(emp => [emp.id, emp]));
+        selectedEmployeeIds.forEach(id => {
+            const mobile = employeeMap.get(id)?.mobile_number;
+            if (mobile) numbers.push(mobile);
+        });
+        if (includeStenoCopy) {
+            stenoEmployees.forEach(emp => {
+                if (emp.mobile_number) numbers.push(emp.mobile_number);
+            });
+        }
+        return [...new Set(numbers.map(value => String(value || '').replace(/\D/g, '')).filter(Boolean))];
+    };
+
+    const handleSend = () => {
+        const finalMessage = (message || '').trim();
+        if (!finalMessage) {
+            window.alert('Message draft cannot be empty');
+            return;
+        }
+        const recipients = buildRecipientNumbers();
+        if (!recipients.length) {
+            window.alert('Select at least one recipient');
+            return;
+        }
+
+        const encoded = encodeURIComponent(finalMessage);
+        recipients.forEach((number, idx) => {
+            setTimeout(() => {
+                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+            }, idx * 250);
+        });
+        onClose();
+    };
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-3xl shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar"
+                >
+                    <div className="px-6 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                <WAIcon />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">WhatsApp Event Draft</h2>
+                                <p className="text-xs text-slate-400">{event.title || 'Calendar Event'}</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                            <X size={18} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <div className="p-6 grid md:grid-cols-2 gap-4">
+                        <div className="space-y-3">
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Recipients</p>
+                            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                    <Search size={14} className="text-slate-400" />
+                                    <input
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        placeholder="Search employees..."
+                                        className="w-full text-sm text-slate-700 bg-transparent focus:outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+                                {visibleEmployees.length === 0 ? (
+                                    <p className="px-3 py-3 text-xs text-slate-400 italic">No employees found.</p>
+                                ) : visibleEmployees.map(emp => (
+                                    <label key={emp.id} className="px-3 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-slate-50">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedEmployeeIds.includes(emp.id)}
+                                            onChange={() => toggleEmployee(emp.id)}
+                                            className="w-4 h-4 accent-indigo-600"
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-slate-700 truncate">{emp.name}</p>
+                                            <p className="text-[11px] text-slate-400 truncate">{emp.mobile_number} · {emp.display_username}</p>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    checked={includeStenoCopy}
+                                    onChange={e => setIncludeStenoCopy(e.target.checked)}
+                                    className="w-4 h-4 accent-indigo-600"
+                                    disabled={stenoEmployees.length === 0}
+                                />
+                                Send copy to steno {stenoEmployees.length ? `(${stenoEmployees.length})` : '(not found)'}
+                            </label>
+                        </div>
+
+                        <div className="space-y-3">
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Message Draft (Editable)</p>
+                            <textarea
+                                rows={16}
+                                value={message}
+                                onChange={e => setMessage(e.target.value)}
+                                className="w-full text-sm px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="px-6 pb-6 flex items-center justify-end gap-2">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSend}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-2"
+                        >
+                            <WAIcon /> Send WhatsApp
+                        </button>
+                    </div>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
 };
 
 const toMinutes = (timeStr) => {
@@ -79,11 +289,14 @@ const EventModal = ({
     onClose,
     onSave,
     eventData = null,
+    prefillData = null,
     defaultDate,
     defaultTime,
     defaultSlotMinutes,
     departments,
+    employees,
 }) => {
+    const [showWhatsappModal, setShowWhatsappModal] = useState(false);
     const [form, setForm] = useState({
         title: '',
         date: defaultDate,
@@ -100,6 +313,7 @@ const EventModal = ({
 
     useEffect(() => {
         if (!isOpen) return;
+        setShowWhatsappModal(false);
         if (eventData) {
             setForm({
                 title: eventData.title || '',
@@ -116,6 +330,22 @@ const EventModal = ({
             });
             return;
         }
+        if (prefillData) {
+            setForm({
+                title: prefillData.title || '',
+                date: prefillData.date || defaultDate,
+                time_slot: prefillData.time_slot || defaultTime,
+                duration_minutes: prefillData.duration_minutes || defaultSlotMinutes,
+                event_type: prefillData.event_type || 'meeting',
+                status: normalizeStatus(prefillData.status),
+                color: prefillData.color || 'indigo',
+                description: prefillData.description || '',
+                venue: prefillData.venue || '',
+                attendees: prefillData.attendees || '',
+                department_id: prefillData.department_id || '',
+            });
+            return;
+        }
         setForm({
             title: '',
             date: defaultDate,
@@ -129,7 +359,7 @@ const EventModal = ({
             attendees: '',
             department_id: '',
         });
-    }, [isOpen, eventData, defaultDate, defaultTime, defaultSlotMinutes]);
+    }, [isOpen, eventData, prefillData, defaultDate, defaultTime, defaultSlotMinutes]);
 
     if (!isOpen) return null;
 
@@ -292,6 +522,13 @@ const EventModal = ({
                         )}
 
                         <div className="flex gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowWhatsappModal(true)}
+                                className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-1.5"
+                            >
+                                <WAIcon /> WhatsApp
+                            </button>
                             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50">
                                 Cancel
                             </button>
@@ -301,6 +538,22 @@ const EventModal = ({
                         </div>
                     </form>
                 </motion.div>
+                <PlannerEventWhatsAppModal
+                    isOpen={showWhatsappModal}
+                    onClose={() => setShowWhatsappModal(false)}
+                    event={{
+                        title: form.title,
+                        date: form.date,
+                        time_slot: form.time_slot,
+                        duration_minutes: parseInt(form.duration_minutes, 10) || 30,
+                        event_type: form.event_type,
+                        status: form.status,
+                        venue: form.venue,
+                        attendees: form.attendees,
+                        description: form.description,
+                    }}
+                    employees={employees || []}
+                />
             </div>
         </AnimatePresence>
     );
@@ -308,17 +561,20 @@ const EventModal = ({
 
 const Planner = ({ user, onLogout }) => {
     const navigate = useNavigate();
+    const location = useLocation();
     const toast = useToast();
 
     const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
     const [events, setEvents] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [settings, setSettings] = useState(null);
     const [settingsDraft, setSettingsDraft] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [loading, setLoading] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [editEvent, setEditEvent] = useState(null);
+    const [prefillData, setPrefillData] = useState(null);
     const [clickedDate, setClickedDate] = useState(null);
     const [clickedTime, setClickedTime] = useState(null);
     const [dragEventId, setDragEventId] = useState(null);
@@ -349,6 +605,11 @@ const Planner = ({ user, onLogout }) => {
         setDepartments(rows || []);
     }, []);
 
+    const loadEmployees = useCallback(async () => {
+        const rows = await api.getEmployees();
+        setEmployees((rows || []).filter(emp => emp.is_active !== false));
+    }, []);
+
     const loadEvents = useCallback(async () => {
         setLoading(true);
         try {
@@ -369,13 +630,62 @@ const Planner = ({ user, onLogout }) => {
     }, [weekStart, settings?.apple_ics_url]);
 
     useEffect(() => {
-        Promise.all([loadSettings(), loadDepartments()]);
-    }, [loadSettings, loadDepartments]);
+        Promise.all([loadSettings(), loadDepartments(), loadEmployees()]);
+    }, [loadSettings, loadDepartments, loadEmployees]);
 
     useEffect(() => {
         if (!settings) return;
         loadEvents();
     }, [settings, loadEvents]);
+
+    useEffect(() => {
+        if (!settings) return;
+        const params = new URLSearchParams(location.search);
+        const draftIdRaw = params.get('draftId');
+        if (!draftIdRaw) return;
+        const draftId = parseInt(draftIdRaw, 10);
+        if (!draftId) return;
+
+        const hydrateFromDraft = async () => {
+            try {
+                const draft = await api.getFieldVisitDraft(draftId);
+                const chosenDate = params.get('date') || format(new Date(), 'yyyy-MM-dd');
+                const details = [
+                    draft.theme ? `Theme: ${draft.theme}` : '',
+                    draft.village ? `Village: ${draft.village}` : '',
+                    draft.focus_points ? `Focus: ${draft.focus_points}` : '',
+                ].filter(Boolean).join('\n');
+
+                setEditEvent(null);
+                setPrefillData({
+                    title: draft.title || 'Field Visit',
+                    date: chosenDate,
+                    time_slot: settings.day_start || '10:00',
+                    duration_minutes: draft.est_duration_minutes || settings.slot_minutes || 30,
+                    event_type: 'field-visit',
+                    status: 'Draft',
+                    color: 'emerald',
+                    description: details,
+                    venue: draft.location || '',
+                    attendees: '',
+                    department_id: draft.department_id || '',
+                });
+                setClickedDate(chosenDate);
+                setClickedTime(settings.day_start || '10:00');
+                setModalOpen(true);
+
+                if ((draft.status || '') === 'Draft') {
+                    api.updateFieldVisitDraft(draft.id, { status: 'Planned' }).catch(() => null);
+                }
+            } catch (e) {
+                toast.error(e?.response?.data?.detail || 'Failed to load field visit draft');
+            } finally {
+                navigate('/planner', { replace: true });
+            }
+        };
+
+        hydrateFromDraft();
+    }, [location.search, settings, navigate, toast]);
 
     const saveSettings = async () => {
         try {
@@ -414,6 +724,7 @@ const Planner = ({ user, onLogout }) => {
             }
             setModalOpen(false);
             setEditEvent(null);
+            setPrefillData(null);
             setClickedDate(null);
             setClickedTime(null);
             await loadEvents();
@@ -524,6 +835,7 @@ const Planner = ({ user, onLogout }) => {
                         <button
                             onClick={() => {
                                 setEditEvent(null);
+                                setPrefillData(null);
                                 setClickedDate(format(new Date(), 'yyyy-MM-dd'));
                                 setClickedTime(settings.day_start || '10:00');
                                 setModalOpen(true);
@@ -618,6 +930,7 @@ const Planner = ({ user, onLogout }) => {
                                                         onClick={() => {
                                                             if (blockedLabel || event) return;
                                                             setEditEvent(null);
+                                                            setPrefillData(null);
                                                             setClickedDate(dayStr);
                                                             setClickedTime(slot.start);
                                                             setModalOpen(true);
@@ -656,6 +969,7 @@ const Planner = ({ user, onLogout }) => {
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     setEditEvent(event);
+                                                                    setPrefillData(null);
                                                                     setModalOpen(true);
                                                                 }}
                                                             >
@@ -733,13 +1047,15 @@ const Planner = ({ user, onLogout }) => {
 
             <EventModal
                 isOpen={modalOpen}
-                onClose={() => { setModalOpen(false); setEditEvent(null); }}
+                onClose={() => { setModalOpen(false); setEditEvent(null); setPrefillData(null); }}
                 onSave={handleSaveEvent}
                 eventData={editEvent}
+                prefillData={prefillData}
                 defaultDate={clickedDate || format(new Date(), 'yyyy-MM-dd')}
                 defaultTime={clickedTime || settings.day_start || '10:00'}
                 defaultSlotMinutes={settings.slot_minutes || 30}
                 departments={departments}
+                employees={employees}
             />
         </Layout>
     );

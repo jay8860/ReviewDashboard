@@ -11,6 +11,8 @@ import Tasks from './pages/Tasks';
 import Planner from './pages/Planner';
 import Employees from './pages/Employees';
 import ResetPassword from './pages/ResetPassword';
+import FieldVisits from './pages/FieldVisits';
+import Todos from './pages/Todos';
 
 const ProtectedRoute = ({ children, user }) => {
     if (!user) return <Navigate to="/login" replace />;
@@ -88,6 +90,16 @@ function App() {
                 <Route path="/tasks" element={
                     <ProtectedRoute user={user}>
                         <Tasks user={user} onLogout={handleLogout} />
+                    </ProtectedRoute>
+                } />
+                <Route path="/field-visits" element={
+                    <ProtectedRoute user={user}>
+                        <FieldVisits user={user} onLogout={handleLogout} />
+                    </ProtectedRoute>
+                } />
+                <Route path="/todos" element={
+                    <ProtectedRoute user={user}>
+                        <Todos user={user} onLogout={handleLogout} />
                     </ProtectedRoute>
                 } />
                 <Route path="/planner" element={
