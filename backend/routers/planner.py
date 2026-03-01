@@ -212,9 +212,8 @@ def _build_agenda_snapshot(db: Session, department_id: int) -> str:
 
 def _sync_department_meeting_from_event(event: models.PlannerEvent, db: Session):
     is_meeting = _normalize_event_type(event.event_type) == "meeting"
-    is_confirmed = _normalize_status(event.status) == "Confirmed"
-
-    if not (is_meeting and event.department_id and is_confirmed):
+    planner_status = _normalize_status(event.status)
+    if not (is_meeting and event.department_id):
         return
 
     meeting = None
@@ -234,7 +233,7 @@ def _sync_department_meeting_from_event(event: models.PlannerEvent, db: Session)
             venue=event.venue,
             attendees=event.attendees,
             notes=event.description,
-            status="Scheduled",
+            status="Cancelled" if planner_status == "Cancelled" else "Scheduled",
             agenda_snapshot=_build_agenda_snapshot(db, event.department_id),
             action_table_columns='["Action Point","Owner","Timeline","Status","Remarks"]',
             action_table_rows="[]",
@@ -249,7 +248,9 @@ def _sync_department_meeting_from_event(event: models.PlannerEvent, db: Session)
         meeting.attendees = event.attendees
         if event.description and not meeting.notes:
             meeting.notes = event.description
-        if meeting.status not in {"Done", "Cancelled"}:
+        if planner_status == "Cancelled":
+            meeting.status = "Cancelled"
+        elif meeting.status != "Done":
             meeting.status = "Scheduled"
 
     if (event.source or "") != "external_calendar":

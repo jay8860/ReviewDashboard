@@ -78,14 +78,14 @@ const isStenoEmployee = (emp) => {
 // ── Schedule Meeting Modal ─────────────────────────────────────────────────────
 const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName = '' }) => {
     const today = new Date().toISOString().split('T')[0];
-    const [form, setForm] = useState({ scheduled_date: today, venue: '', attendees: '', officer_phone: '', notes: '' });
-    useEffect(() => { setForm({ scheduled_date: today, venue: '', attendees: '', officer_phone: '', notes: '' }); }, [isOpen]);
+    const [form, setForm] = useState({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '', notes: '' });
+    useEffect(() => { setForm({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '', notes: '' }); }, [isOpen]);
 
     if (!isOpen) return null;
 
     const openAgenda = agenda.filter(a => a.status === 'Open');
 
-    const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.venue ? `\nVenue: ${form.venue}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
+    const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
 
     const waLink = form.officer_phone
         ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
@@ -110,10 +110,15 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                     </div>
 
                     <div className="p-7 space-y-5">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date *</label>
                                 <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Time *</label>
+                                <input type="time" value={form.scheduled_time} onChange={e => setForm(f => ({ ...f, scheduled_time: e.target.value }))}
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm" />
                             </div>
                             <div>

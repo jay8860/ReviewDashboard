@@ -104,6 +104,61 @@ def _get_meeting_or_404(db: Session, dept_id: int, meeting_id: int) -> models.De
     return meeting
 
 
+def _normalize_meeting_time_for_planner(value: Optional[str]) -> str:
+    text = (value or "").strip()
+    if re.fullmatch(r"\d{1,2}:\d{2}", text):
+        h, m = text.split(":")
+        hi = int(h)
+        mi = int(m)
+        if 0 <= hi <= 23 and 0 <= mi <= 59:
+            return f"{hi:02d}:{mi:02d}"
+    return "10:00"
+
+
+def _planner_status_from_meeting_status(status: Optional[str]) -> str:
+    val = (status or "").strip().lower()
+    if val in {"cancelled", "canceled"}:
+        return "Cancelled"
+    return "Confirmed"
+
+
+def _sync_planner_event_from_department_meeting(
+    db: Session,
+    meeting: models.DepartmentMeeting,
+    department_name: Optional[str],
+    department_color: Optional[str],
+):
+    event = db.query(models.PlannerEvent).filter(
+        models.PlannerEvent.department_meeting_id == meeting.id
+    ).first()
+
+    title = f"{department_name or 'Department'} Meeting"
+    payload = {
+        "title": title,
+        "date": meeting.scheduled_date,
+        "time_slot": _normalize_meeting_time_for_planner(meeting.scheduled_time),
+        "duration_minutes": 60,
+        "event_type": "meeting",
+        "status": _planner_status_from_meeting_status(meeting.status),
+        "color": (department_color or "indigo"),
+        "description": meeting.notes,
+        "venue": meeting.venue,
+        "attendees": meeting.attendees,
+        "department_id": meeting.department_id,
+        "department_meeting_id": meeting.id,
+        "source": "department_meeting",
+    }
+
+    if event:
+        if event.is_locked:
+            return
+        for key, value in payload.items():
+            setattr(event, key, value)
+        return
+
+    db.add(models.PlannerEvent(**payload))
+
+
 def _normalize_task_text(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (value or "").lower())).strip()
 
@@ -752,6 +807,10 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{dept_id}/meetings")
 def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_db)):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
     # Auto-snapshot current open agenda points
     if not data.agenda_snapshot:
         open_points = db.query(models.AgendaPoint).filter(
@@ -778,6 +837,13 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
         action_table_rows=json.dumps(table_rows),
     )
     db.add(meeting)
+    db.flush()
+    _sync_planner_event_from_department_meeting(
+        db,
+        meeting,
+        department_name=dept.name,
+        department_color=dept.color,
+    )
     db.commit()
     db.refresh(meeting)
 
@@ -803,6 +869,10 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
 
 @router.put("/{dept_id}/meetings/{meeting_id}")
 def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Session = Depends(get_db)):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
     meeting = db.query(models.DepartmentMeeting).filter(
         models.DepartmentMeeting.id == meeting_id,
         models.DepartmentMeeting.department_id == dept_id
@@ -816,6 +886,12 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
         meeting.action_table_rows = json.dumps(payload.pop("action_table_rows") or [])
     for k, v in payload.items():
         setattr(meeting, k, v)
+    _sync_planner_event_from_department_meeting(
+        db,
+        meeting,
+        department_name=dept.name,
+        department_color=dept.color,
+    )
     db.commit()
     db.refresh(meeting)
     return {
@@ -844,6 +920,11 @@ def delete_meeting(dept_id: int, meeting_id: int, db: Session = Depends(get_db))
     ).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    linked_events = db.query(models.PlannerEvent).filter(
+        models.PlannerEvent.department_meeting_id == meeting.id
+    ).all()
+    for event in linked_events:
+        db.delete(event)
     db.delete(meeting)
     db.commit()
     return {"message": "Deleted"}
