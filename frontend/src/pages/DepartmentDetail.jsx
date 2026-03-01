@@ -10,7 +10,7 @@ import {
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
 
 const colorGrad = {
@@ -26,6 +26,30 @@ const colorGrad = {
 
 const DEFAULT_MEETING_TABLE_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"];
 
+const parseDateSafe = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    const text = String(value).trim();
+    if (!text) return null;
+
+    const parsedIso = parseISO(text);
+    if (!Number.isNaN(parsedIso.getTime())) return parsedIso;
+
+    const parsedNative = new Date(text);
+    if (!Number.isNaN(parsedNative.getTime())) return parsedNative;
+    return null;
+};
+
+const formatDateSafe = (value, fmt = 'd MMMM yyyy', fallback = 'TBD') => {
+    const parsed = parseDateSafe(value);
+    if (!parsed) return fallback;
+    try {
+        return format(parsed, fmt);
+    } catch {
+        return fallback;
+    }
+};
+
 // WhatsApp SVG
 const WAIcon = () => (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
@@ -35,15 +59,15 @@ const WAIcon = () => (
 
 const getMeetingWhatsAppMessage = (meeting, deptName) => {
     const agendaSnapshot = Array.isArray(meeting?.agenda_snapshot) ? meeting.agenda_snapshot : [];
-    const dateText = meeting?.scheduled_date ? format(new Date(meeting.scheduled_date), 'd MMMM yyyy') : 'TBD';
-    const timeText = meeting?.scheduled_time ? `\n⏰ Time: ${meeting.scheduled_time}` : '';
-    const venueText = meeting?.venue ? `\n📍 Venue: ${meeting.venue}` : '';
-    const notesText = meeting?.notes ? `\n\n📝 Notes:\n${meeting.notes}` : '';
+    const dateText = formatDateSafe(meeting?.scheduled_date, 'd MMMM yyyy', 'TBD');
+    const timeText = meeting?.scheduled_time ? `\nTime: ${meeting.scheduled_time}` : '';
+    const venueText = meeting?.venue ? `\nVenue: ${meeting.venue}` : '';
+    const notesText = meeting?.notes ? `\n\nNotes:\n${meeting.notes}` : '';
     const agendaText = agendaSnapshot.length
         ? agendaSnapshot.map((a, idx) => `${idx + 1}. ${a?.title || ''}${a?.details ? ` — ${a.details}` : ''}`).join('\n')
         : 'No agenda points attached.';
 
-    return `📋 *Meeting Agenda – ${deptName || 'Department'}*\n📅 Date: ${dateText}${timeText}${venueText}\n\n*Agenda Points:*\n${agendaText}${notesText}`;
+    return `Meeting Agenda - ${deptName || 'Department'}\nDate: ${dateText}${timeText}${venueText}\n\nAgenda Points:\n${agendaText}${notesText}`;
 };
 
 const isStenoEmployee = (emp) => {
@@ -61,7 +85,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
 
     const openAgenda = agenda.filter(a => a.status === 'Open');
 
-    const waMsg = `📋 *Meeting Agenda – ${deptName}*\n📅 Date: ${form.scheduled_date ? format(new Date(form.scheduled_date), 'd MMMM yyyy') : 'TBD'}${form.venue ? `\n📍 Venue: ${form.venue}` : ''}\n\n*Agenda Points:*\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   → ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
+    const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.venue ? `\nVenue: ${form.venue}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
 
     const waLink = form.officer_phone
         ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
@@ -251,7 +275,7 @@ const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = 
                             </div>
                             <div>
                                 <h2 className="text-lg font-black dark:text-white">WhatsApp Draft</h2>
-                                <p className="text-xs text-slate-400">{deptName} · {format(new Date(meeting.scheduled_date), 'd MMM yyyy')}</p>
+                                <p className="text-xs text-slate-400">{deptName} · {formatDateSafe(meeting.scheduled_date, 'd MMM yyyy', 'TBD')}</p>
                             </div>
                         </div>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
@@ -429,7 +453,7 @@ const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange, onSave
                     <div className="px-6 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
                         <div>
                             <h2 className="text-lg font-black dark:text-white">Meeting Details</h2>
-                            <p className="text-xs text-slate-400">{format(new Date(meeting.scheduled_date), 'd MMMM yyyy')}</p>
+                            <p className="text-xs text-slate-400">{formatDateSafe(meeting.scheduled_date, 'd MMMM yyyy', 'TBD')}</p>
                         </div>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>

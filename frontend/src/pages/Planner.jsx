@@ -45,16 +45,51 @@ const isStenoEmployee = (emp) => {
     return haystack.includes('steno') || haystack.includes('secretary');
 };
 
+const parseDateSafe = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+
+    const text = String(value).trim();
+    if (!text) return null;
+
+    const parsedIso = parseISO(text);
+    if (!Number.isNaN(parsedIso.getTime())) return parsedIso;
+
+    const parsedNative = new Date(text);
+    if (!Number.isNaN(parsedNative.getTime())) return parsedNative;
+
+    const match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+    if (!match) return null;
+    const month = parseInt(match[1], 10);
+    const day = parseInt(match[2], 10);
+    const yearRaw = parseInt(match[3], 10);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    if (!(month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900)) return null;
+    const parsedManual = new Date(year, month - 1, day);
+    if (Number.isNaN(parsedManual.getTime())) return null;
+    return parsedManual;
+};
+
+const formatDateSafe = (value, fmt = 'd MMMM yyyy', fallback = 'TBD') => {
+    const parsed = parseDateSafe(value);
+    if (!parsed) return fallback;
+    try {
+        return format(parsed, fmt);
+    } catch {
+        return fallback;
+    }
+};
+
 const buildPlannerEventWhatsAppMessage = (event) => {
     const title = event?.title || 'Calendar Event';
-    const dateText = event?.date ? format(parseISO(event.date), 'd MMMM yyyy') : 'TBD';
+    const dateText = formatDateSafe(event?.date, 'd MMMM yyyy', 'TBD');
     const timeText = event?.time_slot || 'TBD';
     const durationText = event?.duration_minutes ? `${event.duration_minutes} min` : '30 min';
-    const venueText = event?.venue ? `\n📍 Venue: ${event.venue}` : '';
-    const attendeesText = event?.attendees ? `\n👥 Attendees: ${event.attendees}` : '';
-    const notesText = event?.description ? `\n\n📝 Notes:\n${event.description}` : '';
+    const venueText = event?.venue ? `\nVenue: ${event.venue}` : '';
+    const attendeesText = event?.attendees ? `\nAttendees: ${event.attendees}` : '';
+    const notesText = event?.description ? `\n\nNotes:\n${event.description}` : '';
 
-    return `📅 *Calendar Event*\n\n*${title}*\n📆 Date: ${dateText}\n⏰ Time: ${timeText}\n⏱ Duration: ${durationText}${venueText}${attendeesText}${notesText}`;
+    return `Calendar Event\n\n${title}\nDate: ${dateText}\nTime: ${timeText}\nDuration: ${durationText}${venueText}${attendeesText}${notesText}`;
 };
 
 const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) => {
@@ -769,7 +804,10 @@ const Planner = ({ user, onLogout }) => {
 
     const getDayEvents = (day) =>
         events
-            .filter(e => isSameDay(parseISO(e.date), day))
+            .filter((e) => {
+                const parsedDate = parseDateSafe(e?.date);
+                return parsedDate ? isSameDay(parsedDate, day) : false;
+            })
             .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
 
     const isLunchBlocked = (slot) => {
