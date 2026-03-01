@@ -9,6 +9,13 @@ import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 
 const PRIORITIES = ['Critical', 'High', 'Normal', 'Low'];
+const parseNotesLines = (raw = '') => {
+    return (raw || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .map((line) => line.replace(/^[-*•\u2022]\s*/, '').replace(/^\d+[\).\-\s]+/, '').replace(/^\[[xX ]\]\s*/, '').trim())
+        .filter(Boolean);
+};
 
 const Todos = ({ user, onLogout }) => {
     const navigate = useNavigate();
@@ -16,31 +23,31 @@ const Todos = ({ user, onLogout }) => {
 
     const [items, setItems] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedIds, setSelectedIds] = useState([]);
     const [notesInput, setNotesInput] = useState('');
-    const [form, setForm] = useState({
-        title: '',
-        details: '',
-        due_date: '',
-        department_id: '',
-        priority: 'Normal',
-    });
+    const [importDepartmentId, setImportDepartmentId] = useState('');
+    const [importAssignedEmployeeId, setImportAssignedEmployeeId] = useState('');
+    const [todoTaskOptions, setTodoTaskOptions] = useState({});
 
     const allSelected = useMemo(
         () => items.length > 0 && selectedIds.length === items.length,
         [items.length, selectedIds.length]
     );
+    const parsedNotesLines = useMemo(() => parseNotesLines(notesInput), [notesInput]);
 
     const loadAll = async () => {
         setLoading(true);
         try {
-            const [todoRows, deptRows] = await Promise.all([
+            const [todoRows, deptRows, employeeRows] = await Promise.all([
                 api.getTodos(),
                 api.getDepartments(),
+                api.getEmployees(),
             ]);
             setItems(todoRows || []);
             setDepartments(deptRows || []);
+            setEmployees(employeeRows || []);
             setSelectedIds(prev => prev.filter(id => (todoRows || []).some(item => item.id === id)));
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to load to-do list');
@@ -53,33 +60,6 @@ const Todos = ({ user, onLogout }) => {
         loadAll();
     }, []);
 
-    const handleAdd = async (e) => {
-        e.preventDefault();
-        if (!form.title.trim()) {
-            toast.error('Title is required');
-            return;
-        }
-        try {
-            const created = await api.createTodo({
-                ...form,
-                title: form.title.trim(),
-                due_date: form.due_date || null,
-                department_id: form.department_id ? parseInt(form.department_id, 10) : null,
-            });
-            setItems(prev => [...prev, created]);
-            setForm({
-                title: '',
-                details: '',
-                due_date: '',
-                department_id: '',
-                priority: 'Normal',
-            });
-            toast.success('To-do item added');
-        } catch (e) {
-            toast.error(e?.response?.data?.detail || 'Failed to add to-do');
-        }
-    };
-
     const handleImportNotes = async () => {
         if (!notesInput.trim()) {
             toast.error('Paste notes first');
@@ -89,12 +69,13 @@ const Todos = ({ user, onLogout }) => {
             const result = await api.importTodosFromText({
                 text: notesInput,
                 priority: 'Normal',
+                department_id: importDepartmentId ? parseInt(importDepartmentId, 10) : null,
+                assigned_employee_id: importAssignedEmployeeId ? parseInt(importAssignedEmployeeId, 10) : null,
             });
             const created = result?.items || [];
             if (created.length > 0) {
                 setItems(prev => [...prev, ...created]);
             }
-            setNotesInput('');
             toast.success(`${result?.created || 0} to-do items imported`);
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to import notes');
@@ -152,7 +133,10 @@ const Todos = ({ user, onLogout }) => {
 
     const convertOne = async (id) => {
         try {
-            const result = await api.convertTodoToTask(id, {});
+            const rowOptions = todoTaskOptions[id] || {};
+            const result = await api.convertTodoToTask(id, {
+                assigned_employee_id: rowOptions.assigned_employee_id ? parseInt(rowOptions.assigned_employee_id, 10) : null,
+            });
             const updatedTodo = result?.todo;
             if (updatedTodo) {
                 setItems(prev => prev.map(item => (item.id === id ? updatedTodo : item)));
@@ -171,7 +155,10 @@ const Todos = ({ user, onLogout }) => {
         let converted = 0;
         for (const id of selectedIds) {
             try {
-                await api.convertTodoToTask(id, {});
+                const rowOptions = todoTaskOptions[id] || {};
+                await api.convertTodoToTask(id, {
+                    assigned_employee_id: rowOptions.assigned_employee_id ? parseInt(rowOptions.assigned_employee_id, 10) : null,
+                });
                 converted += 1;
             } catch (e) {
                 console.error('Convert failed for todo', id, e);
@@ -209,60 +196,28 @@ const Todos = ({ user, onLogout }) => {
                 </div>
 
                 <div className="grid lg:grid-cols-2 gap-4">
-                    <form onSubmit={handleAdd} className="glass-card rounded-3xl p-5 border border-indigo-100">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Plus size={16} className="text-indigo-600" />
-                            <h2 className="font-black text-slate-800">Add Reminder</h2>
-                        </div>
-                        <div className="space-y-3">
-                            <input
-                                value={form.title}
-                                onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
-                                placeholder="Title (required)"
-                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                            />
-                            <textarea
-                                value={form.details}
-                                onChange={(e) => setForm(prev => ({ ...prev, details: e.target.value }))}
-                                rows={2}
-                                placeholder="Details / context"
-                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white resize-none"
-                            />
-                            <div className="grid grid-cols-3 gap-2">
-                                <input
-                                    type="date"
-                                    value={form.due_date}
-                                    onChange={(e) => setForm(prev => ({ ...prev, due_date: e.target.value }))}
-                                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                                />
-                                <select
-                                    value={form.priority}
-                                    onChange={(e) => setForm(prev => ({ ...prev, priority: e.target.value }))}
-                                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                                >
-                                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-                                </select>
-                                <select
-                                    value={form.department_id}
-                                    onChange={(e) => setForm(prev => ({ ...prev, department_id: e.target.value }))}
-                                    className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
-                                >
-                                    <option value="">No department</option>
-                                    {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="flex justify-end">
-                                <button type="submit" className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold">
-                                    Add To Do
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-
-                    <div className="glass-card rounded-3xl p-5 border border-indigo-100">
+                    <div className="glass-card rounded-3xl p-5 border border-indigo-100 lg:col-span-2">
                         <div className="flex items-center gap-2 mb-3">
                             <FileUp size={16} className="text-indigo-600" />
                             <h2 className="font-black text-slate-800">Paste Apple Notes To-Dos</h2>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-2 mb-3">
+                            <select
+                                value={importDepartmentId}
+                                onChange={(e) => setImportDepartmentId(e.target.value)}
+                                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
+                            >
+                                <option value="">No department</option>
+                                {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
+                            </select>
+                            <select
+                                value={importAssignedEmployeeId}
+                                onChange={(e) => setImportAssignedEmployeeId(e.target.value)}
+                                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white"
+                            >
+                                <option value="">No employee</option>
+                                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                            </select>
                         </div>
                         <textarea
                             value={notesInput}
@@ -271,6 +226,16 @@ const Todos = ({ user, onLogout }) => {
                             placeholder={'Paste lines here...\n- Call CEO\n- Visit Anganwadi\n- Review MB pending list'}
                             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white resize-none"
                         />
+                        <div className="mt-2 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                            <p className="text-xs font-bold text-slate-500 mb-1">Parsed list preview ({parsedNotesLines.length})</p>
+                            <div className="max-h-24 overflow-y-auto text-sm text-slate-700 space-y-1">
+                                {parsedNotesLines.length === 0 ? (
+                                    <p className="text-slate-400 italic">No parsed lines yet</p>
+                                ) : (
+                                    parsedNotesLines.map((line, idx) => <p key={`${idx}-${line}`}>{idx + 1}. {line}</p>)
+                                )}
+                            </div>
+                        </div>
                         <div className="mt-3 flex justify-end">
                             <button
                                 onClick={handleImportNotes}
@@ -357,6 +322,20 @@ const Todos = ({ user, onLogout }) => {
                                                     >
                                                         <option value="">No department</option>
                                                         {departments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
+                                                    </select>
+                                                    <select
+                                                        value={todoTaskOptions[item.id]?.assigned_employee_id || item.assigned_employee_id || ''}
+                                                        onChange={(e) => setTodoTaskOptions(prev => ({
+                                                            ...prev,
+                                                            [item.id]: {
+                                                                ...(prev[item.id] || {}),
+                                                                assigned_employee_id: e.target.value,
+                                                            },
+                                                        }))}
+                                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
+                                                    >
+                                                        <option value="">Task employee: none</option>
+                                                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                                                     </select>
                                                     {item.linked_task_number && (
                                                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">

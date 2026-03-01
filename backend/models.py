@@ -233,11 +233,13 @@ class TodoItem(Base):
     order_index = Column(Integer, default=0)
     source = Column(String, default="manual")          # manual | imported_notes | converted_to_task
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     linked_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="todo_items")
+    assigned_employee = relationship("Employee")
     linked_task = relationship("Task")
 
 

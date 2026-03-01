@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
     Building2, ClipboardList, AlertTriangle, CheckCircle2,
-    Clock, ArrowRight, RefreshCw,
+    Clock, ArrowRight, RefreshCw, FileDown,
     Activity, Zap, Calendar, ChevronRight, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import StatCard from '../components/StatCard';
 import { api } from '../services/api';
+import { useToast } from '../components/Toast';
 import { addDays, endOfDay, format, isSameDay, parseISO, startOfDay } from 'date-fns';
 
 const colorMap = {
@@ -67,6 +68,7 @@ const formatTimeLabel = (value) => {
 
 const Overview = ({ user, onLogout }) => {
     const navigate = useNavigate();
+    const toast = useToast();
     const [departments, setDepartments] = useState([]);
     const [taskStats, setTaskStats] = useState({ total: 0, completed: 0, pending: 0, overdue: 0 });
     const [deptMeetings, setDeptMeetings] = useState({});
@@ -128,6 +130,25 @@ const Overview = ({ user, onLogout }) => {
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDownloadBackup = async () => {
+        try {
+            const response = await api.downloadBackup();
+            const blob = new Blob([response.data], { type: 'application/json' });
+            const fileName = `reviewdashboard_backup_${format(new Date(), 'yyyyMMdd_HHmmss')}.json`;
+            const href = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = href;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(href);
+            toast.success('Backup file downloaded');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to download backup');
         }
     };
 
@@ -284,13 +305,23 @@ const Overview = ({ user, onLogout }) => {
                         {format(new Date(), 'EEEE, d MMMM yyyy')} — Governance Overview
                     </p>
                 </div>
-                <button
-                    onClick={loadData}
-                    className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors"
-                    title="Refresh"
-                >
-                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleDownloadBackup}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors text-sm font-semibold"
+                        title="Download full backup JSON"
+                    >
+                        <FileDown size={16} />
+                        Backup
+                    </button>
+                    <button
+                        onClick={loadData}
+                        className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors"
+                        title="Refresh"
+                    >
+                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">

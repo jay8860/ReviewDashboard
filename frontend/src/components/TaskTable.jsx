@@ -175,6 +175,8 @@ const TaskTable = ({
     const [calendarId, setCalendarId] = useState(null);
     const [stenoId, setStenoId] = useState(null);
     const [sort, setSort] = useState({ key: 'deadline_date', dir: 'asc' });
+    const [bulkDrafts, setBulkDrafts] = useState({});
+    const [savingCells, setSavingCells] = useState({});
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
 
@@ -187,6 +189,22 @@ const TaskTable = ({
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
+
+    useEffect(() => {
+        if (!bulkMode) {
+            setBulkDrafts({});
+            setSavingCells({});
+            return;
+        }
+        setBulkDrafts((prev) => {
+            const validIds = new Set((tasks || []).map((t) => t.id));
+            const next = {};
+            Object.entries(prev).forEach(([id, data]) => {
+                if (validIds.has(parseInt(id, 10))) next[id] = data;
+            });
+            return next;
+        });
+    }, [bulkMode, tasks]);
 
     const handleSort = (key) => {
         setSort(s => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }));
@@ -204,6 +222,73 @@ const TaskTable = ({
 
     const handleQuickAction = async (id, patch) => {
         await onUpdate(id, patch);
+    };
+
+    const setBulkField = (taskId, field, value) => {
+        setBulkDrafts((prev) => ({
+            ...prev,
+            [taskId]: {
+                ...(prev[taskId] || {}),
+                [field]: value,
+            },
+        }));
+    };
+
+    const clearBulkField = (taskId, field) => {
+        setBulkDrafts((prev) => {
+            const row = { ...(prev[taskId] || {}) };
+            delete row[field];
+            const next = { ...prev };
+            if (Object.keys(row).length === 0) delete next[taskId];
+            else next[taskId] = row;
+            return next;
+        });
+    };
+
+    const getBulkFieldValue = (task, field) => {
+        const rowDraft = bulkDrafts[task.id] || {};
+        if (Object.prototype.hasOwnProperty.call(rowDraft, field)) {
+            return rowDraft[field];
+        }
+        return task[field] ?? '';
+    };
+
+    const commitBulkField = async (task, field, rawOverride = undefined) => {
+        const rowDraft = bulkDrafts[task.id] || {};
+        const hasDraft = Object.prototype.hasOwnProperty.call(rowDraft, field);
+        if (!hasDraft && rawOverride === undefined) return;
+
+        let nextValue = rawOverride !== undefined ? rawOverride : rowDraft[field];
+        let currentValue = task[field];
+
+        if (field === 'assigned_employee_id' || field === 'department_id') {
+            nextValue = (nextValue === '' || nextValue === null) ? null : parseInt(nextValue, 10);
+            currentValue = currentValue ?? null;
+        } else if (field === 'allocated_date' || field === 'deadline_date') {
+            nextValue = nextValue || null;
+            currentValue = currentValue || null;
+        } else {
+            nextValue = nextValue ?? '';
+            currentValue = currentValue ?? '';
+        }
+
+        if (String(nextValue ?? '') === String(currentValue ?? '')) {
+            clearBulkField(task.id, field);
+            return;
+        }
+
+        const key = `${task.id}:${field}`;
+        setSavingCells((prev) => ({ ...prev, [key]: true }));
+        try {
+            await onUpdate(task.id, { [field]: nextValue });
+            clearBulkField(task.id, field);
+        } finally {
+            setSavingCells((prev) => {
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        }
     };
 
     const handleDeadline = async (id, date) => {
@@ -281,6 +366,8 @@ const TaskTable = ({
                         const isPinned = task.is_pinned;
                         const isToday = task.is_today;
                         const isImportant = task.priority === 'High' || task.priority === 'Critical';
+                        const isBulkEditable = Boolean(isAdmin && bulkMode && isSelected);
+                        const inputCls = "w-full px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/40 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40";
 
                         return (
                             <motion.tr key={task.id}
@@ -320,85 +407,175 @@ const TaskTable = ({
 
                                 {/* Task Description */}
                                 <td className="px-3 py-3 min-w-[280px] align-top">
-                                    <div className="flex flex-col gap-0.5">
-                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
-                                            {task.description || <span className="text-slate-300 italic">No description</span>}
-                                        </p>
-                                        <div className="flex items-center gap-1 flex-wrap">
-                                            {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
+                                    {isBulkEditable ? (
+                                        <div className="space-y-1">
+                                            <textarea
+                                                rows={2}
+                                                value={getBulkFieldValue(task, 'description')}
+                                                onChange={(e) => setBulkField(task.id, 'description', e.target.value)}
+                                                onBlur={() => commitBulkField(task, 'description')}
+                                                className={`${inputCls} resize-none`}
+                                                placeholder="Task description"
+                                            />
+                                            {savingCells[`${task.id}:description`] && (
+                                                <p className="text-[10px] text-indigo-500 font-semibold">Saving...</p>
+                                            )}
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-0.5">
+                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
+                                                {task.description || <span className="text-slate-300 italic">No description</span>}
+                                            </p>
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                                {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
+                                            </div>
+                                        </div>
+                                    )}
                                 </td>
 
                                 {/* Steno Comment */}
                                 <td className="px-3 py-3 max-w-[140px]" ref={stenoId === task.id ? stenoRef : null}>
-                                    <div className="relative">
-                                        {task.steno_comment ? (
-                                            <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
-                                                className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 text-left hover:text-indigo-600 transition-colors leading-snug">
-                                                {task.steno_comment}
-                                            </button>
-                                        ) : isAdmin ? (
-                                            <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
-                                                className="text-xs text-slate-300 hover:text-indigo-500 transition-colors flex items-center gap-1">
-                                                <MessageSquare size={12} /> Add note
-                                            </button>
-                                        ) : <span className="text-slate-300 text-xs">—</span>}
-
-                                        <AnimatePresence>
-                                            {stenoId === task.id && isAdmin && (
-                                                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                                                    className="absolute left-0 top-full mt-1" ref={stenoRef}>
-                                                    <StenoPopup value={task.steno_comment}
-                                                        onSave={(text) => handleSteno(task.id, text)}
-                                                        onClose={() => setStenoId(null)} />
-                                                </motion.div>
+                                    {isBulkEditable ? (
+                                        <div className="space-y-1">
+                                            <textarea
+                                                rows={2}
+                                                value={getBulkFieldValue(task, 'steno_comment')}
+                                                onChange={(e) => setBulkField(task.id, 'steno_comment', e.target.value)}
+                                                onBlur={() => commitBulkField(task, 'steno_comment')}
+                                                placeholder="Comment..."
+                                                className={`${inputCls} resize-none`}
+                                            />
+                                            {savingCells[`${task.id}:steno_comment`] && (
+                                                <p className="text-[10px] text-indigo-500 font-semibold">Saving...</p>
                                             )}
-                                        </AnimatePresence>
-                                    </div>
+                                        </div>
+                                    ) : (
+                                        <div className="relative">
+                                            {task.steno_comment ? (
+                                                <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
+                                                    className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 text-left hover:text-indigo-600 transition-colors leading-snug">
+                                                    {task.steno_comment}
+                                                </button>
+                                            ) : isAdmin ? (
+                                                <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
+                                                    className="text-xs text-slate-300 hover:text-indigo-500 transition-colors flex items-center gap-1">
+                                                    <MessageSquare size={12} /> Add note
+                                                </button>
+                                            ) : <span className="text-slate-300 text-xs">—</span>}
+
+                                            <AnimatePresence>
+                                                {stenoId === task.id && isAdmin && (
+                                                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                                        className="absolute left-0 top-full mt-1" ref={stenoRef}>
+                                                        <StenoPopup value={task.steno_comment}
+                                                            onSave={(text) => handleSteno(task.id, text)}
+                                                            onClose={() => setStenoId(null)} />
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    )}
                                 </td>
 
                                 {/* Assigned Agency / Employee */}
                                 <td className="px-3 py-3 max-w-[130px]">
-                                    {task.assigned_employee_name ? (
-                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{task.assigned_employee_name}</p>
+                                    {isBulkEditable ? (
+                                        <div className="space-y-1">
+                                            <select
+                                                value={getBulkFieldValue(task, 'assigned_employee_id') ?? ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setBulkField(task.id, 'assigned_employee_id', value);
+                                                    commitBulkField(task, 'assigned_employee_id', value);
+                                                }}
+                                                className={inputCls}
+                                            >
+                                                <option value="">No employee</option>
+                                                {employees.map((emp) => (
+                                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                value={getBulkFieldValue(task, 'assigned_agency')}
+                                                onChange={(e) => setBulkField(task.id, 'assigned_agency', e.target.value)}
+                                                onBlur={() => commitBulkField(task, 'assigned_agency')}
+                                                className={inputCls}
+                                                placeholder="Other agency"
+                                            />
+                                        </div>
                                     ) : (
-                                        <p className="text-xs text-slate-500">—</p>
-                                    )}
-                                    {task.assigned_agency && (
-                                        <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>
+                                        <>
+                                            {task.assigned_employee_name ? (
+                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{task.assigned_employee_name}</p>
+                                            ) : (
+                                                <p className="text-xs text-slate-500">—</p>
+                                            )}
+                                            {task.assigned_agency && (
+                                                <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>
+                                            )}
+                                        </>
                                     )}
                                 </td>
 
                                 {/* Allocated Date */}
                                 <td className="px-3 py-3 whitespace-nowrap">
-                                    <span className="text-xs text-slate-500">
-                                        {task.allocated_date ? format(new Date(task.allocated_date), 'd MMM yy') : '—'}
-                                    </span>
+                                    {isBulkEditable ? (
+                                        <input
+                                            type="date"
+                                            value={getBulkFieldValue(task, 'allocated_date') || ''}
+                                            onChange={(e) => setBulkField(task.id, 'allocated_date', e.target.value)}
+                                            onBlur={() => commitBulkField(task, 'allocated_date')}
+                                            className={inputCls}
+                                        />
+                                    ) : (
+                                        <span className="text-xs text-slate-500">
+                                            {task.allocated_date ? format(new Date(task.allocated_date), 'd MMM yy') : '—'}
+                                        </span>
+                                    )}
                                 </td>
 
                                 {/* Time Given */}
                                 <td className="px-3 py-3">
-                                    <span className="text-xs text-slate-500">{task.time_given || '—'}</span>
+                                    {isBulkEditable ? (
+                                        <input
+                                            value={getBulkFieldValue(task, 'time_given')}
+                                            onChange={(e) => setBulkField(task.id, 'time_given', e.target.value)}
+                                            onBlur={() => commitBulkField(task, 'time_given')}
+                                            className={inputCls}
+                                            placeholder="e.g. 7 days"
+                                        />
+                                    ) : (
+                                        <span className="text-xs text-slate-500">{task.time_given || '—'}</span>
+                                    )}
                                 </td>
 
                                 {/* Deadline */}
                                 <td className="px-3 py-3 whitespace-nowrap" ref={calendarId === task.id ? calendarRef : null}>
-                                    <div className="relative">
-                                        <span className={`text-xs font-semibold ${task.status === 'Overdue' ? 'text-rose-500' : 'text-slate-600 dark:text-slate-300'}`}>
-                                            {task.deadline_date ? format(new Date(task.deadline_date), 'd MMM yy') : '—'}
-                                        </span>
-                                        <AnimatePresence>
-                                            {calendarId === task.id && (
-                                                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                                                    className="absolute left-0 top-full mt-1" ref={calendarRef}>
-                                                    <DeadlinePicker value={task.deadline_date}
-                                                        onSave={(date) => handleDeadline(task.id, date)}
-                                                        onClose={() => setCalendarId(null)} />
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
+                                    {isBulkEditable ? (
+                                        <input
+                                            type="date"
+                                            value={getBulkFieldValue(task, 'deadline_date') || ''}
+                                            onChange={(e) => setBulkField(task.id, 'deadline_date', e.target.value)}
+                                            onBlur={() => commitBulkField(task, 'deadline_date')}
+                                            className={inputCls}
+                                        />
+                                    ) : (
+                                        <div className="relative">
+                                            <span className={`text-xs font-semibold ${task.status === 'Overdue' ? 'text-rose-500' : 'text-slate-600 dark:text-slate-300'}`}>
+                                                {task.deadline_date ? format(new Date(task.deadline_date), 'd MMM yy') : '—'}
+                                            </span>
+                                            <AnimatePresence>
+                                                {calendarId === task.id && (
+                                                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                                        className="absolute left-0 top-full mt-1" ref={calendarRef}>
+                                                        <DeadlinePicker value={task.deadline_date}
+                                                            onSave={(date) => handleDeadline(task.id, date)}
+                                                            onClose={() => setCalendarId(null)} />
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                    )}
                                 </td>
 
                                 {/* Actions */}

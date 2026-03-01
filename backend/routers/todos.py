@@ -43,6 +43,8 @@ def _serialize_todo(todo: models.TodoItem) -> dict:
         "source": todo.source or "manual",
         "department_id": todo.department_id,
         "department_name": todo.department.name if todo.department else None,
+        "assigned_employee_id": todo.assigned_employee_id,
+        "assigned_employee_name": todo.assigned_employee.name if todo.assigned_employee else None,
         "linked_task_id": todo.linked_task_id,
         "linked_task_number": todo.linked_task.task_number if todo.linked_task else None,
         "created_at": todo.created_at.isoformat() if todo.created_at else None,
@@ -53,6 +55,7 @@ def _serialize_todo(todo: models.TodoItem) -> dict:
 def _get_todo_or_404(db: Session, todo_id: int) -> models.TodoItem:
     row = db.query(models.TodoItem).options(
         joinedload(models.TodoItem.department),
+        joinedload(models.TodoItem.assigned_employee),
         joinedload(models.TodoItem.linked_task),
     ).filter(models.TodoItem.id == todo_id).first()
     if not row:
@@ -112,6 +115,7 @@ class TodoCreate(BaseModel):
     status: Optional[str] = "Open"
     priority: Optional[str] = "Normal"
     department_id: Optional[int] = None
+    assigned_employee_id: Optional[int] = None
     order_index: Optional[int] = None
     source: Optional[str] = "manual"
 
@@ -124,6 +128,7 @@ class TodoUpdate(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     department_id: Optional[int] = None
+    assigned_employee_id: Optional[int] = None
     order_index: Optional[int] = None
     source: Optional[str] = None
 
@@ -131,6 +136,7 @@ class TodoUpdate(BaseModel):
 class TodoImportFromText(BaseModel):
     text: str
     department_id: Optional[int] = None
+    assigned_employee_id: Optional[int] = None
     priority: Optional[str] = "Normal"
     due_date: Optional[date] = None
 
@@ -142,6 +148,7 @@ class TodoReorder(BaseModel):
 class TodoConvertToTaskRequest(BaseModel):
     department_id: Optional[int] = None
     assigned_agency: Optional[str] = None
+    assigned_employee_id: Optional[int] = None
     deadline_date: Optional[date] = None
     status: Optional[str] = "Pending"
     keep_todo_open: Optional[bool] = False
@@ -154,6 +161,7 @@ def get_todos(
 ):
     query = db.query(models.TodoItem).options(
         joinedload(models.TodoItem.department),
+        joinedload(models.TodoItem.assigned_employee),
         joinedload(models.TodoItem.linked_task),
     )
     if status:
@@ -177,6 +185,14 @@ def create_todo(data: TodoCreate, db: Session = Depends(get_db)):
         ).first()
         if not exists:
             raise HTTPException(status_code=404, detail="Department not found")
+    assigned_employee_id = payload.get("assigned_employee_id")
+    if assigned_employee_id is not None:
+        employee_exists = db.query(models.Employee.id).filter(
+            models.Employee.id == assigned_employee_id,
+            models.Employee.is_active == True
+        ).first()
+        if not employee_exists:
+            raise HTTPException(status_code=404, detail="Assigned employee not found")
     order_index = payload.get("order_index")
     if order_index is None:
         max_order = db.query(func.max(models.TodoItem.order_index)).scalar()
@@ -189,6 +205,7 @@ def create_todo(data: TodoCreate, db: Session = Depends(get_db)):
         status=_normalize_status(payload.get("status")),
         priority=_normalize_priority(payload.get("priority")),
         department_id=dept_id,
+        assigned_employee_id=assigned_employee_id,
         order_index=max(0, int(order_index)),
         source=(payload.get("source") or "manual"),
     )
@@ -211,6 +228,13 @@ def import_todos_from_text(data: TodoImportFromText, db: Session = Depends(get_d
         ).first()
         if not exists:
             raise HTTPException(status_code=404, detail="Department not found")
+    if data.assigned_employee_id is not None:
+        employee_exists = db.query(models.Employee.id).filter(
+            models.Employee.id == data.assigned_employee_id,
+            models.Employee.is_active == True
+        ).first()
+        if not employee_exists:
+            raise HTTPException(status_code=404, detail="Assigned employee not found")
 
     max_order = db.query(func.max(models.TodoItem.order_index)).scalar() or 0
     created_ids = []
@@ -221,6 +245,7 @@ def import_todos_from_text(data: TodoImportFromText, db: Session = Depends(get_d
             status="Open",
             priority=_normalize_priority(data.priority),
             department_id=dept_id,
+            assigned_employee_id=data.assigned_employee_id,
             source="imported_notes",
             order_index=max_order + idx,
         )
@@ -231,6 +256,7 @@ def import_todos_from_text(data: TodoImportFromText, db: Session = Depends(get_d
     db.commit()
     rows = db.query(models.TodoItem).options(
         joinedload(models.TodoItem.department),
+        joinedload(models.TodoItem.assigned_employee),
         joinedload(models.TodoItem.linked_task),
     ).filter(models.TodoItem.id.in_(created_ids)).order_by(models.TodoItem.order_index.asc()).all()
     return {"created": len(rows), "items": [_serialize_todo(row) for row in rows]}
@@ -271,6 +297,18 @@ def update_todo(todo_id: int, data: TodoUpdate, db: Session = Depends(get_db)):
             if not exists:
                 raise HTTPException(status_code=404, detail="Department not found")
             row.department_id = dept_id
+    if "assigned_employee_id" in payload:
+        employee_id = payload.get("assigned_employee_id")
+        if employee_id is None:
+            row.assigned_employee_id = None
+        else:
+            employee_exists = db.query(models.Employee.id).filter(
+                models.Employee.id == employee_id,
+                models.Employee.is_active == True
+            ).first()
+            if not employee_exists:
+                raise HTTPException(status_code=404, detail="Assigned employee not found")
+            row.assigned_employee_id = employee_id
 
     db.commit()
     db.refresh(row)
@@ -307,10 +345,25 @@ def convert_todo_to_task(todo_id: int, data: TodoConvertToTaskRequest, db: Sessi
         if not exists:
             raise HTTPException(status_code=404, detail="Department not found")
 
+    assigned_employee_id = data.assigned_employee_id if data.assigned_employee_id is not None else row.assigned_employee_id
+    employee = None
+    if assigned_employee_id is not None:
+        employee = db.query(models.Employee).filter(
+            models.Employee.id == assigned_employee_id,
+            models.Employee.is_active == True
+        ).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail="Assigned employee not found")
+
+    assigned_agency = data.assigned_agency
+    if not assigned_agency and employee:
+        assigned_agency = employee.display_username or employee.name
+
     task = models.Task(
-        task_number=_generate_task_number(db, data.assigned_agency, dept_id),
+        task_number=_generate_task_number(db, assigned_agency, dept_id),
         description=row.title,
-        assigned_agency=data.assigned_agency,
+        assigned_agency=assigned_agency,
+        assigned_employee_id=assigned_employee_id,
         allocated_date=date.today(),
         deadline_date=data.deadline_date or row.due_date,
         status=(data.status or "Pending"),

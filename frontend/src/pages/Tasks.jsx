@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
     ClipboardList, Plus, X, Search, RefreshCw, FileDown,
-    CheckCircle2, Clock, AlertTriangle, Flame, Pin, List,
-    ChevronDown, Trash2, Edit2, CheckSquare, Check, ChevronRight
+    CheckCircle2, Clock, AlertTriangle, Flame, List,
+    Trash2, CheckSquare, Check, ChevronRight
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
@@ -257,10 +257,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
 };
 
 // ── Bulk Edit Panel ────────────────────────────────────────────────────────────
-const BulkEditPanel = ({ count, onStatusChange, onPriorityChange, onDelete, onClear }) => {
-    const [showStatus, setShowStatus] = useState(false);
-    const [showPriority, setShowPriority] = useState(false);
-
+const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClear }) => {
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className="glass-card rounded-2xl px-5 py-3 flex items-center gap-4 mb-4 border-2 border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-900/10">
@@ -269,50 +266,8 @@ const BulkEditPanel = ({ count, onStatusChange, onPriorityChange, onDelete, onCl
                 <span className="text-sm font-black text-indigo-700 dark:text-indigo-300">{count} selected</span>
             </div>
             <div className="flex items-center gap-2 flex-1 flex-wrap">
-                {/* Bulk Status */}
-                <div className="relative">
-                    <button onClick={() => { setShowStatus(s => !s); setShowPriority(false); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:border-indigo-300 transition-colors">
-                        Set Status <ChevronDown size={12} />
-                    </button>
-                    <AnimatePresence>
-                        {showStatus && (
-                            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                                className="absolute top-full left-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-20 py-1 min-w-36">
-                                {STATUS_OPTIONS.map(s => (
-                                    <button key={s} onClick={() => { onStatusChange(s); setShowStatus(false); }}
-                                        className="w-full text-left px-4 py-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-700 dark:text-slate-300 font-semibold transition-colors">
-                                        {s}
-                                    </button>
-                                ))}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-
-                {/* Bulk Priority */}
-                <div className="relative">
-                    <button onClick={() => { setShowPriority(s => !s); setShowStatus(false); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:border-indigo-300 transition-colors">
-                        Set Priority <ChevronDown size={12} />
-                    </button>
-                    <AnimatePresence>
-                        {showPriority && (
-                            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                                className="absolute top-full left-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-20 py-1 min-w-36">
-                                {PRIORITY_OPTIONS.map(p => (
-                                    <button key={p} onClick={() => { onPriorityChange(p); setShowPriority(false); }}
-                                        className="w-full text-left px-4 py-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-700 dark:text-slate-300 font-semibold transition-colors">
-                                        {p}
-                                    </button>
-                                ))}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-
                 {/* Bulk Mark Complete */}
-                <button onClick={() => onStatusChange('Completed')}
+                <button onClick={onMarkComplete}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors">
                     <CheckCircle2 size={12} /> Mark Complete
                 </button>
@@ -323,6 +278,7 @@ const BulkEditPanel = ({ count, onStatusChange, onPriorityChange, onDelete, onCl
                     <Trash2 size={12} /> Delete
                 </button>
             </div>
+            <span className="text-xs text-indigo-600/80 font-semibold">Edit selected rows inline below. Changes auto-save.</span>
 
             <button onClick={onClear} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400">
                 <X size={14} />
@@ -359,6 +315,7 @@ const Tasks = ({ user, onLogout }) => {
     const [agencies, setAgencies] = useState([]);
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
+    const statsDigestRef = useRef('');
 
     // Filters
     const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -387,11 +344,23 @@ const Tasks = ({ user, onLogout }) => {
     const [bulkMode, setBulkMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
 
+    const applyTabFilter = useCallback((rows = []) => {
+        if (tab === 'important') {
+            return rows.filter(x => x.priority === 'High' || x.priority === 'Critical');
+        }
+        return rows;
+    }, [tab]);
+
+    const buildFilters = useCallback(() => {
+        const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy };
+        if (tab === 'today') filters.is_today = true;
+        return filters;
+    }, [filterStatus, search, filterDept, filterAgency, sortBy, tab]);
+
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy };
-            if (tab === 'today') filters.is_today = true;
+            const filters = buildFilters();
 
             const [t, s, d, a, e] = await Promise.all([
                 api.getTasks(filters),
@@ -400,7 +369,7 @@ const Tasks = ({ user, onLogout }) => {
                 api.getAgencies(),
                 api.getEmployees()
             ]);
-            setTasks(tab === 'important' ? t.filter(x => x.priority === 'High' || x.priority === 'Critical') : t);
+            setTasks(applyTabFilter(t));
             setStats(s);
             setDepartments(d);
             setAgencies(a);
@@ -410,9 +379,47 @@ const Tasks = ({ user, onLogout }) => {
         } finally {
             setLoading(false);
         }
-    }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+    }, [applyTabFilter, buildFilters]);
 
     useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, tab, search]);
+
+    useEffect(() => {
+        const digest = JSON.stringify({
+            total: stats.total,
+            completed: stats.completed,
+            pending: stats.pending,
+            overdue: stats.overdue,
+            important: stats.important,
+        });
+        statsDigestRef.current = digest;
+    }, [stats]);
+
+    const pollForExternalChanges = useCallback(async () => {
+        try {
+            const latestStats = await api.getTaskStats();
+            const latestDigest = JSON.stringify({
+                total: latestStats.total,
+                completed: latestStats.completed,
+                pending: latestStats.pending,
+                overdue: latestStats.overdue,
+                important: latestStats.important,
+            });
+            if (latestDigest === statsDigestRef.current) return;
+            const latestTasks = await api.getTasks(buildFilters());
+            setStats(latestStats);
+            setTasks(applyTabFilter(latestTasks));
+        } catch (err) {
+            // Silent poll; no toast noise.
+        }
+    }, [applyTabFilter, buildFilters]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (document.hidden) return;
+            pollForExternalChanges();
+        }, 4000);
+        return () => clearInterval(interval);
+    }, [pollForExternalChanges]);
 
     const applyStatFilter = (key) => {
         if (key === 'total') {
@@ -472,10 +479,23 @@ const Tasks = ({ user, onLogout }) => {
     };
 
     const handleUpdate = async (id, patch) => {
+        const existing = tasks.find((row) => row.id === id);
+        const optimistic = {
+            ...(existing || {}),
+            ...patch,
+        };
+        if (Object.prototype.hasOwnProperty.call(patch, 'assigned_employee_id')) {
+            const match = employees.find((emp) => emp.id === patch.assigned_employee_id);
+            optimistic.assigned_employee_name = match ? match.name : null;
+        }
+        setTasks((prev) => prev.map((row) => (row.id === id ? optimistic : row)));
         try {
-            await api.updateTask(id, patch);
-            load();
+            const updated = await api.updateTask(id, patch);
+            setTasks((prev) => prev.map((row) => (row.id === id ? updated : row)));
+            const refreshedStats = await api.getTaskStats();
+            setStats(refreshedStats);
         } catch {
+            setTasks((prev) => prev.map((row) => (row.id === id ? (existing || row) : row)));
             toast.error('Failed to update task');
         }
     };
@@ -497,16 +517,6 @@ const Tasks = ({ user, onLogout }) => {
             const updates = selectedIds.map(id => ({ id, status, ...(status === 'Completed' ? { completion_date: new Date().toISOString().split('T')[0] } : {}) }));
             await api.bulkUpdateTasks(updates);
             toast.success(`${selectedIds.length} tasks marked ${status}`);
-            setSelectedIds([]);
-            load();
-        } catch { toast.error('Bulk update failed'); }
-    };
-
-    const handleBulkPriority = async (priority) => {
-        try {
-            const updates = selectedIds.map(id => ({ id, priority }));
-            await api.bulkUpdateTasks(updates);
-            toast.success(`Priority set to ${priority} for ${selectedIds.length} tasks`);
             setSelectedIds([]);
             load();
         } catch { toast.error('Bulk update failed'); }
@@ -669,8 +679,7 @@ const Tasks = ({ user, onLogout }) => {
                 {bulkMode && selectedIds.length > 0 && (
                     <BulkEditPanel
                         count={selectedIds.length}
-                        onStatusChange={handleBulkStatus}
-                        onPriorityChange={handleBulkPriority}
+                        onMarkComplete={() => handleBulkStatus('Completed')}
                         onDelete={handleBulkDelete}
                         onClear={() => setSelectedIds([])} />
                 )}

@@ -186,6 +186,7 @@ def apply_non_destructive_migrations():
             ("order_index", "INTEGER DEFAULT 0"),
             ("source", "VARCHAR DEFAULT 'manual'"),
             ("department_id", "INTEGER"),
+            ("assigned_employee_id", "INTEGER"),
             ("linked_task_id", "INTEGER"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
