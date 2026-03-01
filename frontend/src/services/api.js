@@ -9,6 +9,7 @@ const PLAN_URL = `${BASE_URL}/api/planner`;
 const EMP_URL = `${BASE_URL}/api/employees`;
 const FIELD_VISIT_URL = `${BASE_URL}/api/field-visits`;
 const TODO_URL = `${BASE_URL}/api/todos`;
+const ANALYTICS_URL = `${BASE_URL}/api/analytics`;
 
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
@@ -316,6 +317,10 @@ export const api = {
     },
     getTaskStats: async () => {
         const res = await axios.get(`${TASK_URL}/stats`);
+        return res.data;
+    },
+    getTaskAnalytics: async () => {
+        const res = await axios.get(`${ANALYTICS_URL}/tasks`);
         return res.data;
     },
     getAgencies: async () => {

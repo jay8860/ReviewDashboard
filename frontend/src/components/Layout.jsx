@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard, Building2, ClipboardList, Calendar, LogOut,
-    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare, Map, ShieldCheck
+    Sun, Moon, Menu, ChevronRight, Users, X, CheckSquare, Map, ShieldCheck, BarChart3
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { canAccessModule } from '../utils/access';
@@ -22,6 +22,7 @@ const Layout = ({ children, user, onLogout }) => {
     const menuItems = [
         { icon: LayoutDashboard, label: 'Overview', path: '/', desc: 'Dashboard home', module: 'overview' },
         { icon: ClipboardList, label: 'Tasks', path: '/tasks', desc: 'Action tracking', module: 'tasks' },
+        { icon: BarChart3, label: 'Analytics', path: '/analytics', desc: 'Command center', module: 'analytics' },
         { icon: Building2, label: 'Departments', path: '/departments', desc: 'Dept. & reviews', module: 'departments' },
         { icon: Map, label: 'Field Visits', path: '/field-visits', desc: 'Village visit drafts', module: 'field_visits' },
         { icon: CheckSquare, label: 'To Do List', path: '/todos', desc: 'Personal reminders', module: 'todos' },

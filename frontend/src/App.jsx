@@ -8,6 +8,7 @@ import MeetingWorkspace from './pages/MeetingWorkspace';
 import DocumentAnalysisWorkspace from './pages/DocumentAnalysisWorkspace';
 import ReviewDetail from './pages/ReviewDetail';
 import Tasks from './pages/Tasks';
+import Analytics from './pages/Analytics';
 import Planner from './pages/Planner';
 import Employees from './pages/Employees';
 import ResetPassword from './pages/ResetPassword';
@@ -95,6 +96,11 @@ function App() {
                 <Route path="/tasks" element={
                     <ModuleRoute user={user} moduleKey="tasks">
                         <Tasks user={user} onLogout={handleLogout} />
+                    </ModuleRoute>
+                } />
+                <Route path="/analytics" element={
+                    <ModuleRoute user={user} moduleKey="analytics">
+                        <Analytics user={user} onLogout={handleLogout} />
                     </ModuleRoute>
                 } />
                 <Route path="/field-visits" element={
