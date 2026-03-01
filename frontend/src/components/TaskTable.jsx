@@ -153,21 +153,6 @@ const ColHeader = ({ label, sortKey, currentSort, onSort, className = '' }) => {
     );
 };
 
-// ── Priority Badge ─────────────────────────────────────────────────────────────
-const priorityStyle = {
-    Critical: 'bg-rose-100 text-rose-700 border border-rose-200',
-    High: 'bg-orange-100 text-orange-700 border border-orange-200',
-    Normal: 'bg-slate-100 text-slate-500 border border-slate-200',
-    Low: 'bg-slate-50 text-slate-400 border border-slate-200',
-};
-
-const statusStyle = {
-    Pending: 'bg-amber-100 text-amber-700',
-    'In Progress': 'bg-indigo-100 text-indigo-700',
-    Completed: 'bg-emerald-100 text-emerald-700',
-    Overdue: 'bg-rose-100 text-rose-700',
-};
-
 const buildTaskWhatsAppMessage = (task) => {
     const taskName = (task?.description || '').trim() || 'Task';
     const assignedTo = (task?.assigned_employee_name || task?.assigned_agency || '').trim() || 'Unassigned';
@@ -278,7 +263,6 @@ const TaskTable = ({
                         <ColHeader label="Alloc." sortKey="allocated_date" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Time" className="w-20" />
                         <ColHeader label="Deadline" sortKey="deadline_date" currentSort={sort} onSort={handleSort} className="w-24" />
-                        <ColHeader label="Priority" sortKey="priority" currentSort={sort} onSort={handleSort} className="w-20" />
                         {isAdmin && <th className="px-3 py-3 text-xs font-black uppercase tracking-widest text-slate-400 w-48">Actions</th>}
                     </tr>
                 </thead>
@@ -341,9 +325,6 @@ const TaskTable = ({
                                             {task.description || <span className="text-slate-300 italic">No description</span>}
                                         </p>
                                         <div className="flex items-center gap-1 flex-wrap">
-                                            {task.status && (
-                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusStyle[task.status]}`}>{task.status}</span>
-                                            )}
                                             {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
                                         </div>
                                     </div>
@@ -418,13 +399,6 @@ const TaskTable = ({
                                             )}
                                         </AnimatePresence>
                                     </div>
-                                </td>
-
-                                {/* Priority */}
-                                <td className="px-3 py-3">
-                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${priorityStyle[task.priority]}`}>
-                                        {task.priority}
-                                    </span>
                                 </td>
 
                                 {/* Actions */}
