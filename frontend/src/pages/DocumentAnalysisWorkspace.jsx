@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, FileText, Download, Brain, MessageSquareText,
     RefreshCw, Copy, Check
@@ -30,6 +30,7 @@ const fileNameFromDisposition = (header) => {
 
 const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const { deptId, meetingId, docId } = useParams();
+    const location = useLocation();
     const navigate = useNavigate();
     const toast = useToast();
 
@@ -43,6 +44,14 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const [dept, setDept] = useState(null);
     const [doc, setDoc] = useState(null);
     const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        const snapshot = location.state?.docSnapshot;
+        if (snapshot && snapshot.id === docIdInt) {
+            setDoc(snapshot);
+            setLoading(false);
+        }
+    }, [location.state, docIdInt]);
 
     const load = async () => {
         setLoading(true);

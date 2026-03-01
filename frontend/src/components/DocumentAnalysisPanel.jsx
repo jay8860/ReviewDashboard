@@ -167,11 +167,11 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         }
     };
 
-    const openWorkspace = (docId) => {
+    const openWorkspace = (docId, docSnapshot = null) => {
         const path = isMeetingScope
             ? `/departments/${deptId}/meetings/${meetingId}/documents/${docId}/analysis`
             : `/departments/${deptId}/documents/${docId}/analysis`;
-        navigate(path);
+        navigate(path, { state: docSnapshot ? { docSnapshot } : undefined });
     };
 
     return (
@@ -256,7 +256,7 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                                             <MessageSquareText size={12} /> Custom
                                         </button>
                                         <button
-                                            onClick={() => openWorkspace(doc.id)}
+                                            onClick={() => openWorkspace(doc.id, doc)}
                                             className="px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-bold hover:bg-violet-700 transition-colors inline-flex items-center gap-1"
                                         >
                                             <ExternalLink size={12} /> Workspace

@@ -5,7 +5,7 @@ import {
     ArrowLeft, Plus, Trash2, Edit2, Calendar,
     X, RefreshCw, ListChecks, MapPin, Users, Check,
     Table2, Upload, Download,
-    Save, PlusCircle, Minus, ChevronRight
+    Save, PlusCircle, Minus, ChevronRight, Search
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
@@ -46,13 +46,9 @@ const getMeetingWhatsAppMessage = (meeting, deptName) => {
     return `📋 *Meeting Agenda – ${deptName || 'Department'}*\n📅 Date: ${dateText}${timeText}${venueText}\n\n*Agenda Points:*\n${agendaText}${notesText}`;
 };
 
-const getMeetingWhatsAppLink = (meeting, deptName) => {
-    const cleanPhone = (meeting?.officer_phone || '').replace(/\D/g, '');
-    const msg = getMeetingWhatsAppMessage(meeting, deptName);
-    if (cleanPhone) {
-        return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-    }
-    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+const isStenoEmployee = (emp) => {
+    const haystack = `${emp?.name || ''} ${emp?.display_username || ''}`.toLowerCase();
+    return haystack.includes('steno') || haystack.includes('secretary');
 };
 
 // ── Schedule Meeting Modal ─────────────────────────────────────────────────────
@@ -150,6 +146,197 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                             <button onClick={() => form.scheduled_date && onSave(form)}
                                 className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">
                                 Schedule
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
+const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = [] }) => {
+    const toast = useToast();
+    const [message, setMessage] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+    const [includeOfficer, setIncludeOfficer] = useState(true);
+    const [includeStenoCopy, setIncludeStenoCopy] = useState(true);
+
+    useEffect(() => {
+        if (!isOpen || !meeting) return;
+        setMessage(getMeetingWhatsAppMessage(meeting, deptName));
+        setSearchTerm('');
+        setSelectedEmployeeIds([]);
+        setIncludeOfficer(Boolean(meeting.officer_phone));
+        const hasSteno = employees.some(isStenoEmployee);
+        setIncludeStenoCopy(hasSteno);
+    }, [isOpen, meeting?.id, deptName, employees]);
+
+    if (!isOpen || !meeting) return null;
+
+    const visibleEmployees = employees.filter(emp => {
+        if (!searchTerm.trim()) return true;
+        const q = searchTerm.toLowerCase();
+        return (
+            (emp.name || '').toLowerCase().includes(q) ||
+            (emp.display_username || '').toLowerCase().includes(q) ||
+            (emp.mobile_number || '').toLowerCase().includes(q)
+        );
+    });
+
+    const stenoEmployees = employees.filter(isStenoEmployee);
+
+    const toggleEmployee = (id) => {
+        setSelectedEmployeeIds(prev => (
+            prev.includes(id)
+                ? prev.filter(item => item !== id)
+                : [...prev, id]
+        ));
+    };
+
+    const buildRecipientNumbers = () => {
+        const numbers = [];
+        const employeeMap = new Map(employees.map(emp => [emp.id, emp]));
+        selectedEmployeeIds.forEach(id => {
+            const mobile = employeeMap.get(id)?.mobile_number;
+            if (mobile) numbers.push(mobile);
+        });
+        if (includeOfficer && meeting.officer_phone) numbers.push(meeting.officer_phone);
+        if (includeStenoCopy) {
+            stenoEmployees.forEach(emp => {
+                if (emp.mobile_number) numbers.push(emp.mobile_number);
+            });
+        }
+        const normalized = numbers
+            .map(value => String(value || '').replace(/\D/g, ''))
+            .filter(Boolean);
+        return [...new Set(normalized)];
+    };
+
+    const handleSend = () => {
+        const finalMessage = (message || '').trim();
+        if (!finalMessage) {
+            toast.error('Message draft cannot be empty');
+            return;
+        }
+        const recipients = buildRecipientNumbers();
+        if (!recipients.length) {
+            toast.error('Select at least one recipient or officer number');
+            return;
+        }
+        const encoded = encodeURIComponent(finalMessage);
+        recipients.forEach((number, idx) => {
+            setTimeout(() => {
+                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+            }, idx * 250);
+        });
+        toast.success(`Opening WhatsApp for ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}`);
+        onClose();
+    };
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-3xl shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar"
+                >
+                    <div className="px-6 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                <WAIcon />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">WhatsApp Draft</h2>
+                                <p className="text-xs text-slate-400">{deptName} · {format(new Date(meeting.scheduled_date), 'd MMM yyyy')}</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
+                            <X size={18} className="text-slate-400" />
+                        </button>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                        <div className="grid md:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Recipients</p>
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <Search size={14} className="text-slate-400" />
+                                        <input
+                                            value={searchTerm}
+                                            onChange={e => setSearchTerm(e.target.value)}
+                                            placeholder="Search employees..."
+                                            className="w-full text-sm text-slate-700 bg-transparent focus:outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+                                    {visibleEmployees.length === 0 ? (
+                                        <p className="px-3 py-3 text-xs text-slate-400 italic">No employees found.</p>
+                                    ) : visibleEmployees.map(emp => (
+                                        <label key={emp.id} className="px-3 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-slate-50">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedEmployeeIds.includes(emp.id)}
+                                                onChange={() => toggleEmployee(emp.id)}
+                                                className="w-4 h-4 accent-indigo-600"
+                                            />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-slate-700 truncate">{emp.name}</p>
+                                                <p className="text-[11px] text-slate-400 truncate">{emp.mobile_number} · {emp.display_username}</p>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+
+                                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeOfficer}
+                                        onChange={e => setIncludeOfficer(e.target.checked)}
+                                        className="w-4 h-4 accent-indigo-600"
+                                    />
+                                    Include officer phone {meeting.officer_phone ? `(${meeting.officer_phone})` : '(not set)'}
+                                </label>
+                                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeStenoCopy}
+                                        onChange={e => setIncludeStenoCopy(e.target.checked)}
+                                        className="w-4 h-4 accent-indigo-600"
+                                        disabled={stenoEmployees.length === 0}
+                                    />
+                                    Send copy to steno {stenoEmployees.length ? `(${stenoEmployees.length})` : '(not found)'}
+                                </label>
+                            </div>
+
+                            <div className="space-y-3">
+                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Message Draft (Editable)</p>
+                                <textarea
+                                    rows={16}
+                                    value={message}
+                                    onChange={e => setMessage(e.target.value)}
+                                    className="w-full text-sm px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSend}
+                                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-2"
+                            >
+                                <WAIcon /> Send WhatsApp
                             </button>
                         </div>
                     </div>
@@ -944,22 +1131,26 @@ const DepartmentDetail = ({ user, onLogout }) => {
     const [dept, setDept] = useState(null);
     const [agenda, setAgenda] = useState([]);
     const [meetings, setMeetings] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [meetingModal, setMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState(null);
+    const [waMeeting, setWaMeeting] = useState(null);
 
     const load = async () => {
         setLoading(true);
         try {
-            const [deptData, agendaData, meetingsData] = await Promise.all([
+            const [deptData, agendaData, meetingsData, employeesData] = await Promise.all([
                 api.getDepartment(deptIdInt),
                 api.getAgendaPoints(deptIdInt),
                 api.getMeetings(deptIdInt),
+                api.getEmployees({}),
             ]);
             setDept(deptData);
             setAgenda(agendaData);
             setMeetings(meetingsData);
+            setEmployees((employeesData || []).filter(emp => emp.is_active !== false));
         } catch (e) {
             console.error(e);
         } finally {
@@ -1150,16 +1341,14 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                                 </span>
                                             </td>
                                             <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                                                <a
-                                                    href={getMeetingWhatsAppLink(m, dept.name)}
-                                                    target="_blank"
-                                                    rel="noreferrer"
+                                                <button
+                                                    onClick={() => setWaMeeting(m)}
                                                     className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-[11px] font-black transition-colors"
-                                                    title="Send meeting message on WhatsApp"
+                                                    title="Preview and send WhatsApp meeting message"
                                                 >
                                                     <WAIcon />
                                                     WA
-                                                </a>
+                                                </button>
                                             </td>
                                             <td className="px-3 py-3 text-right">
                                                 <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-600">
@@ -1194,6 +1383,13 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 onSave={handleScheduleMeeting}
                 agenda={agenda}
                 deptName={dept.name}
+            />
+            <WhatsAppMeetingModal
+                isOpen={Boolean(waMeeting)}
+                onClose={() => setWaMeeting(null)}
+                meeting={waMeeting}
+                deptName={dept.name}
+                employees={employees}
             />
             {selectedMeeting && (
                 <MeetingDetailModal

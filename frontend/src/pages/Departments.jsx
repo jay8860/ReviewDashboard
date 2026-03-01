@@ -391,7 +391,6 @@ const DepartmentCard = ({
     onDelete,
     onOpen,
     onMove,
-    onPriorityChange,
     onCategoryChange,
     onQuickSchedule,
 }) => (
@@ -457,18 +456,11 @@ const DepartmentCard = ({
             </div>
 
             {editMode && (
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                    <select
-                        value={normalizePriority(dept.priority_level)}
-                        onChange={(e) => onPriorityChange(dept, e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-indigo-100 bg-indigo-50/70 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                    >
-                        {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level} Priority</option>)}
-                    </select>
+                <div className="mb-3">
                     <select
                         value={dept.category_name || 'General'}
                         onChange={(e) => onCategoryChange(dept, e.target.value)}
-                        className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        className="w-full text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                     >
                         {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
                         <option value="__new__">+ New Category…</option>
@@ -510,7 +502,6 @@ const DepartmentListRow = ({
     onDelete,
     onOpen,
     onMove,
-    onPriorityChange,
     onCategoryChange,
     onQuickSchedule,
 }) => (
@@ -536,13 +527,6 @@ const DepartmentListRow = ({
             <div className="flex flex-wrap items-center gap-2">
                 {editMode && (
                     <>
-                        <select
-                            value={normalizePriority(dept.priority_level)}
-                            onChange={(e) => onPriorityChange(dept, e.target.value)}
-                            className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                        >
-                            {PRIORITY_OPTIONS.map(level => <option key={level} value={level}>{level}</option>)}
-                        </select>
                         <select
                             value={dept.category_name || 'General'}
                             onChange={(e) => onCategoryChange(dept, e.target.value)}
@@ -630,6 +614,20 @@ const Departments = ({ user, onLogout }) => {
     }, [viewMode]);
 
     const persistGroupedLayout = async (nextBuckets, successMessage) => {
+        const previousDepartments = [...departments];
+        const optimistic = [];
+        nextBuckets.forEach((bucket, bucketIdx) => {
+            bucket.departments.forEach((dept, deptIdx) => {
+                optimistic.push({
+                    ...dept,
+                    category_name: bucket.name,
+                    category_order: bucketIdx,
+                    display_order: deptIdx,
+                });
+            });
+        });
+
+        setDepartments(optimistic);
         setBusy(true);
         try {
             const updates = [];
@@ -646,9 +644,9 @@ const Departments = ({ user, onLogout }) => {
             });
             await Promise.all(updates);
             if (successMessage) toast.success(successMessage);
-            await load();
         } catch (e) {
             toast.error('Failed to update arrangement');
+            setDepartments(previousDepartments);
         } finally {
             setBusy(false);
         }
@@ -727,15 +725,6 @@ const Departments = ({ user, onLogout }) => {
         await persistGroupedLayout(next, 'Department order updated');
     };
 
-    const handlePriorityChange = async (dept, nextPriority) => {
-        try {
-            await api.updateDepartment(dept.id, { priority_level: nextPriority });
-            setDepartments(prev => prev.map(item => (item.id === dept.id ? { ...item, priority_level: normalizePriority(nextPriority) } : item)));
-        } catch {
-            toast.error('Failed to update priority');
-        }
-    };
-
     const handleDepartmentCategoryChange = async (dept, nextCategoryName) => {
         let targetName = nextCategoryName;
         if (nextCategoryName === '__new__') {
@@ -812,7 +801,7 @@ const Departments = ({ user, onLogout }) => {
                     <div>
                         <h1 className="text-4xl font-black dark:text-white tracking-tight">Departments</h1>
                         <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">
-                            Switch between card/list view, bucket by categories, set priority, and reorder categories/cards.
+                            Switch between card/list view, bucket by categories, and reorder categories/cards.
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -929,7 +918,6 @@ const Departments = ({ user, onLogout }) => {
                                             onDelete={handleDelete}
                                             onOpen={(id) => navigate(`/departments/${id}`)}
                                             onMove={handleMoveDepartment}
-                                            onPriorityChange={handlePriorityChange}
                                             onCategoryChange={handleDepartmentCategoryChange}
                                             onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
                                         />
@@ -950,7 +938,6 @@ const Departments = ({ user, onLogout }) => {
                                             onDelete={handleDelete}
                                             onOpen={(id) => navigate(`/departments/${id}`)}
                                             onMove={handleMoveDepartment}
-                                            onPriorityChange={handlePriorityChange}
                                             onCategoryChange={handleDepartmentCategoryChange}
                                             onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
                                         />
