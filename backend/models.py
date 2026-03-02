@@ -413,6 +413,7 @@ class PlannerSettings(Base):
     lunch_end = Column(String, default="14:30")
     timezone = Column(String, default="Asia/Kolkata")
     apple_ics_url = Column(Text, nullable=True)
+    outbound_ics_token = Column(String, nullable=True)
     recurring_blocks = Column(Text, default='[{"name":"Filework Time","days":[1,2,3,4,5],"start":"17:00","end":"18:00","color":"violet"}]')
     last_ics_sync_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

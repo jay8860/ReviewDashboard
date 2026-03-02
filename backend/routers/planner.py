@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime, timedelta, timezone
@@ -7,6 +8,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import json
 import re
+import secrets
 
 from database import get_db
 import models
@@ -89,6 +91,10 @@ def _safe_json_list(value: Optional[str], fallback: list) -> list:
         return fallback
 
 
+def _generate_export_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
 def _normalize_status(value: Optional[str]) -> str:
     val = (value or "").strip().lower()
     if val in {"confirmed", "confirm", "done"}:
@@ -139,6 +145,9 @@ def _get_or_create_settings(db: Session) -> models.PlannerSettings:
         if not settings.lunch_end:
             settings.lunch_end = "14:30"
             changed = True
+        if not settings.outbound_ics_token:
+            settings.outbound_ics_token = _generate_export_token()
+            changed = True
         if changed:
             db.commit()
             db.refresh(settings)
@@ -152,6 +161,7 @@ def _get_or_create_settings(db: Session) -> models.PlannerSettings:
         lunch_start="13:30",
         lunch_end="14:30",
         timezone="Asia/Kolkata",
+        outbound_ics_token=_generate_export_token(),
         recurring_blocks=json.dumps(DEFAULT_RECURRING_BLOCKS),
     )
     db.add(settings)
@@ -171,6 +181,7 @@ def _serialize_settings(settings: models.PlannerSettings) -> dict:
         "lunch_end": settings.lunch_end or "14:30",
         "timezone": settings.timezone or "Asia/Kolkata",
         "apple_ics_url": settings.apple_ics_url,
+        "outbound_ics_token": settings.outbound_ics_token,
         "recurring_blocks": _safe_json_list(settings.recurring_blocks, DEFAULT_RECURRING_BLOCKS),
         "last_ics_sync_at": settings.last_ics_sync_at.isoformat() if settings.last_ics_sync_at else None,
     }
@@ -492,6 +503,111 @@ def update_planner_settings(data: PlannerSettingsUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(settings)
     return _serialize_settings(settings)
+
+
+@router.post("/settings/rotate-export-token")
+def rotate_planner_export_token(db: Session = Depends(get_db)):
+    settings = _get_or_create_settings(db)
+    settings.outbound_ics_token = _generate_export_token()
+    db.commit()
+    db.refresh(settings)
+    return _serialize_settings(settings)
+
+
+def _escape_ics_text(value: Optional[str]) -> str:
+    text = str(value or "")
+    text = text.replace("\\", "\\\\")
+    text = text.replace(";", "\\;").replace(",", "\\,")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.replace("\n", "\\n")
+
+
+def _build_event_ics_lines(event: models.PlannerEvent, timezone_name: str, default_day_start: str) -> List[str]:
+    time_text = _normalize_time(event.time_slot, default_day_start)
+    hh, mm = time_text.split(":")
+    start_dt = datetime(event.date.year, event.date.month, event.date.day, int(hh), int(mm))
+    duration = max(15, int(event.duration_minutes or 30))
+    end_dt = start_dt + timedelta(minutes=duration)
+
+    stamp_src = event.updated_at or event.created_at or datetime.utcnow()
+    if stamp_src.tzinfo is None:
+        stamp_src = stamp_src.replace(tzinfo=timezone.utc)
+    dtstamp = stamp_src.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    uid = f"planner-event-{event.id}@reviewdashboard"
+    summary = _escape_ics_text(event.title or "Planner Event")
+
+    lines = [
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART;TZID={timezone_name}:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+        f"DTEND;TZID={timezone_name}:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+        f"SUMMARY:{summary}",
+        f"STATUS:{'CANCELLED' if _normalize_status(event.status) == 'Cancelled' else 'CONFIRMED'}",
+    ]
+
+    if event.description:
+        lines.append(f"DESCRIPTION:{_escape_ics_text(event.description)}")
+    if event.venue:
+        lines.append(f"LOCATION:{_escape_ics_text(event.venue)}")
+
+    lines.append("END:VEVENT")
+    return lines
+
+
+@router.get("/export.ics")
+def export_planner_ics(
+    token: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db)
+):
+    settings = _get_or_create_settings(db)
+    expected_token = (settings.outbound_ics_token or "").strip()
+    if not expected_token or token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid ICS token")
+
+    start = start_date or (date.today() - timedelta(days=30))
+    end = end_date or (date.today() + timedelta(days=365))
+    if end < start:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+
+    rows = db.query(models.PlannerEvent).filter(
+        models.PlannerEvent.date >= start,
+        models.PlannerEvent.date <= end,
+        models.PlannerEvent.status != "Cancelled",
+        or_(models.PlannerEvent.source == None, models.PlannerEvent.source != "external_calendar"),
+    ).order_by(
+        models.PlannerEvent.date,
+        models.PlannerEvent.time_slot,
+        models.PlannerEvent.created_at
+    ).all()
+
+    tz_name = settings.timezone or "Asia/Kolkata"
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//ReviewDashboard//Planner//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_escape_ics_text('Review Dashboard Planner')}",
+        f"X-WR-TIMEZONE:{_escape_ics_text(tz_name)}",
+    ]
+
+    for event in rows:
+        lines.extend(_build_event_ics_lines(event, tz_name, settings.day_start or "10:00"))
+
+    lines.append("END:VCALENDAR")
+    content = "\r\n".join(lines) + "\r\n"
+    return Response(
+        content=content,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": 'inline; filename="reviewdashboard-planner.ics"',
+            "Cache-Control": "no-cache",
+        },
+    )
 
 
 @router.post("/sync-ics")

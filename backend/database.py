@@ -146,6 +146,7 @@ def apply_non_destructive_migrations():
             ("lunch_end", "VARCHAR DEFAULT '14:30'"),
             ("timezone", "VARCHAR DEFAULT 'Asia/Kolkata'"),
             ("apple_ics_url", "TEXT"),
+            ("outbound_ics_token", "VARCHAR"),
             ("recurring_blocks", "TEXT DEFAULT '[]'"),
             ("last_ics_sync_at", "TIMESTAMP"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),

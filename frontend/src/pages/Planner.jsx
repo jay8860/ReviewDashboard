@@ -1047,6 +1047,15 @@ const Planner = ({ user, onLogout }) => {
 
     const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
     const today = new Date();
+    const plannerExportLinks = useMemo(() => {
+        const token = String(settings?.outbound_ics_token || '').trim();
+        if (!token) return null;
+        if (typeof window === 'undefined' || !window.location?.origin) return null;
+        const base = window.location.origin.replace(/\/$/, '');
+        const httpsUrl = `${base}/api/planner/export.ics?token=${encodeURIComponent(token)}`;
+        const webcalUrl = httpsUrl.replace(/^https?:\/\//i, 'webcal://');
+        return { httpsUrl, webcalUrl };
+    }, [settings?.outbound_ics_token]);
 
     const slots = useMemo(() => {
         if (!settings) return [];
@@ -1166,6 +1175,26 @@ const Planner = ({ user, onLogout }) => {
             toast.success('Planner settings saved');
         } catch {
             toast.error('Failed to save planner settings');
+        }
+    };
+
+    const copyPlannerExportLink = async (url, label = 'URL') => {
+        try {
+            await navigator.clipboard.writeText(String(url || ''));
+            toast.success(`${label} copied`);
+        } catch {
+            toast.error(`Failed to copy ${label.toLowerCase()}`);
+        }
+    };
+
+    const rotatePlannerExportToken = async () => {
+        try {
+            const saved = await api.rotatePlannerExportToken();
+            setSettings(saved);
+            setSettingsDraft(saved);
+            toast.success('Export token rotated');
+        } catch {
+            toast.error('Failed to rotate export token');
         }
     };
 
@@ -1353,6 +1382,48 @@ const Planner = ({ user, onLogout }) => {
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button onClick={saveSettings} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700">Save Settings</button>
                             <span className="text-xs text-slate-500">Default: 10:00-18:00, 30 min slots, 15 min break, lunch 13:30-14:30.</span>
+                        </div>
+                        <div className="mt-3 grid md:grid-cols-2 gap-3">
+                            <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                                <p className="text-[11px] font-black uppercase tracking-wide text-emerald-700 mb-1">Dashboard to Apple (HTTPS)</p>
+                                <input
+                                    value={plannerExportLinks?.httpsUrl || ''}
+                                    readOnly
+                                    placeholder="Save settings to generate secure ICS link"
+                                    className="w-full px-2.5 py-2 rounded-lg border border-emerald-200 text-sm bg-white/80"
+                                />
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <button
+                                        onClick={() => copyPlannerExportLink(plannerExportLinks?.httpsUrl, 'HTTPS link')}
+                                        disabled={!plannerExportLinks?.httpsUrl}
+                                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                                    >
+                                        Copy HTTPS
+                                    </button>
+                                    <button
+                                        onClick={rotatePlannerExportToken}
+                                        className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                                    >
+                                        Rotate Token
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                                <p className="text-[11px] font-black uppercase tracking-wide text-indigo-700 mb-1">Apple Subscription (WEBCAL)</p>
+                                <input
+                                    value={plannerExportLinks?.webcalUrl || ''}
+                                    readOnly
+                                    placeholder="webcal://... (use in Apple Calendar Subscribe)"
+                                    className="w-full px-2.5 py-2 rounded-lg border border-indigo-200 text-sm bg-white/80"
+                                />
+                                <button
+                                    onClick={() => copyPlannerExportLink(plannerExportLinks?.webcalUrl, 'WEBCAL link')}
+                                    disabled={!plannerExportLinks?.webcalUrl}
+                                    className="mt-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-50"
+                                >
+                                    Copy WEBCAL
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
