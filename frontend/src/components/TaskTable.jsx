@@ -647,7 +647,7 @@ const TaskTable = ({
 
     return (
         <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm table-fixed">
+            <table className="w-full min-w-[1400px] text-sm">
                 <thead>
                     <tr className="border-b-2 border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-white/2">
                         {(isAdmin && bulkMode) && (
@@ -660,7 +660,7 @@ const TaskTable = ({
                         <ColHeader label="S.No" className="w-12" />
                         <ColHeader label="Task #" sortKey="task_number" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Due In" sortKey="deadline_date" currentSort={sort} onSort={handleSort} className="w-20" />
-                        <ColHeader label="Task / Description" sortKey="description" currentSort={sort} onSort={handleSort} />
+                        <ColHeader label="Task / Description" sortKey="description" currentSort={sort} onSort={handleSort} className="min-w-[360px]" />
                         <ColHeader label="Comments" className="w-[28rem]" />
                         <ColHeader label="Assigned" sortKey="assigned_agency" currentSort={sort} onSort={handleSort} className="w-32" />
                         <ColHeader label="Alloc." sortKey="allocated_date" currentSort={sort} onSort={handleSort} className="w-24" />
@@ -741,10 +741,7 @@ const TaskTable = ({
                                         </div>
                                     ) : (
                                         <div className="min-h-[64px] flex flex-col justify-center gap-0.5">
-                                            <p
-                                                className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words"
-                                                style={CLAMP_TWO_LINES}
-                                            >
+                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
                                             <div className="flex items-center gap-1 flex-wrap">
