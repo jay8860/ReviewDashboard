@@ -97,6 +97,36 @@ const sortEmployeesForLists = (rows = []) => (
     [...rows].sort((a, b) => getEmployeeSortLabel(a).localeCompare(getEmployeeSortLabel(b), undefined, { sensitivity: 'base' }))
 );
 
+const normalizeLabel = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const JP_CEO_AREAS = ['dantewada', 'geedam', 'kuakonda', 'katekalyan'];
+
+const isAllCeosEmployee = (employee) => {
+    if (!employee) return false;
+    const label = normalizeLabel(employee.display_username || employee.name);
+    return label === 'allceos' || label === 'allceo';
+};
+
+const isJpCeoEmployee = (employee) => {
+    if (!employee) return false;
+    const text = normalizeLabel(`${employee.display_username || ''} ${employee.name || ''}`);
+    if (!text.includes('ceo') || !text.includes('jp')) return false;
+    return JP_CEO_AREAS.some((area) => text.includes(area));
+};
+
+const getRecipientNumbersForEmployee = (employee, allEmployees = []) => {
+    if (!employee) return [];
+    if (isAllCeosEmployee(employee)) {
+        return [...new Set(
+            (allEmployees || [])
+                .filter(isJpCeoEmployee)
+                .map((row) => normalizeWhatsAppNumber(row?.mobile_number))
+                .filter(Boolean)
+        )];
+    }
+    const one = normalizeWhatsAppNumber(employee.mobile_number);
+    return one ? [one] : [];
+};
+
 const autoSelectRecipientsForEvents = (events = [], employees = []) => {
     if (!employees.length) return [];
     const picked = new Set();
@@ -286,8 +316,9 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
         const numbers = [];
         const employeeMap = new Map(employees.map(emp => [emp.id, emp]));
         selectedEmployeeIds.forEach(id => {
-            const mobile = normalizeWhatsAppNumber(employeeMap.get(id)?.mobile_number);
-            if (mobile) numbers.push(mobile);
+            const employee = employeeMap.get(id);
+            const resolved = getRecipientNumbersForEmployee(employee, employees);
+            if (resolved.length) numbers.push(...resolved);
         });
         return [...new Set(numbers.filter(Boolean))];
     };
@@ -504,8 +535,9 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
         const numbers = [];
         const employeeMap = new Map(employees.map((emp) => [emp.id, emp]));
         selectedEmployeeIds.forEach((id) => {
-            const mobile = normalizeWhatsAppNumber(employeeMap.get(id)?.mobile_number);
-            if (mobile) numbers.push(mobile);
+            const employee = employeeMap.get(id);
+            const resolved = getRecipientNumbersForEmployee(employee, employees);
+            if (resolved.length) numbers.push(...resolved);
         });
         return [...new Set(numbers.filter(Boolean))];
     };

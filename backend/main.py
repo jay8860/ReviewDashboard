@@ -8,6 +8,7 @@ from database import engine, Base, apply_non_destructive_migrations
 import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
+from seed_employees import seed_special_employees
 from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup
 
 # Create all tables
@@ -31,6 +32,7 @@ db = SessionLocal()
 try:
     seed_admin(db)
     seed_departments_and_agenda(db)
+    seed_special_employees(db)
 finally:
     db.close()
 

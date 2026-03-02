@@ -83,7 +83,8 @@ class Employee(Base):
     __tablename__ = "employees"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)
-    mobile_number = Column(String, nullable=False, unique=True, index=True)
+    # Mobile can repeat across multiple designations held by same person.
+    mobile_number = Column(String, nullable=False, index=True)
     display_username = Column(String, nullable=False, unique=True, index=True)
     is_active = Column(Boolean, default=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True) # Optional link to department

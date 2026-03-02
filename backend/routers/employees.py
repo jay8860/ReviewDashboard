@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -47,14 +47,15 @@ def get_employees(search: Optional[str] = None, department_id: Optional[int] = N
             models.Employee.mobile_number.ilike(f"%{search}%"),
             models.Employee.display_username.ilike(f"%{search}%")
         ))
+    q = q.order_by(func.lower(models.Employee.name), func.lower(models.Employee.display_username))
     return [employee_to_dict(e) for e in q.all()]
 
 @router.post("/")
 def create_employee(data: EmployeeCreate, db: Session = Depends(get_db)):
-    # Check uniqueness
-    if db.query(models.Employee).filter(models.Employee.mobile_number == data.mobile_number).first():
-        raise HTTPException(status_code=400, detail="Mobile number already exists")
-    if db.query(models.Employee).filter(models.Employee.display_username == data.display_username).first():
+    # Keep display username unique (case-insensitive). Mobile duplication is allowed.
+    if db.query(models.Employee).filter(
+        func.lower(models.Employee.display_username) == data.display_username.strip().lower()
+    ).first():
         raise HTTPException(status_code=400, detail="Display username already exists")
         
     emp = models.Employee(**data.dict())
@@ -70,12 +71,12 @@ def update_employee(emp_id: int, data: EmployeeUpdate, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Employee not found")
         
     for k, v in data.dict(exclude_unset=True).items():
-        # Check uniqueness if updating mobile or username
-        if k == "mobile_number" and v != emp.mobile_number:
-            if db.query(models.Employee).filter(models.Employee.mobile_number == v).first():
-                raise HTTPException(status_code=400, detail="Mobile number already exists")
+        # Display username must remain unique (case-insensitive).
         if k == "display_username" and v != emp.display_username:
-            if db.query(models.Employee).filter(models.Employee.display_username == v).first():
+            if db.query(models.Employee).filter(
+                models.Employee.id != emp_id,
+                func.lower(models.Employee.display_username) == str(v).strip().lower()
+            ).first():
                 raise HTTPException(status_code=400, detail="Display username already exists")
         setattr(emp, k, v)
         

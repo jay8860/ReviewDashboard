@@ -234,6 +234,68 @@ def apply_non_destructive_migrations():
                 existing_cols.add(col_name)
                 print(f"ℹ️  Added missing column: {table_name}.{col_name}")
 
+        # Allow duplicate employee mobile numbers (same person can hold multiple roles).
+        if "employees" in existing_tables:
+            if is_sqlite:
+                idx_rows = conn.execute(text("PRAGMA index_list('employees')")).fetchall()
+                has_unique_mobile = False
+                for idx_row in idx_rows:
+                    # PRAGMA index_list => seq, name, unique, origin, partial
+                    idx_name = idx_row[1]
+                    is_unique = bool(idx_row[2])
+                    if not is_unique:
+                        continue
+                    idx_cols = conn.execute(text(f"PRAGMA index_info('{idx_name}')")).fetchall()
+                    col_names = [c[2] for c in idx_cols]
+                    if len(col_names) == 1 and col_names[0] == "mobile_number":
+                        has_unique_mobile = True
+                        break
+
+                if has_unique_mobile:
+                    conn.execute(text("PRAGMA foreign_keys=OFF"))
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS employees_new (
+                            id INTEGER PRIMARY KEY,
+                            name VARCHAR NOT NULL,
+                            mobile_number VARCHAR NOT NULL,
+                            display_username VARCHAR NOT NULL UNIQUE,
+                            is_active BOOLEAN DEFAULT TRUE,
+                            department_id INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY(department_id) REFERENCES departments(id)
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO employees_new (
+                            id, name, mobile_number, display_username, is_active, department_id, created_at, updated_at
+                        )
+                        SELECT
+                            id, name, mobile_number, display_username, is_active, department_id, created_at, updated_at
+                        FROM employees
+                    """))
+                    conn.execute(text("DROP TABLE employees"))
+                    conn.execute(text("ALTER TABLE employees_new RENAME TO employees"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_employees_name ON employees (name)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_employees_mobile_number ON employees (mobile_number)"))
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_employees_display_username ON employees (display_username)"))
+                    conn.execute(text("PRAGMA foreign_keys=ON"))
+                    print("ℹ️  Relaxed employees.mobile_number uniqueness (duplicates now allowed).")
+            elif engine.dialect.name == "postgresql":
+                # Best effort for Postgres deployments.
+                unique_constraints = conn.execute(text("""
+                    SELECT c.conname
+                    FROM pg_constraint c
+                    JOIN pg_class t ON c.conrelid = t.oid
+                    WHERE t.relname = 'employees'
+                      AND c.contype = 'u'
+                      AND pg_get_constraintdef(c.oid) ILIKE '%(mobile_number)%'
+                """)).fetchall()
+                for row in unique_constraints:
+                    con_name = row[0]
+                    conn.execute(text(f'ALTER TABLE employees DROP CONSTRAINT IF EXISTS "{con_name}"'))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_employees_mobile_number ON employees (mobile_number)"))
+
 
 def get_db():
     db = SessionLocal()

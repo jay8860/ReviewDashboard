@@ -105,6 +105,12 @@ const Employees = ({ user, onLogout }) => {
     const [modalOpen, setModalOpen] = useState(false);
     const [editEmp, setEditEmp] = useState(null);
 
+    const sortEmployeesByName = (rows = []) => (
+        [...rows].sort((a, b) => (
+            String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' })
+        ))
+    );
+
     const loadData = async () => {
         setLoading(true);
         try {
@@ -112,7 +118,7 @@ const Employees = ({ user, onLogout }) => {
                 api.getEmployees({ search, department_id: filterDept }),
                 api.getDepartments()
             ]);
-            setEmployees(emps);
+            setEmployees(sortEmployeesByName(emps || []));
             setDepartments(depts);
         } catch (error) {
             console.error(error);

@@ -172,6 +172,51 @@ const sortEmployeesForSelect = (rows = []) => (
     ))
 );
 
+const normalizeLabel = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const JP_CEO_AREAS = ['dantewada', 'geedam', 'kuakonda', 'katekalyan'];
+
+const isAllCeosEmployee = (employee) => {
+    if (!employee) return false;
+    const label = normalizeLabel(employee.display_username || employee.name);
+    return label === 'allceos' || label === 'allceo';
+};
+
+const isJpCeoEmployee = (employee) => {
+    if (!employee) return false;
+    const text = normalizeLabel(`${employee.display_username || ''} ${employee.name || ''}`);
+    if (!text.includes('ceo') || !text.includes('jp')) return false;
+    return JP_CEO_AREAS.some((area) => text.includes(area));
+};
+
+const getRecipientNumbersForEmployee = (employee, allEmployees = []) => {
+    if (!employee) return [];
+    if (isAllCeosEmployee(employee)) {
+        return [...new Set(
+            (allEmployees || [])
+                .filter(isJpCeoEmployee)
+                .map((row) => normalizeWhatsAppNumber(row?.mobile_number))
+                .filter(Boolean)
+        )];
+    }
+    const phone = normalizeWhatsAppNumber(employee.mobile_number);
+    return phone ? [phone] : [];
+};
+
+const openWhatsAppToNumbers = (numbers = [], message = '') => {
+    const unique = [...new Set((numbers || []).filter(Boolean))];
+    const text = encodeURIComponent(String(message || '').trim());
+    if (!text) return;
+    unique.forEach((number, idx) => {
+        setTimeout(() => {
+            window.open(
+                `https://api.whatsapp.com/send/?phone=${number}&text=${text}&type=phone_number&app_absent=0`,
+                '_blank',
+                'noopener,noreferrer'
+            );
+        }, idx * 200);
+    });
+};
+
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 const normalizeWhatsAppNumber = (value) => {
     let digits = String(value || '').replace(/\D/g, '');
@@ -189,6 +234,13 @@ const formatTime12 = (value) => {
     const suffix = hour >= 12 ? 'PM' : 'AM';
     hour = hour % 12 || 12;
     return `${hour}:${minute} ${suffix}`;
+};
+
+const CLAMP_TWO_LINES = {
+    display: '-webkit-box',
+    WebkitBoxOrient: 'vertical',
+    WebkitLineClamp: 2,
+    overflow: 'hidden',
 };
 
 const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees = [], allTasks = [], onClose, onSave }) => {
@@ -243,17 +295,16 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
 
     const sendWhatsApp = () => {
         const recipient = employees.find((emp) => String(emp.id) === String(primaryRecipientId));
-        const phone = normalizeWhatsAppNumber(recipient?.mobile_number);
-        if (!phone) {
+        const phones = getRecipientNumbersForEmployee(recipient, employees);
+        if (!phones.length) {
             window.alert('Select a recipient with a valid mobile number');
             return;
         }
-        const text = encodeURIComponent((messageDraft || '').trim());
-        if (!text) {
+        if (!(messageDraft || '').trim()) {
             window.alert('Message draft cannot be empty');
             return;
         }
-        window.open(`https://api.whatsapp.com/send/?phone=${phone}&text=${text}&type=phone_number&app_absent=0`, '_blank', 'noopener,noreferrer');
+        openWhatsAppToNumbers(phones, messageDraft);
     };
 
     const submit = async (e) => {
@@ -379,6 +430,11 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
                     {currentRecipient?.mobile_number && (
                         <p className="text-[10px] text-slate-400 mt-1">
                             Recipient mobile: {currentRecipient.mobile_number}
+                        </p>
+                    )}
+                    {isAllCeosEmployee(currentRecipient) && (
+                        <p className="text-[10px] text-indigo-500 mt-1 font-semibold">
+                            This sends to all JP CEOs (Dantewada, Geedam, Kuakonda, Katekalyan).
                         </p>
                     )}
                 </div>
@@ -578,7 +634,7 @@ const TaskTable = ({
 
     return (
         <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm">
+            <table className="w-full min-w-[1200px] text-sm table-fixed">
                 <thead>
                     <tr className="border-b-2 border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-white/2">
                         {(isAdmin && bulkMode) && (
@@ -617,16 +673,11 @@ const TaskTable = ({
                         const isImportant = task.priority === 'High' || task.priority === 'Critical';
                         const isBulkEditable = Boolean(isAdmin && bulkMode);
                         const taskAssignedEmployee = employeeById.get(String(task.assigned_employee_id || ''));
-                        const taskPhone = normalizeWhatsAppNumber(taskAssignedEmployee?.mobile_number);
-                        const quickWaHref = taskPhone
-                            ? `https://api.whatsapp.com/send/?phone=${taskPhone}&text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}&type=phone_number&app_absent=0`
-                            : `https://api.whatsapp.com/send/?text=${encodeURIComponent(buildTaskWhatsAppMessage(task))}&type=custom_url&app_absent=0`;
+                        const quickRecipientNumbers = getRecipientNumbersForEmployee(taskAssignedEmployee, sortedEmployees);
                         const inputCls = "w-full px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/40 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40";
 
                         return (
-                            <motion.tr key={task.id}
-                                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: idx * 0.015 }}
+                            <tr key={task.id}
                                 className={`group transition-colors hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10
                                     ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}
                                     ${isCompleted ? 'opacity-60' : ''}
@@ -677,7 +728,10 @@ const TaskTable = ({
                                         </div>
                                     ) : (
                                         <div className="min-h-[64px] flex flex-col justify-center gap-0.5">
-                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
+                                            <p
+                                                className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words"
+                                                style={CLAMP_TWO_LINES}
+                                            >
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
                                             <div className="flex items-center gap-1 flex-wrap">
@@ -707,7 +761,8 @@ const TaskTable = ({
                                         <div className="relative">
                                             {task.steno_comment ? (
                                                 <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
-                                                    className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 text-left hover:text-indigo-600 transition-colors leading-snug">
+                                                    className="text-xs text-slate-500 dark:text-slate-400 text-left hover:text-indigo-600 transition-colors leading-snug"
+                                                    style={CLAMP_TWO_LINES}>
                                                     {task.steno_comment}
                                                 </button>
                                             ) : isAdmin ? (
@@ -837,15 +892,25 @@ const TaskTable = ({
                                     <td className="px-3 py-3 relative" ref={scheduleTask?.id === task.id ? scheduleRef : null}>
                                         <div className={`flex items-center gap-0.5 transition-opacity ${scheduleTask?.id === task.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                             {/* WhatsApp */}
-                                            <a
-                                                href={quickWaHref}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const msg = buildTaskWhatsAppMessage(task);
+                                                    if (quickRecipientNumbers.length) {
+                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
+                                                    } else {
+                                                        window.open(
+                                                            `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
+                                                            '_blank',
+                                                            'noopener,noreferrer'
+                                                        );
+                                                    }
+                                                }}
                                                 title="WhatsApp follow-up"
                                                 className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors"
                                             >
                                                 <WhatsAppIcon />
-                                            </a>
+                                            </button>
 
                                             {/* Edit inline */}
                                             {!bulkMode && (
@@ -918,7 +983,7 @@ const TaskTable = ({
                                         </AnimatePresence>
                                     </td>
                                 )}
-                            </motion.tr>
+                            </tr>
                         );
                     })}
                 </tbody>
@@ -928,4 +993,4 @@ const TaskTable = ({
     );
 };
 
-export default TaskTable;
+export default React.memo(TaskTable);

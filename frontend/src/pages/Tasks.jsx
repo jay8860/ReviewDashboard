@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import {
     ClipboardList, Plus, X, Search, RefreshCw, FileDown,
-    CheckCircle2, Clock, AlertTriangle, Flame, List,
+    CheckCircle2, Clock, AlertTriangle, Flame, List, Calendar,
     Trash2, CheckSquare, Check, ChevronRight, ChevronDown
 } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -11,9 +11,6 @@ import TaskTable from '../components/TaskTable';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { differenceInDays, format } from 'date-fns';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { canAccessModule } from '../utils/access';
 
 const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) => {
@@ -275,7 +272,9 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
 };
 
 // ── Bulk Edit Panel ────────────────────────────────────────────────────────────
-const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClear }) => {
+const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClose, onExtendDeadline }) => {
+    const [customDays, setCustomDays] = useState('7');
+
     return (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className="glass-card rounded-2xl px-5 py-3 flex items-center gap-4 mb-4 border-2 border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-900/10">
@@ -295,10 +294,31 @@ const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClear }) => {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition-colors">
                     <Trash2 size={12} /> Delete
                 </button>
+                <button
+                    onClick={() => onExtendDeadline?.(7)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 transition-colors"
+                >
+                    <Calendar size={12} /> Extend +7d
+                </button>
+                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-xl border border-violet-200 bg-white">
+                    <input
+                        type="number"
+                        min={1}
+                        value={customDays}
+                        onChange={(e) => setCustomDays(e.target.value)}
+                        className="w-14 text-xs px-2 py-1 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    />
+                    <button
+                        onClick={() => onExtendDeadline?.(parseInt(customDays, 10))}
+                        className="px-2 py-1 rounded-lg bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200"
+                    >
+                        Apply
+                    </button>
+                </div>
             </div>
             <span className="text-xs text-indigo-600/80 font-semibold">Edit selected rows inline below. Changes auto-save.</span>
 
-            <button onClick={onClear} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400">
                 <X size={14} />
             </button>
         </motion.div>
@@ -339,6 +359,7 @@ const Tasks = ({ user, onLogout }) => {
     const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
     // Filters
+    const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
     const [search, setSearch] = useState(searchParams.get('search') || '');
     const [filterStatus, setFilterStatus] = useState(initialStatusParam || 'Pending,Overdue');
     const [filterDept, setFilterDept] = useState(searchParams.get('department_id') || '');
@@ -452,10 +473,11 @@ const Tasks = ({ user, onLogout }) => {
     useEffect(() => {
         const interval = setInterval(() => {
             if (document.hidden) return;
+            if (loading) return;
             pollForExternalChanges();
-        }, 4000);
+        }, 12000);
         return () => clearInterval(interval);
-    }, [pollForExternalChanges]);
+    }, [pollForExternalChanges, loading]);
 
     const applyStatFilter = (key) => {
         if (key === 'total') {
@@ -484,8 +506,17 @@ const Tasks = ({ user, onLogout }) => {
         }
     };
 
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearch((searchInput || '').trim());
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
+
     const handleSearch = (e) => {
-        if (e.key === 'Enter') load();
+        if (e.key === 'Enter') {
+            setSearch((searchInput || '').trim());
+        }
     };
 
     const totalPages = Math.max(1, Math.ceil((tasks.length || 0) / PAGE_SIZE));
@@ -614,7 +645,35 @@ const Tasks = ({ user, onLogout }) => {
         } catch { toast.error('Bulk delete failed'); }
     };
 
-    const exportExcel = () => {
+    const handleBulkExtendDeadline = async (daysRaw) => {
+        const days = parseInt(daysRaw, 10);
+        if (!Number.isFinite(days) || days <= 0) {
+            toast.error('Enter valid days');
+            return;
+        }
+        const selectedTasks = tasks.filter((task) => selectedIds.includes(task.id));
+        if (!selectedTasks.length) return;
+        try {
+            const updates = selectedTasks.map((task) => {
+                const base = task.deadline_date ? new Date(task.deadline_date) : new Date();
+                if (Number.isNaN(base.getTime())) {
+                    const fallback = new Date();
+                    fallback.setDate(fallback.getDate() + days);
+                    return { id: task.id, deadline_date: fallback.toISOString().slice(0, 10) };
+                }
+                base.setDate(base.getDate() + days);
+                return { id: task.id, deadline_date: base.toISOString().slice(0, 10) };
+            });
+            await api.bulkUpdateTasks(updates);
+            toast.success(`Extended deadline for ${updates.length} task${updates.length > 1 ? 's' : ''}`);
+            load();
+        } catch {
+            toast.error('Bulk deadline extension failed');
+        }
+    };
+
+    const exportExcel = async () => {
+        const XLSX = await import('xlsx');
         const rows = tasks.map((t, i) => ({
             'S.No': i + 1,
             'Task #': t.task_number,
@@ -635,7 +694,11 @@ const Tasks = ({ user, onLogout }) => {
         XLSX.writeFile(wb, `tasks_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
-    const exportPdf = () => {
+    const exportPdf = async () => {
+        const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+            import('jspdf'),
+            import('jspdf-autotable'),
+        ]);
         const getDueText = (task) => {
             if (task.completion_date || task.status === 'Completed') return 'Done';
             if (!task.deadline_date) return '-';
@@ -814,7 +877,7 @@ const Tasks = ({ user, onLogout }) => {
                 <div className="bg-white dark:bg-slate-800 rounded-full p-2 mb-6 flex flex-wrap gap-2 items-center shadow-sm border border-slate-100 dark:border-white/5">
                     <div className="relative flex-1 min-w-[200px]">
                         <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={handleSearch}
+                        <input value={searchInput} onChange={e => setSearchInput(e.target.value)} onKeyDown={handleSearch}
                             placeholder="Search tasks by number, agency or keyword..."
                             className="w-full pl-11 pr-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none focus:ring-2 focus:ring-indigo-500/20 text-sm font-semibold text-slate-700 dark:text-slate-200 placeholder-slate-400 transition-all" />
                     </div>
@@ -851,7 +914,9 @@ const Tasks = ({ user, onLogout }) => {
                         count={selectedIds.length}
                         onMarkComplete={() => handleBulkStatus('Completed')}
                         onDelete={handleBulkDelete}
-                        onClear={() => setSelectedIds([])} />
+                        onClose={() => setSelectedIds([])}
+                        onExtendDeadline={handleBulkExtendDeadline}
+                    />
                 )}
             </AnimatePresence>
 
