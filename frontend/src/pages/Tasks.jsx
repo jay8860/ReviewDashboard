@@ -573,9 +573,9 @@ const Tasks = ({ user, onLogout }) => {
             setTasks((prev) => prev.map((row) => (row.id === id ? updated : row)));
             const refreshedStats = await api.getTaskStats();
             setStats(refreshedStats);
-        } catch {
+        } catch (err) {
             setTasks((prev) => prev.map((row) => (row.id === id ? (existing || row) : row)));
-            toast.error('Failed to update task');
+            toast.error(err?.response?.data?.detail || 'Failed to update task');
         }
     };
 

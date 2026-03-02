@@ -550,10 +550,17 @@ const TaskTable = ({
 
     const handleSaveEdit = async (id, form) => {
         const payload = { ...form };
+        const original = tasks.find((row) => row.id === id);
         if (payload.department_id === '') payload.department_id = null;
         else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
         if (payload.assigned_employee_id === '') payload.assigned_employee_id = null;
         else if (payload.assigned_employee_id) payload.assigned_employee_id = parseInt(payload.assigned_employee_id);
+        if (payload.allocated_date === '') payload.allocated_date = null;
+        if (payload.deadline_date === '') payload.deadline_date = null;
+        if (payload.time_given === '') payload.time_given = null;
+        if (!String(payload.task_number || '').trim()) {
+            payload.task_number = original?.task_number || null;
+        }
         await onUpdate(id, payload);
         setEditId(null);
     };
