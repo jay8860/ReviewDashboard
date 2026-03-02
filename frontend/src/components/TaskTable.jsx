@@ -75,10 +75,7 @@ const StenoPopup = ({ value, onSave, onClose }) => {
 };
 
 // ── Inline Edit Row ────────────────────────────────────────────────────────────
-const PRIORITY_OPTIONS = ['Low', 'Normal', 'High', 'Critical'];
-const STATUS_OPTIONS = ['Pending', 'Completed', 'Overdue'];
-
-const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] }) => {
+const EditableRow = ({ task, rowIndex = 0, onSave, onCancel, departments = [], employees = [] }) => {
     const [form, setForm] = useState({
         task_number: task.task_number || '',
         description: task.description || '',
@@ -101,34 +98,47 @@ const EditableRow = ({ task, onSave, onCancel, departments = [], employees = [] 
 
     return (
         <tr className="bg-indigo-50/60 dark:bg-indigo-900/20 border-y-2 border-indigo-200 dark:border-indigo-500/30">
+            <td className="px-3 py-2 text-xs text-slate-400 font-mono">{rowIndex + 1}</td>
+            <td className="px-2 py-2">
+                <input value={form.task_number} onChange={f('task_number')} className={inputCls} />
+            </td>
+            <td className="px-2 py-2">
+                <DueInBadge
+                    deadline={form.deadline_date || task.deadline_date}
+                    completion_date={task.completion_date}
+                    status={form.status || task.status}
+                />
+            </td>
+            <td className="px-2 py-2 min-w-48">
+                <textarea value={form.description} onChange={f('description')} rows={2} className={inputCls + " resize-none"} placeholder="Task description" />
+            </td>
+            <td className="px-2 py-2">
+                <textarea value={form.steno_comment} onChange={f('steno_comment')} rows={2} className={inputCls + " resize-none"} placeholder="Comment..." />
+            </td>
+            <td className="px-2 py-2 min-w-32">
+                <div className="flex flex-col gap-1">
+                    <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={selectCls}>
+                        <option value="">No Employee</option>
+                        {sortedEmployees.map((e) => <option key={e.id} value={e.id}>{getEmployeeSelectLabel(e)}</option>)}
+                    </select>
+                    <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
+                </div>
+            </td>
+            <td className="px-2 py-2">
+                <input type="date" value={form.allocated_date} onChange={f('allocated_date')} className={inputCls} />
+            </td>
+            <td className="px-2 py-2">
+                <input value={form.time_given} onChange={f('time_given')} className={inputCls} placeholder="e.g. 30 days" />
+            </td>
+            <td className="px-2 py-2">
+                <input type="date" value={form.deadline_date} onChange={f('deadline_date')} className={inputCls} />
+            </td>
             <td className="px-3 py-2 w-10">
                 <div className="flex flex-col gap-1">
                     <button onClick={() => onSave(form)} className="p-1.5 rounded-lg bg-indigo-700 text-white hover:bg-indigo-800 transition-colors"><Save size={12} /></button>
                     <button onClick={onCancel} className="p-1.5 rounded-lg bg-slate-100 text-slate-400 hover:bg-slate-200 transition-colors"><X size={12} /></button>
                 </div>
             </td>
-            <td className="px-2 py-2"><div className="text-xs text-slate-400 font-mono">{form.task_number}</div></td>
-            <td className="px-2 py-2 min-w-48"><textarea value={form.description} onChange={f('description')} rows={2} className={inputCls + " resize-none"} placeholder="Task description" /></td>
-            <td className="px-2 py-2"><textarea value={form.steno_comment} onChange={f('steno_comment')} rows={2} className={inputCls + " resize-none"} placeholder="Comment..." /></td>
-            <td className="px-2 py-2 min-w-32 flex flex-col gap-1">
-                <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={selectCls}>
-                    <option value="">No Employee</option>
-                    {sortedEmployees.map((e) => <option key={e.id} value={e.id}>{getEmployeeSelectLabel(e)}</option>)}
-                </select>
-                <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
-            </td>
-            <td className="px-2 py-2"><input type="date" value={form.allocated_date} onChange={f('allocated_date')} className={inputCls} /></td>
-            <td className="px-2 py-2"><input value={form.time_given} onChange={f('time_given')} className={inputCls} placeholder="e.g. 30 days" /></td>
-            <td className="px-2 py-2"><input type="date" value={form.deadline_date} onChange={f('deadline_date')} className={inputCls} /></td>
-            <td className="px-2 py-2">
-                <select value={form.priority} onChange={f('priority')} className={selectCls}>
-                    {PRIORITY_OPTIONS.map(p => <option key={p}>{p}</option>)}
-                </select>
-                <select value={form.status} onChange={f('status')} className={selectCls + " mt-1"}>
-                    {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                </select>
-            </td>
-            <td className="px-2 py-2" />
         </tr>
     );
 };
@@ -673,7 +683,7 @@ const TaskTable = ({
                     {sorted.map((task, idx) => {
                         if (editId === task.id) {
                             return (
-                                <EditableRow key={task.id} task={task} departments={departments} employees={employees}
+                                <EditableRow key={task.id} task={task} rowIndex={idx} departments={departments} employees={employees}
                                     onSave={(form) => handleSaveEdit(task.id, form)}
                                     onCancel={() => setEditId(null)} />
                             );
