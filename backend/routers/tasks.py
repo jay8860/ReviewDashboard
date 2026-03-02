@@ -67,6 +67,43 @@ def _normalize_task_status(value: Optional[str]) -> Optional[str]:
     return "Pending"
 
 
+def _coerce_date_field(value, field_name: str) -> Optional[date]:
+    if value in (None, "", "null", "None"):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    # Try common formats first.
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+
+    # Fallback for ISO-like datetime strings.
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} value: {value}")
+
+
+def _coerce_int_field(value):
+    if value in (None, "", "null", "None"):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid numeric value: {value}")
+
+
 def generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
     prefix = "TSK"
     if assigned_agency:
@@ -248,19 +285,46 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
 @router.put("/bulk/update")
 def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
     updated = []
-    for item in data.updates:
-        task_id = item.get("id")
-        task = db.query(models.Task).filter(models.Task.id == task_id).first()
-        if task:
+    try:
+        for item in data.updates:
+            task_id = item.get("id")
+            task = db.query(models.Task).filter(models.Task.id == task_id).first()
+            if not task:
+                continue
+
             for k, v in item.items():
-                if k != "id" and hasattr(task, k):
-                    if k == "status":
-                        v = _normalize_task_status(v)
-                    setattr(task, k, v)
-            if item.get("completion_date"):
+                if k == "id" or not hasattr(task, k):
+                    continue
+
+                if k == "status":
+                    v = _normalize_task_status(v)
+                elif k in {"allocated_date", "deadline_date"}:
+                    v = _coerce_date_field(v, k)
+                elif k == "completion_date":
+                    # completion_date is stored as string in this schema.
+                    parsed = _coerce_date_field(v, k)
+                    v = parsed.isoformat() if parsed else None
+                elif k in {"department_id", "assigned_employee_id"}:
+                    v = _coerce_int_field(v)
+
+                setattr(task, k, v)
+
+            # Keep completion and status consistent.
+            if item.get("completion_date") not in (None, "", "null", "None"):
                 task.status = "Completed"
+            elif item.get("status") in {"Pending", "Overdue"}:
+                task.completion_date = None
+
             updated.append(task_id)
-    db.commit()
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {exc}")
+
     return {"updated": updated}
 
 
