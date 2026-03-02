@@ -173,7 +173,20 @@ const sortEmployeesForSelect = (rows = []) => (
 );
 
 const normalizeLabel = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const JP_CEO_AREAS = ['dantewada', 'geedam', 'kuakonda', 'katekalyan'];
+const JP_CEO_AREA_ALIASES = {
+    dantewada: ['dantewada', 'dnt', 'dtw'],
+    geedam: ['geedam', 'gidam', 'gdm'],
+    kuakonda: ['kuakonda', 'kua', 'kuak'],
+    katekalyan: ['katekalyan', 'katakalyan', 'kateklyan', 'katek'],
+};
+
+const employeeSearchBlob = (employee) => normalizeLabel(
+    `${employee?.display_username || ''} ${employee?.name || ''} ${employee?.department_name || ''}`
+);
+
+const hasAreaAlias = (text) => (
+    Object.values(JP_CEO_AREA_ALIASES).some((aliases) => aliases.some((alias) => text.includes(alias)))
+);
 
 const isAllCeosEmployee = (employee) => {
     if (!employee) return false;
@@ -183,20 +196,20 @@ const isAllCeosEmployee = (employee) => {
 
 const isJpCeoEmployee = (employee) => {
     if (!employee) return false;
-    const text = normalizeLabel(`${employee.display_username || ''} ${employee.name || ''}`);
-    if (!text.includes('ceo') || !text.includes('jp')) return false;
-    return JP_CEO_AREAS.some((area) => text.includes(area));
+    if (isAllCeosEmployee(employee)) return false;
+    const text = employeeSearchBlob(employee);
+    if (!text.includes('ceo')) return false;
+    const hasArea = hasAreaAlias(text);
+    if (!hasArea) return false;
+    return text.includes('jp') || text.includes('janpad') || text.includes('block') || hasArea;
 };
 
 const getRecipientNumbersForEmployee = (employee, allEmployees = []) => {
     if (!employee) return [];
     if (isAllCeosEmployee(employee)) {
-        return [...new Set(
-            (allEmployees || [])
-                .filter(isJpCeoEmployee)
-                .map((row) => normalizeWhatsAppNumber(row?.mobile_number))
-                .filter(Boolean)
-        )];
+        const jpCeos = (allEmployees || []).filter(isJpCeoEmployee);
+        const numbers = jpCeos.map((row) => normalizeWhatsAppNumber(row?.mobile_number)).filter(Boolean);
+        return [...new Set(numbers)];
     }
     const phone = normalizeWhatsAppNumber(employee.mobile_number);
     return phone ? [phone] : [];
