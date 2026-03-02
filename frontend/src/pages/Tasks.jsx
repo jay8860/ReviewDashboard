@@ -654,12 +654,15 @@ const Tasks = ({ user, onLogout }) => {
         const selectedTasks = tasks.filter((task) => selectedIds.includes(task.id));
         if (!selectedTasks.length) return;
         try {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
             const updates = selectedTasks.map((task) => {
-                const base = task.deadline_date ? new Date(task.deadline_date) : new Date();
-                if (Number.isNaN(base.getTime())) {
-                    const fallback = new Date();
-                    fallback.setDate(fallback.getDate() + days);
-                    return { id: task.id, deadline_date: fallback.toISOString().slice(0, 10) };
+                const parsed = task.deadline_date ? new Date(task.deadline_date) : null;
+                const hasValidDeadline = parsed && !Number.isNaN(parsed.getTime());
+                const base = hasValidDeadline ? parsed : new Date(today);
+                base.setHours(0, 0, 0, 0);
+                if (base < today) {
+                    base.setTime(today.getTime());
                 }
                 base.setDate(base.getDate() + days);
                 return { id: task.id, deadline_date: base.toISOString().slice(0, 10) };

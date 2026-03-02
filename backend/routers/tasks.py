@@ -158,6 +158,36 @@ def task_to_dict(t: models.Task) -> dict:
     }
 
 
+def _sync_task_statuses(db: Session) -> None:
+    today = date.today()
+    changed = False
+
+    in_progress_count = db.query(models.Task).filter(
+        models.Task.status == "In Progress"
+    ).update({"status": "Pending"}, synchronize_session=False)
+    if in_progress_count:
+        changed = True
+
+    pending_to_overdue = db.query(models.Task).filter(
+        models.Task.deadline_date < today,
+        models.Task.status == "Pending",
+        models.Task.completion_date == None
+    ).update({"status": "Overdue"}, synchronize_session=False)
+    if pending_to_overdue:
+        changed = True
+
+    overdue_to_pending = db.query(models.Task).filter(
+        models.Task.status == "Overdue",
+        models.Task.completion_date == None,
+        or_(models.Task.deadline_date == None, models.Task.deadline_date >= today)
+    ).update({"status": "Pending"}, synchronize_session=False)
+    if overdue_to_pending:
+        changed = True
+
+    if changed:
+        db.commit()
+
+
 @router.get("/")
 def get_tasks(
     department_id: Optional[int] = None,
@@ -171,16 +201,7 @@ def get_tasks(
     sort_dir: Optional[str] = "asc",
     db: Session = Depends(get_db)
 ):
-    today = date.today()
-    db.query(models.Task).filter(
-        models.Task.status == "In Progress"
-    ).update({"status": "Pending"}, synchronize_session=False)
-    db.query(models.Task).filter(
-        models.Task.deadline_date < today,
-        models.Task.status == "Pending",
-        models.Task.completion_date == None
-    ).update({"status": "Overdue"}, synchronize_session=False)
-    db.commit()
+    _sync_task_statuses(db)
 
     q = db.query(models.Task)
     if department_id:
@@ -237,6 +258,7 @@ def get_tasks(
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
+    _sync_task_statuses(db)
     total = db.query(func.count(models.Task.id)).scalar()
     completed = db.query(func.count(models.Task.id)).filter(
         or_(models.Task.status == "Completed", models.Task.completion_date != None)
