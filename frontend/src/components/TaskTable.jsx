@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
-    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown
+    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 
@@ -497,6 +497,7 @@ const TaskTable = ({
     onUpdate,
     onDelete,
     onScheduleTask,
+    onAddToFieldVisitNotepad,
     isAdmin = false,
     selectedIds = [],
     onSelectChange,
@@ -960,6 +961,16 @@ const TaskTable = ({
                                                 className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
                                             >
                                                 <CalendarClock size={13} />
+                                            </button>
+
+                                            {/* Copy to field visit planning notepad */}
+                                            <button
+                                                type="button"
+                                                onClick={() => onAddToFieldVisitNotepad?.(task)}
+                                                title="Add to Field Visit notepad"
+                                                className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-600 transition-colors"
+                                            >
+                                                <MapPin size={13} />
                                             </button>
 
                                             {/* Quick Complete */}

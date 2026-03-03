@@ -77,7 +77,7 @@ const buildCategoryBuckets = (departments) => {
         }));
 };
 
-const DeptModal = ({ isOpen, onClose, onSave, initial = null }) => {
+const DeptModal = ({ isOpen, onClose, onSave, initial = null, categoryOptions = [] }) => {
     const [form, setForm] = useState({
         name: '',
         short_name: '',
@@ -114,6 +114,18 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null }) => {
             color: 'indigo',
         });
     }, [initial, isOpen]);
+
+    const normalizedCategoryOptions = useMemo(() => {
+        const seed = ['General', ...(categoryOptions || [])];
+        const map = new Map();
+        seed.forEach((name) => {
+            const value = String(name || '').trim();
+            if (!value) return;
+            const key = value.toLowerCase();
+            if (!map.has(key)) map.set(key, value);
+        });
+        return Array.from(map.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }, [categoryOptions]);
 
     if (!isOpen) return null;
 
@@ -175,12 +187,23 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null }) => {
                         </div>
                         <div>
                             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Category Bucket</label>
-                            <input
-                                value={form.category_name}
-                                onChange={e => setForm({ ...form, category_name: e.target.value })}
-                                placeholder="e.g. Core Monitoring"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
-                            />
+                            <div className="grid grid-cols-1 gap-2">
+                                <select
+                                    value={form.category_name}
+                                    onChange={e => setForm({ ...form, category_name: e.target.value })}
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                                >
+                                    {normalizedCategoryOptions.map((name) => (
+                                        <option key={name} value={name}>{name}</option>
+                                    ))}
+                                </select>
+                                <input
+                                    value={form.category_name}
+                                    onChange={e => setForm({ ...form, category_name: e.target.value })}
+                                    placeholder="Or type a new category"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all"
+                                />
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Nodal Officer / Head</label>
@@ -946,6 +969,7 @@ const Departments = ({ user, onLogout }) => {
                 onClose={() => { setModalOpen(false); setEditDept(null); }}
                 onSave={handleSave}
                 initial={editDept}
+                categoryOptions={categoryNames}
             />
             <QuickScheduleModal
                 department={quickDept}

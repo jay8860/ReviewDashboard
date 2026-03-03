@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ArrowDown, ArrowUp, CheckCircle2, ClipboardList,
-    RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle
+    RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle, MapPin
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
@@ -201,6 +201,20 @@ const Todos = ({ user, onLogout }) => {
         toast.success(`${converted} item(s) converted to tasks`);
     };
 
+    const addTodoToFieldVisitNotepad = async (item) => {
+        const text = String(item?.title || '').trim();
+        if (!text) {
+            toast.error('To-do item is empty');
+            return;
+        }
+        try {
+            await api.appendFieldVisitPlanningNoteLines([text]);
+            toast.success('To-do added to Field Visit notepad');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to add to Field Visit notepad');
+        }
+    };
+
     return (
         <Layout user={user} onLogout={onLogout}>
             <div className="space-y-6">
@@ -391,6 +405,13 @@ const Todos = ({ user, onLogout }) => {
                                                 title="Convert to task"
                                             >
                                                 To Task
+                                            </button>
+                                            <button
+                                                onClick={() => addTodoToFieldVisitNotepad(item)}
+                                                className="p-2 rounded-lg border border-emerald-200 text-emerald-600"
+                                                title="Add to Field Visit notepad"
+                                            >
+                                                <MapPin size={14} />
                                             </button>
                                             <button
                                                 onClick={() => removeItem(item.id)}

@@ -624,6 +624,20 @@ const Tasks = ({ user, onLogout }) => {
         }
     };
 
+    const handleAddTaskToFieldVisitNotepad = async (task) => {
+        const text = String(task?.description || task?.task_number || '').trim();
+        if (!text) {
+            toast.error('Task has no text to add');
+            return;
+        }
+        try {
+            await api.appendFieldVisitPlanningNoteLines([text]);
+            toast.success('Task added to Field Visit notepad');
+        } catch (err) {
+            toast.error(err?.response?.data?.detail || 'Failed to add to Field Visit notepad');
+        }
+    };
+
     // Bulk actions
     const handleBulkStatus = async (status) => {
         try {
@@ -962,6 +976,7 @@ const Tasks = ({ user, onLogout }) => {
                         onUpdate={handleUpdate}
                         onDelete={handleDelete}
                         onScheduleTask={handleScheduleTaskMeeting}
+                        onAddToFieldVisitNotepad={handleAddTaskToFieldVisitNotepad}
                         isAdmin={canManageTasks}
                         selectedIds={selectedIds}
                         onSelectChange={setSelectedIds}

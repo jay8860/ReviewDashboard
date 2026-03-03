@@ -423,6 +423,38 @@ export const api = {
         const res = await axios.put(`${FIELD_VISIT_URL}/planning-notes`, data);
         return res.data;
     },
+    appendFieldVisitPlanningNoteLines: async (lines = []) => {
+        const incoming = (lines || [])
+            .map((line) => String(line || '').trim())
+            .filter(Boolean);
+        if (!incoming.length) {
+            const res = await axios.get(`${FIELD_VISIT_URL}/planning-notes`);
+            return res.data;
+        }
+
+        const existingRes = await axios.get(`${FIELD_VISIT_URL}/planning-notes`);
+        const existing = existingRes.data || {};
+        const existingLines = String(existing.note_text || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+        const seen = new Set(existingLines.map((line) => line.toLowerCase()));
+        const appended = [];
+        incoming.forEach((line) => {
+            const key = line.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            appended.push(line);
+        });
+        if (!appended.length) return existing;
+
+        const payload = {
+            note_text: [...existingLines, ...appended].join('\n'),
+            home_base: existing.home_base || 'Collectorate, Dantewada',
+        };
+        const res = await axios.put(`${FIELD_VISIT_URL}/planning-notes`, payload);
+        return res.data;
+    },
     getFieldVisitSuggestions: async (data = {}) => {
         const res = await axios.post(`${FIELD_VISIT_URL}/suggestions`, data);
         return res.data;
