@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import re
 
 from database import get_db
@@ -359,13 +359,20 @@ def convert_todo_to_task(todo_id: int, data: TodoConvertToTaskRequest, db: Sessi
     if not assigned_agency and employee:
         assigned_agency = employee.display_username or employee.name
 
+    resolved_deadline = data.deadline_date or row.due_date
+    resolved_time_given = None
+    if resolved_deadline is None:
+        resolved_deadline = date.today() + timedelta(days=7)
+        resolved_time_given = "7 days"
+
     task = models.Task(
         task_number=_generate_task_number(db, assigned_agency, dept_id),
         description=row.title,
         assigned_agency=assigned_agency,
         assigned_employee_id=assigned_employee_id,
         allocated_date=date.today(),
-        deadline_date=data.deadline_date or row.due_date,
+        time_given=resolved_time_given,
+        deadline_date=resolved_deadline,
         status=(data.status or "Pending"),
         priority=_normalize_priority(row.priority),
         remarks=row.details,
