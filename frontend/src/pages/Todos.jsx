@@ -5,6 +5,7 @@ import {
     RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle, MapPin
 } from 'lucide-react';
 import Layout from '../components/Layout';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 
@@ -33,6 +34,8 @@ const Todos = ({ user, onLogout }) => {
     const [notesInput, setNotesInput] = useState('');
     const [importSelected, setImportSelected] = useState({});
     const [todoTaskOptions, setTodoTaskOptions] = useState({});
+    const [todoDeleteConfirm, setTodoDeleteConfirm] = useState({ open: false, id: null });
+    const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
 
     const allSelected = useMemo(
         () => items.length > 0 && selectedIds.length === items.length,
@@ -98,12 +101,15 @@ const Todos = ({ user, onLogout }) => {
         }
     };
 
-    const deleteSelected = async () => {
+    const deleteSelected = () => {
         if (selectedIds.length === 0) {
             toast.error('Select at least one item');
             return;
         }
-        if (!window.confirm(`Delete ${selectedIds.length} selected to-do item(s)?`)) return;
+        setBulkDeleteConfirmOpen(true);
+    };
+
+    const executeDeleteSelected = async () => {
         try {
             await Promise.all(selectedIds.map((id) => api.deleteTodo(id)));
             setItems((prev) => prev.filter((row) => !selectedIds.includes(row.id)));
@@ -135,8 +141,11 @@ const Todos = ({ user, onLogout }) => {
         }
     };
 
-    const removeItem = async (id) => {
-        if (!window.confirm('Delete this to-do item?')) return;
+    const removeItem = (id) => {
+        setTodoDeleteConfirm({ open: true, id });
+    };
+
+    const executeRemoveItem = async (id) => {
         try {
             await api.deleteTodo(id);
             setItems(prev => prev.filter(item => item.id !== id));
@@ -428,6 +437,33 @@ const Todos = ({ user, onLogout }) => {
                     )}
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={todoDeleteConfirm.open}
+                title="Delete To-Do Item"
+                message="Are you sure you want to delete this to-do item?"
+                confirmLabel="Delete"
+                destructive
+                onCancel={() => setTodoDeleteConfirm({ open: false, id: null })}
+                onConfirm={() => {
+                    const id = todoDeleteConfirm.id;
+                    setTodoDeleteConfirm({ open: false, id: null });
+                    if (id != null) executeRemoveItem(id);
+                }}
+            />
+
+            <ConfirmDialog
+                open={bulkDeleteConfirmOpen}
+                title="Delete Selected To-Do Items"
+                message={`Delete ${selectedIds.length} selected to-do item(s)?`}
+                confirmLabel="Delete All"
+                destructive
+                onCancel={() => setBulkDeleteConfirmOpen(false)}
+                onConfirm={() => {
+                    setBulkDeleteConfirmOpen(false);
+                    executeDeleteSelected();
+                }}
+            />
         </Layout>
     );
 };

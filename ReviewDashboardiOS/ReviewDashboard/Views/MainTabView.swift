@@ -249,18 +249,18 @@ struct DashboardWebView: UIViewRepresentable {
 
         // Handle JS alert/confirm in WKWebView so dashboard actions using window.confirm work on iOS.
         func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-            presentAlert(title: nil, message: message, isConfirmation: false) { _ in
+            presentAlert(from: webView, title: nil, message: message, isConfirmation: false) { _ in
                 completionHandler()
             }
         }
 
         func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-            presentAlert(title: nil, message: message, isConfirmation: true, completion: completionHandler)
+            presentAlert(from: webView, title: nil, message: message, isConfirmation: true, completion: completionHandler)
         }
 
-        private func presentAlert(title: String?, message: String, isConfirmation: Bool, completion: @escaping (Bool) -> Void) {
+        private func presentAlert(from webView: WKWebView, title: String?, message: String, isConfirmation: Bool, completion: @escaping (Bool) -> Void) {
             DispatchQueue.main.async {
-                guard let root = self.topViewController() else {
+                guard let root = self.topViewController(from: webView) else {
                     completion(false)
                     return
                 }
@@ -276,7 +276,13 @@ struct DashboardWebView: UIViewRepresentable {
             }
         }
 
-        private func topViewController() -> UIViewController? {
+        private func topViewController(from webView: WKWebView) -> UIViewController? {
+            if let vc = webView.closestViewController() {
+                return topMost(from: vc)
+            }
+            if let root = webView.window?.rootViewController {
+                return topMost(from: root)
+            }
             guard let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
                 .first(where: { $0.activationState == .foregroundActive }) else {
@@ -298,6 +304,19 @@ struct DashboardWebView: UIViewRepresentable {
             }
             return controller
         }
+    }
+}
+
+private extension UIView {
+    func closestViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let vc = current as? UIViewController {
+                return vc
+            }
+            responder = current.next
+        }
+        return nil
     }
 }
 

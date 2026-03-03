@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { differenceInDays, format } from 'date-fns';
@@ -387,6 +388,8 @@ const Tasks = ({ user, onLogout }) => {
     // Bulk edit
     const [bulkMode, setBulkMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
+    const [taskDeleteConfirm, setTaskDeleteConfirm] = useState({ open: false, id: null });
+    const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
 
     const applyTabFilter = useCallback((rows = []) => {
         if (tab === 'important') {
@@ -579,8 +582,7 @@ const Tasks = ({ user, onLogout }) => {
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Delete this task?')) return;
+    const executeDelete = async (id) => {
         try {
             await api.deleteTask(id);
             toast.success('Task deleted');
@@ -589,6 +591,7 @@ const Tasks = ({ user, onLogout }) => {
             toast.error('Failed to delete task');
         }
     };
+    const handleDelete = (id) => setTaskDeleteConfirm({ open: true, id });
 
     const handleScheduleTaskMeeting = async (task, schedulePayload) => {
         try {
@@ -650,7 +653,11 @@ const Tasks = ({ user, onLogout }) => {
     };
 
     const handleBulkDelete = async () => {
-        if (!window.confirm(`Delete ${selectedIds.length} tasks?`)) return;
+        if (selectedIds.length === 0) return;
+        setBulkDeleteConfirmOpen(true);
+    };
+
+    const executeBulkDelete = async () => {
         try {
             await Promise.all(selectedIds.map(id => api.deleteTask(id)));
             toast.success(`${selectedIds.length} tasks deleted`);
@@ -1025,6 +1032,33 @@ const Tasks = ({ user, onLogout }) => {
                 departments={departments}
                 employees={employees}
                 initial={editTask} />
+
+            <ConfirmDialog
+                open={taskDeleteConfirm.open}
+                title="Delete Task"
+                message="Are you sure you want to delete this task?"
+                confirmLabel="Delete"
+                destructive
+                onCancel={() => setTaskDeleteConfirm({ open: false, id: null })}
+                onConfirm={() => {
+                    const id = taskDeleteConfirm.id;
+                    setTaskDeleteConfirm({ open: false, id: null });
+                    if (id != null) executeDelete(id);
+                }}
+            />
+
+            <ConfirmDialog
+                open={bulkDeleteConfirmOpen}
+                title="Delete Selected Tasks"
+                message={`Delete ${selectedIds.length} selected task(s)?`}
+                confirmLabel="Delete All"
+                destructive
+                onCancel={() => setBulkDeleteConfirmOpen(false)}
+                onConfirm={() => {
+                    setBulkDeleteConfirmOpen(false);
+                    executeBulkDelete();
+                }}
+            />
         </Layout>
     );
 };
