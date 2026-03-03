@@ -646,6 +646,17 @@ class AgendaPointBulkDelete(BaseModel):
     ids: List[int]
 
 
+class AgendaPointBulkCreateItem(BaseModel):
+    title: str
+    details: Optional[str] = None
+    status: Optional[str] = "Open"
+
+
+class AgendaPointBulkCreate(BaseModel):
+    items: List[AgendaPointBulkCreateItem]
+    start_order_index: Optional[int] = None
+
+
 @router.get("/{dept_id}/agenda")
 def get_agenda(dept_id: int, db: Session = Depends(get_db)):
     return db.query(models.AgendaPoint).filter(
@@ -660,6 +671,43 @@ def create_agenda_point(dept_id: int, data: AgendaPointCreate, db: Session = Dep
     db.commit()
     db.refresh(ap)
     return ap
+
+
+@router.post("/{dept_id}/agenda/bulk-create")
+def bulk_create_agenda_points(dept_id: int, data: AgendaPointBulkCreate, db: Session = Depends(get_db)):
+    items = data.items or []
+    if not items:
+        raise HTTPException(status_code=400, detail="No agenda items provided")
+
+    max_order = db.query(func.max(models.AgendaPoint.order_index)).filter(
+        models.AgendaPoint.department_id == dept_id
+    ).scalar()
+    if data.start_order_index is not None:
+        start_order = max(data.start_order_index, 0)
+    else:
+        start_order = (max_order + 1) if max_order is not None else 0
+
+    created = []
+    for idx, item in enumerate(items):
+        title = (item.title or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail=f"Title cannot be empty for item at position {idx + 1}")
+        details = (item.details or "").strip() or None
+        status = (item.status or "Open").strip() or "Open"
+        ap = models.AgendaPoint(
+            department_id=dept_id,
+            title=title,
+            details=details,
+            status=status,
+            order_index=start_order + idx,
+        )
+        db.add(ap)
+        created.append(ap)
+
+    db.commit()
+    for ap in created:
+        db.refresh(ap)
+    return created
 
 
 @router.put("/{dept_id}/agenda/{ap_id}")

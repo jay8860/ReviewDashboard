@@ -868,14 +868,56 @@ const InlineDataGrid = ({ deptId }) => {
 };
 
 // ── Inline Agenda Table ────────────────────────────────────────────────────────
+const parseBulkAgendaInput = (rawText) => {
+    if (!rawText) return [];
+    const lines = String(rawText)
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    const parsed = [];
+    for (const line of lines) {
+        let cleaned = line
+            .replace(/^[-*•▪◦●]+\s*/, '')
+            .replace(/^\d+\s*[\).\:-]\s*/, '')
+            .replace(/^[a-zA-Z]\s*[\).\:-]\s*/, '')
+            .trim();
+
+        if (!cleaned) continue;
+
+        let title = cleaned;
+        let details = '';
+
+        if (cleaned.includes('|')) {
+            const [left, ...rest] = cleaned.split('|');
+            title = (left || '').trim();
+            details = rest.join('|').trim();
+        } else {
+            const dashParts = cleaned.split(/\s+[—-]\s+/);
+            if (dashParts.length > 1) {
+                title = (dashParts.shift() || '').trim();
+                details = dashParts.join(' - ').trim();
+            }
+        }
+
+        if (!title) continue;
+        parsed.push({ title, details });
+    }
+
+    return parsed;
+};
+
 const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const toast = useToast();
     const [editMode, setEditMode] = useState(false);
     const [localRows, setLocalRows] = useState([]);
     const [addingNew, setAddingNew] = useState(false);
+    const [bulkMode, setBulkMode] = useState(false);
+    const [bulkText, setBulkText] = useState('');
     const [newRow, setNewRow] = useState({ title: '', details: '' });
     const [saving, setSaving] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
+    const parsedBulkRows = parseBulkAgendaInput(bulkText);
 
     useEffect(() => {
         if (!editMode) return;
@@ -916,6 +958,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const enterEdit = () => {
         setEditMode(true);
         setAddingNew(false);
+        setBulkMode(false);
     };
 
     const cancelEdit = () => {
@@ -967,6 +1010,32 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         finally { setSaving(false); }
     };
 
+    const saveBulkRows = async () => {
+        if (!parsedBulkRows.length) {
+            toast.error('No valid agenda rows found');
+            return;
+        }
+        setSaving(true);
+        try {
+            const payload = {
+                items: parsedBulkRows.map(item => ({
+                    title: item.title,
+                    details: item.details || '',
+                    status: 'Open',
+                })),
+            };
+            const created = await api.bulkCreateAgendaPoints(deptId, payload);
+            setAgenda(prev => [...prev, ...created]);
+            setBulkText('');
+            setBulkMode(false);
+            toast.success(`Added ${created.length} agenda item${created.length > 1 ? 's' : ''}`);
+        } catch {
+            toast.error('Failed to add bulk agenda');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const openCount = agenda.filter(a => a.status === 'Open').length;
 
     const deleteSelected = async () => {
@@ -1000,9 +1069,19 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                         onClick={() => setAddingNew(true)}
                         className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 transition-colors"
                         title="Add agenda item"
+                        disabled={editMode}
                     >
                         <Plus size={16} />
                     </button>
+                    {!editMode && (
+                        <button
+                            onClick={() => { setBulkMode(prev => !prev); setAddingNew(false); }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+                            title="Paste multiple agenda rows"
+                        >
+                            Bulk Add
+                        </button>
+                    )}
                     {editMode ? (
                         <>
                             <button
@@ -1037,6 +1116,42 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     )}
                 </div>
             </div>
+
+            {bulkMode && !editMode && (
+                <div className="px-5 py-3 border-b border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/10 space-y-2.5">
+                    <p className="text-xs text-slate-500">
+                        Paste one agenda per line. Supports bullets/numbering. Optional format: <span className="font-bold">Title | Details</span>
+                    </p>
+                    <textarea
+                        value={bulkText}
+                        onChange={(e) => setBulkText(e.target.value)}
+                        rows={5}
+                        placeholder={`• PMGSY Road quality review | Site-wise update\n• Contractor pendency\n3. Budget utilization - block-wise`}
+                        className="w-full text-sm px-3 py-2 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                            {parsedBulkRows.length} agenda item{parsedBulkRows.length === 1 ? '' : 's'} ready
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setBulkText('')}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-white/15 text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                                disabled={saving}
+                            >
+                                Clear
+                            </button>
+                            <button
+                                onClick={saveBulkRows}
+                                disabled={saving || !parsedBulkRows.length}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 transition-colors"
+                            >
+                                <Save size={13} /> {saving ? 'Adding…' : 'Add All'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {editMode && selectedCount > 0 && (
                 <div className="px-5 py-2.5 border-b border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/70 dark:bg-indigo-500/10">
