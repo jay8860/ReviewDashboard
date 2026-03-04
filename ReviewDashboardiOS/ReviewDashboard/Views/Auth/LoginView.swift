@@ -11,6 +11,8 @@ struct LoginView: View {
     @State private var forgotEmail = ""
     @State private var forgotMessage = ""
     @State private var isForgotLoading = false
+    @State private var showServerSettings = false
+    @State private var serverURL = APIService.shared.baseURL
 
     var body: some View {
         GeometryReader { geo in
@@ -197,6 +199,39 @@ struct LoginView: View {
             }
             .disabled(isLoading || username.isEmpty || password.isEmpty)
             .opacity((username.isEmpty || password.isEmpty) ? 0.6 : 1.0)
+
+            VStack(spacing: 6) {
+                Button(showServerSettings ? "Hide Server Settings" : "Server Settings") {
+                    withAnimation { showServerSettings.toggle() }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+                if showServerSettings {
+                    TextField("https://your-server-url", text: $serverURL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .font(.caption)
+                        .padding(10)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    HStack(spacing: 8) {
+                        Button("Use Default") {
+                            serverURL = APIService.defaultBaseURL
+                            APIService.shared.setBaseURL(APIService.defaultBaseURL)
+                        }
+                        .font(.caption)
+
+                        Button("Save Server") {
+                            APIService.shared.setBaseURL(serverURL)
+                            serverURL = APIService.shared.baseURL
+                        }
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    }
+                }
+            }
         }
     }
 

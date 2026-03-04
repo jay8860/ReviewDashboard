@@ -22,17 +22,38 @@ enum APIError: LocalizedError {
 
 class APIService {
     static let shared = APIService()
+    static let defaultBaseURL = "https://reviewdashboard-production.up.railway.app"
+    static let fallbackBaseURLs = [
+        "https://reviewdashboard-production.up.railway.app",
+        "https://reviewdashboard.up.railway.app",
+    ]
 
-    let baseURL = "https://reviewdashboard-production.up.railway.app"
+    private(set) var baseURL: String
 
-    private init() {}
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: "api_base_url")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if saved.isEmpty {
+            baseURL = Self.defaultBaseURL
+        } else {
+            baseURL = saved.hasSuffix("/") ? String(saved.dropLast()) : saved
+        }
+    }
 
     private var token: String? {
         UserDefaults.standard.string(forKey: "auth_token")
     }
 
-    private func makeRequest(method: String, path: String, body: Data? = nil) throws -> URLRequest {
-        guard let url = URL(string: baseURL + path) else {
+    func setBaseURL(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = (trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
+        let next = normalized.isEmpty ? Self.defaultBaseURL : normalized
+        baseURL = next
+        UserDefaults.standard.set(next, forKey: "api_base_url")
+    }
+
+    private func makeRequest(method: String, path: String, body: Data? = nil, overrideBaseURL: String? = nil) throws -> URLRequest {
+        let root = (overrideBaseURL ?? baseURL).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: root + path) else {
             throw APIError.invalidURL
         }
         var request = URLRequest(url: url)
@@ -98,23 +119,51 @@ class APIService {
     func login(username: String, password: String) async throws -> LoginResponse {
         let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedPassword = password.trimmingCharacters(in: .newlines)
+        let preferred = [baseURL] + Self.fallbackBaseURLs
+        var tried: Set<String> = []
+        var lastError: Error?
 
-        let primaryBody = try encode(LoginRequest(username: normalizedUsername, password: normalizedPassword))
-        let primaryReq = try makeRequest(method: "POST", path: "/api/auth/login", body: primaryBody)
-        do {
-            return try await perform(primaryReq)
-        } catch let error as APIError {
-            if case .serverError(_, let message) = error {
-            let lower = normalizedUsername.lowercased()
-            let shouldRetryLowercase = lower != normalizedUsername && message.localizedCaseInsensitiveContains("Invalid username or password")
-            if shouldRetryLowercase {
-                let fallbackBody = try encode(LoginRequest(username: lower, password: normalizedPassword))
-                let fallbackReq = try makeRequest(method: "POST", path: "/api/auth/login", body: fallbackBody)
-                return try await perform(fallbackReq)
+        for host in preferred where !host.isEmpty && !tried.contains(host) {
+            tried.insert(host)
+            do {
+                let primaryBody = try encode(LoginRequest(username: normalizedUsername, password: normalizedPassword))
+                let primaryReq = try makeRequest(method: "POST", path: "/api/auth/login", body: primaryBody, overrideBaseURL: host)
+                let response: LoginResponse = try await perform(primaryReq)
+                if host != baseURL {
+                    setBaseURL(host)
+                }
+                return response
+            } catch let error as APIError {
+                if case .serverError(_, let message) = error {
+                    let lower = normalizedUsername.lowercased()
+                    let shouldRetryLowercase = lower != normalizedUsername && message.localizedCaseInsensitiveContains("Invalid username or password")
+                    if shouldRetryLowercase {
+                        let fallbackBody = try encode(LoginRequest(username: lower, password: normalizedPassword))
+                        let fallbackReq = try makeRequest(method: "POST", path: "/api/auth/login", body: fallbackBody, overrideBaseURL: host)
+                        let response: LoginResponse = try await perform(fallbackReq)
+                        if host != baseURL {
+                            setBaseURL(host)
+                        }
+                        return response
+                    }
+                    throw error
+                }
+                if case .unknown(let underlying) = error,
+                   let urlError = underlying as? URLError,
+                   urlError.code == .cannotFindHost {
+                    lastError = error
+                    continue
+                }
+                throw error
+            } catch {
+                lastError = error
             }
-            }
-            throw error
         }
+
+        if let lastError {
+            throw lastError
+        }
+        throw APIError.serverError(0, "Unable to connect to server")
     }
 
     func forgotPassword(email: String) async throws {
