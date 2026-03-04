@@ -449,6 +449,7 @@ def seed_departments_and_agenda(db: Session):
     for seed_dept in SEED_DEPARTMENTS:
         aliases = seed_dept.get("match_names") or [seed_dept["name"]]
         dept = _find_department(existing_departments, aliases)
+        is_new_department = False
 
         if not dept:
             dept = models.Department(
@@ -467,6 +468,7 @@ def seed_departments_and_agenda(db: Session):
             db.flush()
             existing_departments.append(dept)
             created_departments += 1
+            is_new_department = True
         else:
             changed = False
             if not (dept.short_name or "").strip() and seed_dept.get("short_name"):
@@ -498,6 +500,11 @@ def seed_departments_and_agenda(db: Session):
                 changed = True
             if changed:
                 touched_departments += 1
+
+        # Do not mutate agenda for existing departments on startup.
+        # Existing data is user-managed and must remain stable across deploys.
+        if not is_new_department:
+            continue
 
         existing_agenda = db.query(models.AgendaPoint).filter(
             models.AgendaPoint.department_id == dept.id
