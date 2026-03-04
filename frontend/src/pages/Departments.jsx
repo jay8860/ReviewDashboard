@@ -281,7 +281,7 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null, categoryOptions = 
     );
 };
 
-const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfirm }) => {
+const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, onClose, onConfirm }) => {
     const today = new Date().toISOString().split('T')[0];
     const [form, setForm] = useState({
         scheduled_date: today,
@@ -290,6 +290,7 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
         attendees: '',
         officer_phone: '',
     });
+    const [officerSearch, setOfficerSearch] = useState('');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -300,10 +301,19 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
             attendees: '',
             officer_phone: '',
         });
+        setOfficerSearch('');
     }, [isOpen, department?.id, today]);
 
     if (!isOpen || !department) return null;
     const openAgenda = agenda.filter(item => item.status === 'Open');
+    const matchedEmployees = useMemo(() => {
+        const q = officerSearch.trim().toLowerCase();
+        if (q.length < 1) return [];
+        return (employees || [])
+            .filter(emp => emp?.is_active !== false)
+            .filter(emp => (`${emp?.name || ''} ${emp?.display_username || ''} ${emp?.mobile_number || ''}`).toLowerCase().includes(q))
+            .slice(0, 8);
+    }, [officerSearch, employees]);
     const waMsg = `Meeting Agenda - ${department.name}\nDate: ${formatDateSafe(form.scheduled_date)}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
     const waLink = form.officer_phone
         ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
@@ -371,12 +381,36 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer WhatsApp</label>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer WhatsApp (Search Employee)</label>
+                            <input
+                                value={officerSearch}
+                                onChange={e => setOfficerSearch(e.target.value)}
+                                placeholder="Search DEO / username / mobile..."
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
+                            />
+                            {matchedEmployees.length > 0 && (
+                                <div className="mt-2 max-h-32 overflow-y-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+                                    {matchedEmployees.map(emp => (
+                                        <button
+                                            key={emp.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setForm(prev => ({ ...prev, officer_phone: emp.mobile_number || '' }));
+                                                setOfficerSearch(emp.display_username || emp.name || '');
+                                            }}
+                                            className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/10 border-b border-slate-100 dark:border-white/10 last:border-b-0"
+                                        >
+                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{emp.display_username || emp.name}</p>
+                                            <p className="text-[11px] text-slate-500">{emp.mobile_number || 'No mobile'}{emp.name && emp.display_username ? ` · ${emp.name}` : ''}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <input
                                 value={form.officer_phone}
                                 onChange={e => setForm(prev => ({ ...prev, officer_phone: e.target.value }))}
                                 placeholder="+91XXXXXXXXXX"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
+                                className="mt-2 w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                             />
                         </div>
                         {openAgenda.length > 0 && (
@@ -618,6 +652,7 @@ const Departments = ({ user, onLogout }) => {
     const navigate = useNavigate();
     const toast = useToast();
     const [departments, setDepartments] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [editDept, setEditDept] = useState(null);
@@ -634,8 +669,12 @@ const Departments = ({ user, onLogout }) => {
     const load = async () => {
         setLoading(true);
         try {
-            const rows = await api.getDepartments();
+            const [rows, employeeRows] = await Promise.all([
+                api.getDepartments(),
+                api.getEmployees(),
+            ]);
             setDepartments(rows.map(normalizeDepartment));
+            setEmployees(employeeRows || []);
         } finally {
             setLoading(false);
         }
@@ -1006,6 +1045,7 @@ const Departments = ({ user, onLogout }) => {
             <QuickScheduleModal
                 department={quickDept}
                 agenda={quickAgenda}
+                employees={employees}
                 isOpen={quickMeetingOpen}
                 onClose={() => { setQuickMeetingOpen(false); setQuickDept(null); setQuickAgenda([]); }}
                 onConfirm={handleQuickSchedule}

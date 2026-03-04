@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -76,14 +76,24 @@ const isStenoEmployee = (emp) => {
 };
 
 // ── Schedule Meeting Modal ─────────────────────────────────────────────────────
-const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName = '' }) => {
+const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName = '', employees = [] }) => {
     const today = new Date().toISOString().split('T')[0];
     const [form, setForm] = useState({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '' });
+    const [officerSearch, setOfficerSearch] = useState('');
     useEffect(() => { setForm({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '' }); }, [isOpen]);
+    useEffect(() => { setOfficerSearch(''); }, [isOpen]);
 
     if (!isOpen) return null;
 
     const openAgenda = agenda.filter(a => a.status === 'Open');
+    const matchedEmployees = useMemo(() => {
+        const q = officerSearch.trim().toLowerCase();
+        if (q.length < 1) return [];
+        return (employees || [])
+            .filter(emp => emp?.is_active !== false)
+            .filter(emp => (`${emp?.name || ''} ${emp?.display_username || ''} ${emp?.mobile_number || ''}`).toLowerCase().includes(q))
+            .slice(0, 8);
+    }, [officerSearch, employees]);
 
     const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
 
@@ -135,9 +145,33 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                         </div>
 
                         <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer WhatsApp</label>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer WhatsApp (Search Employee)</label>
+                            <input
+                                value={officerSearch}
+                                onChange={e => setOfficerSearch(e.target.value)}
+                                placeholder="Search DEO / username / mobile..."
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
+                            />
+                            {matchedEmployees.length > 0 && (
+                                <div className="mt-2 max-h-32 overflow-y-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+                                    {matchedEmployees.map(emp => (
+                                        <button
+                                            key={emp.id}
+                                            type="button"
+                                            onClick={() => {
+                                                setForm(f => ({ ...f, officer_phone: emp.mobile_number || '' }));
+                                                setOfficerSearch(emp.display_username || emp.name || '');
+                                            }}
+                                            className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/10 border-b border-slate-100 dark:border-white/10 last:border-b-0"
+                                        >
+                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{emp.display_username || emp.name}</p>
+                                            <p className="text-[11px] text-slate-500">{emp.mobile_number || 'No mobile'}{emp.name && emp.display_username ? ` · ${emp.name}` : ''}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <input value={form.officer_phone} onChange={e => setForm(f => ({ ...f, officer_phone: e.target.value }))} placeholder="+91XXXXXXXXXX"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm" />
+                                className="mt-2 w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm" />
                         </div>
 
                         {openAgenda.length > 0 && (
@@ -1634,6 +1668,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 onSave={handleScheduleMeeting}
                 agenda={agenda}
                 deptName={dept.name}
+                employees={employees}
             />
             <WhatsAppMeetingModal
                 isOpen={Boolean(waMeeting)}
