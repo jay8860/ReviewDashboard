@@ -263,6 +263,16 @@ struct LoginView: View {
     private func clearErrorMessage() {
         errorMessage = ""
     }
+
+    private func parsedBackendMessage(_ raw: String) -> String {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let detail = obj["detail"] as? String,
+              !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return raw
+        }
+        return detail
+    }
     
     private func handleLogin() async {
         isLoading = true
@@ -275,7 +285,19 @@ struct LoginView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Invalid credentials. Please try again."
+                if let apiError = error as? APIError {
+                    switch apiError {
+                    case .serverError(_, let message):
+                        let detail = parsedBackendMessage(message)
+                        errorMessage = detail.isEmpty ? "Login failed. Please try again." : detail
+                    case .unauthorized:
+                        errorMessage = "Session expired. Please log in again."
+                    default:
+                        errorMessage = apiError.errorDescription ?? "Login failed. Please try again."
+                    }
+                } else {
+                    errorMessage = "Login failed. Please try again."
+                }
                 isLoading = false
             }
             return

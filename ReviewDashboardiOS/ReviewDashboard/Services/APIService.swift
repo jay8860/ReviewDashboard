@@ -84,9 +84,25 @@ class APIService {
 
     // MARK: - Auth
     func login(username: String, password: String) async throws -> LoginResponse {
-        let body = try encode(LoginRequest(username: username, password: password))
-        let req = try makeRequest(method: "POST", path: "/api/auth/login", body: body)
-        return try await perform(req)
+        let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPassword = password.trimmingCharacters(in: .newlines)
+
+        let primaryBody = try encode(LoginRequest(username: normalizedUsername, password: normalizedPassword))
+        let primaryReq = try makeRequest(method: "POST", path: "/api/auth/login", body: primaryBody)
+        do {
+            return try await perform(primaryReq)
+        } catch let error as APIError {
+            if case .serverError(_, let message) = error {
+            let lower = normalizedUsername.lowercased()
+            let shouldRetryLowercase = lower != normalizedUsername && message.localizedCaseInsensitiveContains("Invalid username or password")
+            if shouldRetryLowercase {
+                let fallbackBody = try encode(LoginRequest(username: lower, password: normalizedPassword))
+                let fallbackReq = try makeRequest(method: "POST", path: "/api/auth/login", body: fallbackBody)
+                return try await perform(fallbackReq)
+            }
+            }
+            throw error
+        }
     }
 
     func forgotPassword(email: String) async throws {
