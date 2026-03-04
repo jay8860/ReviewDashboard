@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Building2, Plus, Trash2, Edit2, ArrowRight, X,
     LayoutGrid,
-    List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus
+    List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus, Calendar
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
@@ -46,6 +46,19 @@ const reviewTickerText = (dept) => {
     if (days === 0) return 'Last review: Today';
     if (days === 1) return 'Last review: 1 day ago';
     return `Last review: ${days} days ago`;
+};
+
+const WAIcon = () => (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+);
+
+const formatDateSafe = (value) => {
+    if (!value) return 'TBD';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'TBD';
+    return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
 const buildCategoryBuckets = (departments) => {
@@ -293,27 +306,34 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
 
     if (!isOpen || !department) return null;
     const openAgenda = agenda.filter(item => item.status === 'Open');
+    const waMsg = `Meeting Agenda - ${department.name}\nDate: ${formatDateSafe(form.scheduled_date)}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
+    const waLink = form.officer_phone
+        ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
+        : `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="glass-card rounded-3xl p-7 w-full max-w-md shadow-premium-lg"
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="glass-card rounded-3xl w-full max-w-lg shadow-premium-lg max-h-[92vh] overflow-y-auto custom-scrollbar"
                 >
-                    <div className="flex items-center justify-between mb-5">
-                        <div>
-                            <h3 className="text-xl font-black text-slate-800 dark:text-white">Schedule Meeting</h3>
-                            <p className="text-xs text-slate-500">{department.name}</p>
+                    <div className="px-7 py-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-500/5 dark:to-transparent">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                <Calendar size={16} className="text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black dark:text-white">Schedule Meeting</h2>
+                                <p className="text-xs text-slate-400">{department.name} — Department-wide meeting</p>
+                            </div>
                         </div>
-                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10">
-                            <X size={18} className="text-slate-400" />
-                        </button>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10"><X size={18} className="text-slate-400" /></button>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="p-7 space-y-5">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date *</label>
@@ -321,7 +341,7 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                                     type="date"
                                     value={form.scheduled_date}
                                     onChange={e => setForm(prev => ({ ...prev, scheduled_date: e.target.value }))}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                                 />
                             </div>
                             <div>
@@ -330,7 +350,7 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                                     type="time"
                                     value={form.scheduled_time}
                                     onChange={e => setForm(prev => ({ ...prev, scheduled_time: e.target.value }))}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                                 />
                             </div>
                             <div>
@@ -338,8 +358,8 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                                 <input
                                     value={form.venue}
                                     onChange={e => setForm(prev => ({ ...prev, venue: e.target.value }))}
-                                    placeholder="Conference Hall, Collectorate..."
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    placeholder="Meeting room / location"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                                 />
                             </div>
                         </div>
@@ -348,17 +368,17 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                             <input
                                 value={form.attendees}
                                 onChange={e => setForm(prev => ({ ...prev, attendees: e.target.value }))}
-                                placeholder="CEO, Project Director, JE, BDO..."
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder="Comma separated names"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer Phone (optional)</label>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer WhatsApp</label>
                             <input
                                 value={form.officer_phone}
                                 onChange={e => setForm(prev => ({ ...prev, officer_phone: e.target.value }))}
-                                placeholder="WhatsApp no. with country code"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder="+91XXXXXXXXXX"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                             />
                         </div>
                         <div>
@@ -367,29 +387,42 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                                 rows={3}
                                 value={form.notes}
                                 onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
-                                placeholder="Agenda context / notes"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                                placeholder="Meeting notes or agenda details..."
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm resize-none"
                             />
                         </div>
-                        <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-xs text-indigo-700">
-                            <p className="font-bold mb-1">Open agenda points attached: {openAgenda.length}</p>
-                            <p className="text-[11px]">Action Table is auto-created and this meeting auto-syncs to Planner.</p>
-                        </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 mt-5">
-                        <button
-                            onClick={onClose}
-                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={() => form.scheduled_date && onConfirm(form)}
-                            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
-                        >
-                            Schedule
-                        </button>
+                        {openAgenda.length > 0 && (
+                            <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 p-4">
+                                <p className="text-xs font-black uppercase text-slate-400 mb-2">Agenda snapshot ({openAgenda.length} open items)</p>
+                                <div className="space-y-1">
+                                    {openAgenda.slice(0, 4).map((a, i) => (
+                                        <p key={a.id} className="text-xs text-slate-600 dark:text-slate-300">
+                                            <span className="font-bold text-slate-400">{i + 1}.</span> {a.title}
+                                        </p>
+                                    ))}
+                                    {openAgenda.length > 4 && <p className="text-xs text-slate-400">+{openAgenda.length - 4} more…</p>}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="rounded-2xl bg-teal-50 dark:bg-teal-500/10 border border-teal-100 dark:border-teal-500/20 p-3">
+                            <p className="text-xs text-teal-700 dark:text-teal-300 font-semibold">
+                                A meeting Action Table will be created automatically. Open the meeting row later to enter live action points.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3 pt-2">
+                            <button onClick={onClose} className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
+                            <a href={waLink} target="_blank" rel="noreferrer"
+                                className="px-4 py-3 rounded-2xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-colors flex items-center gap-2">
+                                <WAIcon /> WA
+                            </a>
+                            <button onClick={() => form.scheduled_date && onConfirm(form)}
+                                className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">
+                                Schedule
+                            </button>
+                        </div>
                     </div>
                 </motion.div>
             </div>
