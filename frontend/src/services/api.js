@@ -12,10 +12,40 @@ const TODO_URL = `${BASE_URL}/api/todos`;
 const ANALYTICS_URL = `${BASE_URL}/api/analytics`;
 const BACKUP_URL = `${BASE_URL}/api/backup`;
 
+const readToken = () => {
+    const raw = localStorage.getItem('token');
+    if (!raw || raw === 'undefined' || raw === 'null') return '';
+    const token = String(raw).trim().replace(/^['"]|['"]$/g, '');
+    return token;
+};
+
+const clearSessionAndRedirect = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+    }
+};
+
+const extractErrorDetail = async (error) => {
+    const data = error?.response?.data;
+    if (typeof data?.detail === 'string') return data.detail;
+    if (data instanceof Blob) {
+        const text = await data.text();
+        try {
+            const parsed = JSON.parse(text);
+            return typeof parsed?.detail === 'string' ? parsed.detail : '';
+        } catch {
+            return '';
+        }
+    }
+    return '';
+};
+
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token && token !== 'undefined' && token !== 'null') {
+    const token = readToken();
+    if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -24,20 +54,18 @@ axios.interceptors.request.use((config) => {
 // If backend rejects JWT, force fresh login
 axios.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
         const status = error?.response?.status;
-        const detail = error?.response?.data?.detail;
+        const detail = await extractErrorDetail(error);
         const isAuthError = status === 401 && (
             detail === 'Invalid token' ||
             detail === 'Unauthorized' ||
-            detail === 'Invalid token payload'
+            detail === 'Invalid token payload' ||
+            detail === 'User not found' ||
+            detail === ''
         );
         if (isAuthError) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-                window.location.assign('/login');
-            }
+            clearSessionAndRedirect();
         }
         return Promise.reject(error);
     }
