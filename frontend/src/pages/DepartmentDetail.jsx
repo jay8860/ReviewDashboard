@@ -886,22 +886,16 @@ const parseBulkAgendaInput = (rawText) => {
         if (!cleaned) continue;
 
         let title = cleaned;
-        let details = '';
-
         if (cleaned.includes('|')) {
-            const [left, ...rest] = cleaned.split('|');
+            const [left] = cleaned.split('|');
             title = (left || '').trim();
-            details = rest.join('|').trim();
         } else {
             const dashParts = cleaned.split(/\s+[—-]\s+/);
-            if (dashParts.length > 1) {
-                title = (dashParts.shift() || '').trim();
-                details = dashParts.join(' - ').trim();
-            }
+            if (dashParts.length > 1) title = (dashParts.shift() || '').trim();
         }
 
         if (!title) continue;
-        parsed.push({ title, details });
+        parsed.push({ title });
     }
 
     return parsed;
@@ -924,22 +918,24 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const [addingNew, setAddingNew] = useState(false);
     const [bulkMode, setBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
-    const [newRow, setNewRow] = useState({ title: '', details: '' });
+    const [newRow, setNewRow] = useState({ title: '' });
     const [insertAfterId, setInsertAfterId] = useState(null);
-    const [insertRow, setInsertRow] = useState({ title: '', details: '' });
+    const [insertRow, setInsertRow] = useState({ title: '' });
     const [saving, setSaving] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
     const [pendingDeleteIds, setPendingDeleteIds] = useState([]);
+    const [initialEditRows, setInitialEditRows] = useState([]);
     const parsedBulkRows = parseBulkAgendaInput(bulkText);
 
     useEffect(() => {
         if (!editMode) return;
-        setLocalRows(agenda.map(item => ({
+        const draftRows = agenda.map(item => ({
             id: item.id,
             title: item.title || '',
-            details: item.details || '',
             status: item.status || 'Open',
-        })));
+        }));
+        setLocalRows(draftRows);
+        setInitialEditRows(draftRows);
         setSelectedIds([]);
         setPendingDeleteIds([]);
     }, [editMode]);
@@ -980,7 +976,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setAddingNew(false);
         setBulkMode(false);
         setInsertAfterId(null);
-        setInsertRow({ title: '', details: '' });
+        setInsertRow({ title: '' });
     };
 
     const cancelEdit = () => {
@@ -988,9 +984,18 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setLocalRows([]);
         setSelectedIds([]);
         setPendingDeleteIds([]);
+        setInitialEditRows([]);
         setAddingNew(false);
         setInsertAfterId(null);
-        setInsertRow({ title: '', details: '' });
+        setInsertRow({ title: '' });
+    };
+
+    const undoDraftChanges = () => {
+        if (!editMode || saving) return;
+        setLocalRows(initialEditRows.map(item => ({ ...item })));
+        setSelectedIds([]);
+        setPendingDeleteIds([]);
+        toast.success('Draft changes reverted');
     };
 
     const saveAll = async () => {
@@ -998,7 +1003,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         const payloadItems = localRows.map(item => ({
             id: item.id,
             title: (item.title || '').trim(),
-            details: (item.details || '').trim(),
             status: item.status || 'Open',
         }));
 
@@ -1035,9 +1039,9 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         if (!newRow.title.trim()) return;
         setSaving(true);
         try {
-            await api.createAgendaPoint(deptId, { title: newRow.title.trim(), details: newRow.details.trim(), order_index: agenda.length });
+            await api.createAgendaPoint(deptId, { title: newRow.title.trim(), order_index: agenda.length });
             await reloadAgenda();
-            setNewRow({ title: '', details: '' });
+            setNewRow({ title: '' });
             setAddingNew(false);
         } catch (error) { toast.error(agendaErrorMessage(error, 'Failed to add')); }
         finally { setSaving(false); }
@@ -1046,12 +1050,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const beginInsertBelow = (agendaId) => {
         setAddingNew(false);
         setInsertAfterId(agendaId);
-        setInsertRow({ title: '', details: '' });
+        setInsertRow({ title: '' });
     };
 
     const cancelInsertBelow = () => {
         setInsertAfterId(null);
-        setInsertRow({ title: '', details: '' });
+        setInsertRow({ title: '' });
     };
 
     const saveInsertBelow = async () => {
@@ -1062,7 +1066,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         try {
             await api.createAgendaPoint(deptId, {
                 title: insertRow.title.trim(),
-                details: insertRow.details.trim(),
                 order_index: insertIndex,
             });
             await reloadAgenda();
@@ -1085,7 +1088,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             const payload = {
                 items: parsedBulkRows.map(item => ({
                     title: item.title,
-                    details: item.details || '',
                     status: 'Open',
                 })),
             };
@@ -1126,7 +1128,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                         onClick={() => {
                             setAddingNew(true);
                             setInsertAfterId(null);
-                            setInsertRow({ title: '', details: '' });
+                            setInsertRow({ title: '' });
                         }}
                         className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 transition-colors"
                         title="Add agenda item"
@@ -1140,7 +1142,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                 setBulkMode(prev => !prev);
                                 setAddingNew(false);
                                 setInsertAfterId(null);
-                                setInsertRow({ title: '', details: '' });
+                                setInsertRow({ title: '' });
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
                             title="Paste multiple agenda rows"
@@ -1156,6 +1158,13 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-100 text-rose-700 hover:bg-rose-200 disabled:opacity-60 transition-colors"
                             >
                                 Delete Selected
+                            </button>
+                            <button
+                                onClick={undoDraftChanges}
+                                disabled={saving}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-60 transition-colors"
+                            >
+                                Undo Changes
                             </button>
                             <button
                                 onClick={cancelEdit}
@@ -1186,13 +1195,13 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             {bulkMode && !editMode && (
                 <div className="px-5 py-3 border-b border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-500/10 space-y-2.5">
                     <p className="text-xs text-slate-500">
-                        Paste one agenda per line. Supports bullets/numbering. Optional format: <span className="font-bold">Title | Details</span>
+                        Paste one agenda per line. Supports bullets/numbering.
                     </p>
                     <textarea
                         value={bulkText}
                         onChange={(e) => setBulkText(e.target.value)}
                         rows={5}
-                        placeholder={`• PMGSY Road quality review | Site-wise update\n• Contractor pendency\n3. Budget utilization - block-wise`}
+                        placeholder={`• PMGSY Road quality review\n• Contractor pendency\n3. Budget utilization - block-wise`}
                         className="w-full text-sm px-3 py-2 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                     />
                     <div className="flex items-center justify-between gap-3">
@@ -1246,13 +1255,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                             )}
                             <th className="px-4 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 w-8">#</th>
                             <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400">Agenda Item</th>
-                            <th className="px-3 py-2.5 text-left text-xs font-black uppercase tracking-wider text-slate-400 hidden sm:table-cell">Details</th>
                             <th className="px-2 py-2.5 w-16"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                         {agenda.length === 0 && !addingNew && (
-                            <tr><td colSpan={editMode ? 5 : 4} className="text-center py-10 text-slate-400 italic text-xs">
+                            <tr><td colSpan={editMode ? 4 : 3} className="text-center py-10 text-slate-400 italic text-xs">
                                 No agenda points yet. Click + to add one.
                             </td></tr>
                         )}
@@ -1284,20 +1292,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-3 py-2 hidden sm:table-cell">
-                                    {editMode ? (
-                                        <input
-                                            value={ap.details || ''}
-                                            onChange={e => updateLocalRow(ap.id, 'details', e.target.value)}
-                                            placeholder="Details (optional)"
-                                            className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                        />
-                                    ) : (
-                                        <span className="text-xs text-slate-400">
-                                            {ap.details || <span className="text-slate-200 dark:text-white/20">—</span>}
-                                        </span>
-                                    )}
-                                </td>
                                 <td className="px-2 py-2">
                                     {!editMode && (
                                         <button
@@ -1324,15 +1318,6 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                             className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                         />
                                     </td>
-                                    <td className="px-3 py-2 hidden sm:table-cell">
-                                        <input
-                                            value={insertRow.details}
-                                            onChange={e => setInsertRow(prev => ({ ...prev, details: e.target.value }))}
-                                            placeholder="Details (optional)"
-                                            onKeyDown={e => { if (e.key === 'Enter') saveInsertBelow(); if (e.key === 'Escape') cancelInsertBelow(); }}
-                                            className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                        />
-                                    </td>
                                     <td className="px-2 py-2">
                                         <div className="flex items-center gap-1 justify-end">
                                             <button onClick={saveInsertBelow} disabled={saving} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={13} /></button>
@@ -1350,19 +1335,13 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                 <td className="px-3 py-2">
                                     <input autoFocus value={newRow.title} onChange={e => setNewRow(p => ({ ...p, title: e.target.value }))}
                                         placeholder="Agenda point title *"
-                                        onKeyDown={e => { if (e.key === 'Enter') saveNewRow(); if (e.key === 'Escape') { setAddingNew(false); setNewRow({ title: '', details: '' }); } }}
+                                        onKeyDown={e => { if (e.key === 'Enter') saveNewRow(); if (e.key === 'Escape') { setAddingNew(false); setNewRow({ title: '' }); } }}
                                         className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
-                                </td>
-                                <td className="px-3 py-2 hidden sm:table-cell">
-                                    <input value={newRow.details} onChange={e => setNewRow(p => ({ ...p, details: e.target.value }))}
-                                        placeholder="Details (optional)"
-                                        onKeyDown={e => { if (e.key === 'Enter') saveNewRow(); if (e.key === 'Escape') { setAddingNew(false); setNewRow({ title: '', details: '' }); } }}
-                                        className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
                                 </td>
                                 <td className="px-2 py-2">
                                     <div className="flex items-center gap-1 justify-end">
                                         <button onClick={saveNewRow} disabled={saving} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={13} /></button>
-                                        <button onClick={() => { setAddingNew(false); setNewRow({ title: '', details: '' }); }} className="p-1 text-slate-400 hover:bg-slate-50 rounded"><X size={13} /></button>
+                                        <button onClick={() => { setAddingNew(false); setNewRow({ title: '' }); }} className="p-1 text-slate-400 hover:bg-slate-50 rounded"><X size={13} /></button>
                                     </div>
                                 </td>
                             </tr>
