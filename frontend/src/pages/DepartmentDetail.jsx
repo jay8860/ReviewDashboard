@@ -925,6 +925,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const [bulkMode, setBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
     const [newRow, setNewRow] = useState({ title: '', details: '' });
+    const [insertAfterId, setInsertAfterId] = useState(null);
+    const [insertRow, setInsertRow] = useState({ title: '', details: '' });
     const [saving, setSaving] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
     const parsedBulkRows = parseBulkAgendaInput(bulkText);
@@ -975,6 +977,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setEditMode(true);
         setAddingNew(false);
         setBulkMode(false);
+        setInsertAfterId(null);
+        setInsertRow({ title: '', details: '' });
     };
 
     const cancelEdit = () => {
@@ -982,6 +986,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setLocalRows([]);
         setSelectedIds([]);
         setAddingNew(false);
+        setInsertAfterId(null);
+        setInsertRow({ title: '', details: '' });
     };
 
     const saveAll = async () => {
@@ -1023,6 +1029,38 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             setAddingNew(false);
         } catch (error) { toast.error(agendaErrorMessage(error, 'Failed to add')); }
         finally { setSaving(false); }
+    };
+
+    const beginInsertBelow = (agendaId) => {
+        setAddingNew(false);
+        setInsertAfterId(agendaId);
+        setInsertRow({ title: '', details: '' });
+    };
+
+    const cancelInsertBelow = () => {
+        setInsertAfterId(null);
+        setInsertRow({ title: '', details: '' });
+    };
+
+    const saveInsertBelow = async () => {
+        if (!insertAfterId || !insertRow.title.trim()) return;
+        const anchorIndex = agenda.findIndex(item => item.id === insertAfterId);
+        const insertIndex = anchorIndex >= 0 ? anchorIndex + 1 : agenda.length;
+        setSaving(true);
+        try {
+            await api.createAgendaPoint(deptId, {
+                title: insertRow.title.trim(),
+                details: insertRow.details.trim(),
+                order_index: insertIndex,
+            });
+            await reloadAgenda();
+            cancelInsertBelow();
+            toast.success('Agenda item inserted');
+        } catch (error) {
+            toast.error(agendaErrorMessage(error, 'Failed to insert agenda item'));
+        } finally {
+            setSaving(false);
+        }
     };
 
     const saveBulkRows = async () => {
@@ -1081,7 +1119,11 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => setAddingNew(true)}
+                        onClick={() => {
+                            setAddingNew(true);
+                            setInsertAfterId(null);
+                            setInsertRow({ title: '', details: '' });
+                        }}
                         className="flex items-center gap-1 p-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 transition-colors"
                         title="Add agenda item"
                         disabled={editMode}
@@ -1090,7 +1132,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                     </button>
                     {!editMode && (
                         <button
-                            onClick={() => { setBulkMode(prev => !prev); setAddingNew(false); }}
+                            onClick={() => {
+                                setBulkMode(prev => !prev);
+                                setAddingNew(false);
+                                setInsertAfterId(null);
+                                setInsertRow({ title: '', details: '' });
+                            }}
                             className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
                             title="Paste multiple agenda rows"
                         >
@@ -1206,7 +1253,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                             </td></tr>
                         )}
                         {(editMode ? localRows : agenda).map((ap, i) => (
-                            <tr key={ap.id} className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
+                            <React.Fragment key={ap.id}>
+                            <tr className="group hover:bg-slate-50/60 dark:hover:bg-white/3 transition-colors">
                                 {editMode && (
                                     <td className="px-3 py-2 text-center">
                                         <input
@@ -1246,8 +1294,50 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-2 py-2" />
+                                <td className="px-2 py-2">
+                                    {!editMode && (
+                                        <button
+                                            onClick={() => beginInsertBelow(ap.id)}
+                                            disabled={saving}
+                                            className="p-1 text-indigo-500 hover:bg-indigo-50 rounded opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40"
+                                            title="Insert row below"
+                                        >
+                                            <Plus size={13} />
+                                        </button>
+                                    )}
+                                </td>
                             </tr>
+                            {!editMode && insertAfterId === ap.id && (
+                                <tr className="bg-indigo-50/40 dark:bg-indigo-900/10">
+                                    <td className="px-4 py-2 text-xs text-slate-400 font-bold">{i + 2}</td>
+                                    <td className="px-3 py-2">
+                                        <input
+                                            autoFocus
+                                            value={insertRow.title}
+                                            onChange={e => setInsertRow(prev => ({ ...prev, title: e.target.value }))}
+                                            placeholder="Agenda point title *"
+                                            onKeyDown={e => { if (e.key === 'Enter') saveInsertBelow(); if (e.key === 'Escape') cancelInsertBelow(); }}
+                                            className="w-full text-sm px-2 py-1 border border-indigo-300 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        />
+                                    </td>
+                                    <td className="px-3 py-2 hidden sm:table-cell">
+                                        <input
+                                            value={insertRow.details}
+                                            onChange={e => setInsertRow(prev => ({ ...prev, details: e.target.value }))}
+                                            placeholder="Details (optional)"
+                                            onKeyDown={e => { if (e.key === 'Enter') saveInsertBelow(); if (e.key === 'Escape') cancelInsertBelow(); }}
+                                            className="w-full text-xs px-2 py-1 border border-indigo-200 bg-white dark:bg-slate-700 dark:text-white rounded focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        />
+                                    </td>
+                                    <td className="px-2 py-2">
+                                        <div className="flex items-center gap-1 justify-end">
+                                            <button onClick={saveInsertBelow} disabled={saving} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check size={13} /></button>
+                                            <button onClick={cancelInsertBelow} className="p-1 text-slate-400 hover:bg-slate-50 rounded"><X size={13} /></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                            </React.Fragment>
                         ))}
                         {addingNew && (
                             <tr className="bg-indigo-50/40 dark:bg-indigo-900/10">

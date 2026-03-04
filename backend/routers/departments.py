@@ -666,7 +666,18 @@ def get_agenda(dept_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{dept_id}/agenda")
 def create_agenda_point(dept_id: int, data: AgendaPointCreate, db: Session = Depends(get_db)):
-    ap = models.AgendaPoint(department_id=dept_id, **data.dict())
+    payload = data.dict()
+    insert_index = max(payload.get("order_index") or 0, 0)
+
+    to_shift = db.query(models.AgendaPoint).filter(
+        models.AgendaPoint.department_id == dept_id,
+        models.AgendaPoint.order_index >= insert_index
+    ).all()
+    for item in to_shift:
+        item.order_index = (item.order_index or 0) + 1
+
+    payload["order_index"] = insert_index
+    ap = models.AgendaPoint(department_id=dept_id, **payload)
     db.add(ap)
     db.commit()
     db.refresh(ap)
@@ -684,6 +695,13 @@ def bulk_create_agenda_points(dept_id: int, data: AgendaPointBulkCreate, db: Ses
     ).scalar()
     if data.start_order_index is not None:
         start_order = max(data.start_order_index, 0)
+        to_shift = db.query(models.AgendaPoint).filter(
+            models.AgendaPoint.department_id == dept_id,
+            models.AgendaPoint.order_index >= start_order
+        ).all()
+        shift_by = len(items)
+        for item in to_shift:
+            item.order_index = (item.order_index or 0) + shift_by
     else:
         start_order = (max_order + 1) if max_order is not None else 0
 
