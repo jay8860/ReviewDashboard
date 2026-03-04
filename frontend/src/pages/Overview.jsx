@@ -148,7 +148,20 @@ const Overview = ({ user, onLogout }) => {
             URL.revokeObjectURL(href);
             toast.success('Backup file downloaded');
         } catch (e) {
-            toast.error(e?.response?.data?.detail || 'Failed to download backup');
+            let detail = '';
+            try {
+                const data = e?.response?.data;
+                if (data instanceof Blob) {
+                    const text = await data.text();
+                    const parsed = JSON.parse(text);
+                    detail = parsed?.detail || '';
+                } else if (typeof data?.detail === 'string') {
+                    detail = data.detail;
+                }
+            } catch {
+                detail = '';
+            }
+            toast.error(detail || 'Failed to download backup');
         }
     };
 

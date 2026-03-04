@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Type
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select
 
 import models
 from database import get_db
@@ -60,6 +61,25 @@ def _serialize_rows(
     return out
 
 
+def _serialize_document_attachments_light(db: Session) -> List[Dict[str, Any]]:
+    # Exclude heavy text columns to keep backup export fast and reliable.
+    cols = [
+        getattr(models.DocumentAttachment, col.name)
+        for col in models.DocumentAttachment.__table__.columns
+        if col.name not in {"extracted_text", "analysis_output"}
+    ]
+    rows = db.execute(
+        select(*cols).order_by(models.DocumentAttachment.id.asc())
+    ).mappings().all()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        payload = {key: _serialize_value(value) for key, value in row.items()}
+        payload["extracted_text"] = None
+        payload["analysis_output"] = None
+        out.append(payload)
+    return out
+
+
 @router.get('/export')
 def export_dashboard_backup(
     db: Session = Depends(get_db),
@@ -76,6 +96,12 @@ def export_dashboard_backup(
     for model in BACKUP_MODELS:
         key = model.__tablename__
         try:
+            if key == "document_attachments" and not include_document_text:
+                serialized = _serialize_document_attachments_light(db)
+                tables[key] = serialized
+                counts[key] = len(serialized)
+                continue
+
             query = db.query(model)
             if hasattr(model, 'id'):
                 query = query.order_by(model.id.asc())
