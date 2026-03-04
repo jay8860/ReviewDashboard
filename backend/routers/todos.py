@@ -25,6 +25,8 @@ def _normalize_priority(value: Optional[str]) -> str:
 
 def _normalize_status(value: Optional[str]) -> str:
     val = (value or "").strip().lower()
+    if val in {"archived", "archive"}:
+        return "Archived"
     if val in {"done", "completed", "complete"}:
         return "Done"
     return "Open"

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ArrowDown, ArrowUp, CheckCircle2, ClipboardList,
-    RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle, MapPin
+    RefreshCw, Trash2, Upload, FileUp, ArrowRightCircle, MapPin, Archive
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -36,10 +36,40 @@ const Todos = ({ user, onLogout }) => {
     const [todoTaskOptions, setTodoTaskOptions] = useState({});
     const [todoDeleteConfirm, setTodoDeleteConfirm] = useState({ open: false, id: null });
     const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+    const [bulkArchiveConfirmOpen, setBulkArchiveConfirmOpen] = useState(false);
+    const [searchText, setSearchText] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [taskFilter, setTaskFilter] = useState('all');
+    const [sortBy, setSortBy] = useState('manual');
+
+    const filteredItems = useMemo(() => {
+        const search = searchText.trim().toLowerCase();
+        let rows = [...items];
+        if (search) {
+            rows = rows.filter(item =>
+                String(item.title || '').toLowerCase().includes(search)
+                || String(item.linked_task_number || '').toLowerCase().includes(search)
+            );
+        }
+        if (statusFilter !== 'all') {
+            rows = rows.filter(item => String(item.status || '').toLowerCase() === statusFilter);
+        }
+        if (taskFilter === 'converted') rows = rows.filter(item => Boolean(item.linked_task_id));
+        if (taskFilter === 'not_converted') rows = rows.filter(item => !item.linked_task_id);
+
+        if (sortBy === 'newest') rows.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+        if (sortBy === 'oldest') rows.sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));
+        if (sortBy === 'title_az') rows.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+        if (sortBy === 'title_za') rows.sort((a, b) => String(b.title || '').localeCompare(String(a.title || '')));
+        if (sortBy === 'done_first') rows.sort((a, b) => (a.status === 'Done' ? -1 : 1) - (b.status === 'Done' ? -1 : 1));
+        if (sortBy === 'open_first') rows.sort((a, b) => (a.status === 'Open' ? -1 : 1) - (b.status === 'Open' ? -1 : 1));
+
+        return rows;
+    }, [items, searchText, statusFilter, taskFilter, sortBy]);
 
     const allSelected = useMemo(
-        () => items.length > 0 && selectedIds.length === items.length,
-        [items.length, selectedIds.length]
+        () => filteredItems.length > 0 && filteredItems.every(item => selectedIds.includes(item.id)),
+        [filteredItems, selectedIds]
     );
     const sortedEmployees = useMemo(
         () => [...employees].sort((a, b) => getEmployeeDisplayLabel(a).localeCompare(getEmployeeDisplayLabel(b), undefined, { sensitivity: 'base' })),
@@ -109,6 +139,14 @@ const Todos = ({ user, onLogout }) => {
         setBulkDeleteConfirmOpen(true);
     };
 
+    const archiveSelected = () => {
+        if (selectedIds.length === 0) {
+            toast.error('Select at least one item');
+            return;
+        }
+        setBulkArchiveConfirmOpen(true);
+    };
+
     const executeDeleteSelected = async () => {
         try {
             await Promise.all(selectedIds.map((id) => api.deleteTodo(id)));
@@ -117,6 +155,17 @@ const Todos = ({ user, onLogout }) => {
             toast.success('Selected to-do items deleted');
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Delete failed');
+        }
+    };
+
+    const executeArchiveSelected = async () => {
+        try {
+            await Promise.all(selectedIds.map((id) => api.updateTodo(id, { status: 'Archived' })));
+            setItems((prev) => prev.map((row) => (selectedIds.includes(row.id) ? { ...row, status: 'Archived' } : row)));
+            setSelectedIds([]);
+            toast.success('Selected to-do items archived');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Archive failed');
         }
     };
 
@@ -129,7 +178,7 @@ const Todos = ({ user, onLogout }) => {
             setSelectedIds([]);
             return;
         }
-        setSelectedIds(items.map(item => item.id));
+        setSelectedIds(filteredItems.map(item => item.id));
     };
 
     const updateInline = async (id, patch) => {
@@ -143,6 +192,17 @@ const Todos = ({ user, onLogout }) => {
 
     const removeItem = (id) => {
         setTodoDeleteConfirm({ open: true, id });
+    };
+
+    const archiveItem = async (id) => {
+        try {
+            const updated = await api.updateTodo(id, { status: 'Archived' });
+            setItems(prev => prev.map(item => (item.id === id ? updated : item)));
+            setSelectedIds(prev => prev.filter(x => x !== id));
+            toast.success('To-do archived');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Archive failed');
+        }
     };
 
     const executeRemoveItem = async (id) => {
@@ -171,6 +231,8 @@ const Todos = ({ user, onLogout }) => {
             loadAll();
         }
     };
+
+    const isCustomOrderingDisabled = Boolean(searchText.trim() || statusFilter !== 'all' || taskFilter !== 'all' || sortBy !== 'manual');
 
     const convertOne = async (id) => {
         try {
@@ -312,13 +374,19 @@ const Todos = ({ user, onLogout }) => {
                 <div className="glass-card rounded-3xl overflow-hidden">
                     <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                            <h3 className="font-black text-slate-800">All To-Do Items ({items.length})</h3>
+                            <h3 className="font-black text-slate-800">All To-Do Items ({filteredItems.length})</h3>
                             <label className="text-xs font-semibold text-slate-500 inline-flex items-center gap-1">
                                 <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                                 Select all
                             </label>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                onClick={archiveSelected}
+                                className="px-3 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold inline-flex items-center gap-1.5"
+                            >
+                                <Archive size={14} /> Archive Selected
+                            </button>
                             <button
                                 onClick={deleteSelected}
                                 className="px-3 py-2 rounded-xl bg-rose-600 text-white text-sm font-bold inline-flex items-center gap-1.5"
@@ -333,14 +401,42 @@ const Todos = ({ user, onLogout }) => {
                             </button>
                         </div>
                     </div>
+                    <div className="px-4 py-3 border-b border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-2">
+                        <input
+                            value={searchText}
+                            onChange={(e) => setSearchText(e.target.value)}
+                            placeholder="Search text / task no..."
+                            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm"
+                        />
+                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
+                            <option value="all">All statuses</option>
+                            <option value="open">Open</option>
+                            <option value="done">Done (crossed)</option>
+                            <option value="archived">Archived</option>
+                        </select>
+                        <select value={taskFilter} onChange={(e) => setTaskFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
+                            <option value="all">All task links</option>
+                            <option value="converted">Converted to task</option>
+                            <option value="not_converted">Not converted</option>
+                        </select>
+                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm">
+                            <option value="manual">Manual order</option>
+                            <option value="newest">Recently updated</option>
+                            <option value="oldest">Oldest updated</option>
+                            <option value="title_az">Title A-Z</option>
+                            <option value="title_za">Title Z-A</option>
+                            <option value="done_first">Done first</option>
+                            <option value="open_first">Open first</option>
+                        </select>
+                    </div>
 
                     {loading ? (
                         <div className="p-8 text-slate-400">Loading to-dos...</div>
-                    ) : items.length === 0 ? (
+                    ) : filteredItems.length === 0 ? (
                         <div className="p-8 text-slate-400">No to-dos yet.</div>
                     ) : (
                         <div className="divide-y divide-slate-100">
-                            {items.map((item, idx) => (
+                            {filteredItems.map((item, idx) => (
                                 <div key={item.id} className="p-4">
                                     <div className="flex flex-col lg:flex-row lg:items-center gap-3">
                                         <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -387,17 +483,17 @@ const Todos = ({ user, onLogout }) => {
                                         <div className="flex items-center gap-1.5">
                                             <button
                                                 onClick={() => moveItem(item.id, -1)}
-                                                disabled={idx === 0}
+                                                disabled={idx === 0 || isCustomOrderingDisabled}
                                                 className="p-2 rounded-lg border border-slate-200 text-slate-500 disabled:opacity-30"
-                                                title="Move up"
+                                                title={isCustomOrderingDisabled ? 'Disable filters/sort to reorder' : 'Move up'}
                                             >
                                                 <ArrowUp size={14} />
                                             </button>
                                             <button
                                                 onClick={() => moveItem(item.id, 1)}
-                                                disabled={idx === items.length - 1}
+                                                disabled={idx === filteredItems.length - 1 || isCustomOrderingDisabled}
                                                 className="p-2 rounded-lg border border-slate-200 text-slate-500 disabled:opacity-30"
-                                                title="Move down"
+                                                title={isCustomOrderingDisabled ? 'Disable filters/sort to reorder' : 'Move down'}
                                             >
                                                 <ArrowDown size={14} />
                                             </button>
@@ -421,6 +517,13 @@ const Todos = ({ user, onLogout }) => {
                                                 title="Add to Field Visit notepad"
                                             >
                                                 <MapPin size={14} />
+                                            </button>
+                                            <button
+                                                onClick={() => archiveItem(item.id)}
+                                                className="p-2 rounded-lg border border-amber-200 text-amber-600"
+                                                title="Archive"
+                                            >
+                                                <Archive size={14} />
                                             </button>
                                             <button
                                                 onClick={() => removeItem(item.id)}
@@ -449,6 +552,18 @@ const Todos = ({ user, onLogout }) => {
                     const id = todoDeleteConfirm.id;
                     setTodoDeleteConfirm({ open: false, id: null });
                     if (id != null) executeRemoveItem(id);
+                }}
+            />
+
+            <ConfirmDialog
+                open={bulkArchiveConfirmOpen}
+                title="Archive Selected To-Do Items"
+                message={`Archive ${selectedIds.length} selected to-do item(s)?`}
+                confirmLabel="Archive All"
+                onCancel={() => setBulkArchiveConfirmOpen(false)}
+                onConfirm={() => {
+                    setBulkArchiveConfirmOpen(false);
+                    executeArchiveSelected();
                 }}
             />
 
