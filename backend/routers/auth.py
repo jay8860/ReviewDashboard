@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 import models
 from database import get_db
@@ -150,10 +151,15 @@ def get_modules():
 
 @router.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == request.username).first()
+    username = (request.username or "").strip()
+    password = request.password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+
+    user = db.query(models.User).filter(func.lower(models.User.username) == username.lower()).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid username or password")
-    if not verify_password(request.password, user.hashed_password):
+    if not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
     access_token = create_access_token(data={"sub": user.username, "role": user.role})
