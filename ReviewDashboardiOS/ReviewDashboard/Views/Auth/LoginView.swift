@@ -320,18 +320,19 @@ struct LoginView: View {
             }
         } catch {
             await MainActor.run {
+                let serverInfo = "\nServer: \(APIService.shared.baseURL)"
                 if let apiError = error as? APIError {
                     switch apiError {
                     case .serverError(_, let message):
                         let detail = parsedBackendMessage(message)
-                        errorMessage = detail.isEmpty ? "Login failed. Please try again." : detail
+                        errorMessage = (detail.isEmpty ? "Login failed. Please try again." : detail) + serverInfo
                     case .unauthorized:
-                        errorMessage = "Session expired. Please log in again."
+                        errorMessage = "Session expired. Please log in again." + serverInfo
                     default:
-                        errorMessage = apiError.errorDescription ?? "Login failed. Please try again."
+                        errorMessage = (apiError.errorDescription ?? "Login failed. Please try again.") + serverInfo
                     }
                 } else {
-                    errorMessage = error.localizedDescription
+                    errorMessage = error.localizedDescription + serverInfo
                 }
                 isLoading = false
             }

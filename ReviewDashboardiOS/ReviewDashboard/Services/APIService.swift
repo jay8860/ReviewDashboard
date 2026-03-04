@@ -32,21 +32,37 @@ class APIService {
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: "api_base_url")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if saved.isEmpty {
-            baseURL = Self.defaultBaseURL
-        } else {
-            baseURL = saved.hasSuffix("/") ? String(saved.dropLast()) : saved
-        }
+        baseURL = normalizeBaseURL(saved)
     }
 
     private var token: String? {
         UserDefaults.standard.string(forKey: "auth_token")
     }
 
-    func setBaseURL(_ value: String) {
+    private func normalizeBaseURL(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = (trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
-        let next = normalized.isEmpty ? Self.defaultBaseURL : normalized
+        if trimmed.isEmpty { return Self.defaultBaseURL }
+
+        let withScheme = (trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://")) ? trimmed : "https://\(trimmed)"
+        guard var components = URLComponents(string: withScheme),
+              let scheme = components.scheme,
+              let host = components.host,
+              !host.isEmpty else {
+            return Self.defaultBaseURL
+        }
+
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        components.user = nil
+        components.password = nil
+        components.port = nil
+
+        return "\(scheme)://\(host)"
+    }
+
+    func setBaseURL(_ value: String) {
+        let next = normalizeBaseURL(value)
         baseURL = next
         UserDefaults.standard.set(next, forKey: "api_base_url")
     }
