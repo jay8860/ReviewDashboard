@@ -907,6 +907,16 @@ const parseBulkAgendaInput = (rawText) => {
     return parsed;
 };
 
+const agendaErrorMessage = (error, fallback) => {
+    const detail = error?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail) && detail.length) {
+        const message = detail.map(item => item?.msg || item?.message || '').filter(Boolean).join('; ');
+        if (message) return message;
+    }
+    return error?.message || fallback;
+};
+
 const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const toast = useToast();
     const [editMode, setEditMode] = useState(false);
@@ -955,6 +965,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setLocalRows(prev => prev.map(item => (item.id === id ? { ...item, [key]: value } : item)));
     };
 
+    const reloadAgenda = async () => {
+        const fresh = await api.getAgendaPoints(deptId);
+        setAgenda(fresh);
+        return fresh;
+    };
+
     const enterEdit = () => {
         setEditMode(true);
         setAddingNew(false);
@@ -984,15 +1000,14 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
 
         setSaving(true);
         try {
-            const updated = await api.bulkUpdateAgendaPoints(deptId, { items: payloadItems });
-            const updatedById = new Map(updated.map(item => [item.id, item]));
-            setAgenda(prev => prev.map(item => (updatedById.has(item.id) ? { ...item, ...updatedById.get(item.id) } : item)));
+            await api.bulkUpdateAgendaPoints(deptId, { items: payloadItems });
+            await reloadAgenda();
             setEditMode(false);
             setLocalRows([]);
             setSelectedIds([]);
-            toast.success(`Saved ${updated.length} agenda item${updated.length > 1 ? 's' : ''}`);
-        } catch {
-            toast.error('Failed to save agenda');
+            toast.success(`Saved ${payloadItems.length} agenda item${payloadItems.length > 1 ? 's' : ''}`);
+        } catch (error) {
+            toast.error(agendaErrorMessage(error, 'Failed to save agenda'));
         } finally {
             setSaving(false);
         }
@@ -1002,11 +1017,11 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         if (!newRow.title.trim()) return;
         setSaving(true);
         try {
-            const created = await api.createAgendaPoint(deptId, { title: newRow.title.trim(), details: newRow.details.trim(), order_index: agenda.length });
-            setAgenda(prev => [...prev, created]);
+            await api.createAgendaPoint(deptId, { title: newRow.title.trim(), details: newRow.details.trim(), order_index: agenda.length });
+            await reloadAgenda();
             setNewRow({ title: '', details: '' });
             setAddingNew(false);
-        } catch { toast.error('Failed to add'); }
+        } catch (error) { toast.error(agendaErrorMessage(error, 'Failed to add')); }
         finally { setSaving(false); }
     };
 
@@ -1025,12 +1040,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                 })),
             };
             const created = await api.bulkCreateAgendaPoints(deptId, payload);
-            setAgenda(prev => [...prev, ...created]);
+            await reloadAgenda();
             setBulkText('');
             setBulkMode(false);
             toast.success(`Added ${created.length} agenda item${created.length > 1 ? 's' : ''}`);
-        } catch {
-            toast.error('Failed to add bulk agenda');
+        } catch (error) {
+            toast.error(agendaErrorMessage(error, 'Failed to add bulk agenda'));
         } finally {
             setSaving(false);
         }
@@ -1045,12 +1060,12 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setSaving(true);
         try {
             await api.bulkDeleteAgendaPoints(deptId, { ids: idsToDelete });
-            setAgenda(prev => prev.filter(item => !idsToDelete.includes(item.id)));
-            setLocalRows(prev => prev.filter(item => !idsToDelete.includes(item.id)));
+            const fresh = await reloadAgenda();
+            setLocalRows(prev => prev.filter(item => fresh.some(f => f.id === item.id)));
             clearSelection();
             toast.success(`Deleted ${idsToDelete.length} agenda item${idsToDelete.length > 1 ? 's' : ''}`);
-        } catch {
-            toast.error('Failed to delete selected agenda items');
+        } catch (error) {
+            toast.error(agendaErrorMessage(error, 'Failed to delete selected agenda items'));
         } finally {
             setSaving(false);
         }

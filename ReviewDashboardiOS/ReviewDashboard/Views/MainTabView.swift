@@ -229,7 +229,7 @@ struct DashboardWebView: UIViewRepresentable {
             }
 
             currentRoute = normalizedRoute
-            let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 45)
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 45)
             webView?.load(request)
         }
 
