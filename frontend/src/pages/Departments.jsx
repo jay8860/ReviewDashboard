@@ -268,29 +268,31 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null, categoryOptions = 
     );
 };
 
-const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
+const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfirm }) => {
+    const today = new Date().toISOString().split('T')[0];
     const [form, setForm] = useState({
-        date: new Date().toISOString().split('T')[0],
-        time_slot: '10:00',
-        duration_minutes: 30,
+        scheduled_date: today,
+        scheduled_time: '10:00',
         venue: '',
         attendees: '',
+        officer_phone: '',
         notes: '',
     });
 
     useEffect(() => {
         if (!isOpen) return;
         setForm({
-            date: new Date().toISOString().split('T')[0],
-            time_slot: '10:00',
-            duration_minutes: 30,
+            scheduled_date: today,
+            scheduled_time: '10:00',
             venue: '',
             attendees: '',
+            officer_phone: '',
             notes: '',
         });
-    }, [isOpen, department?.id]);
+    }, [isOpen, department?.id, today]);
 
     if (!isOpen || !department) return null;
+    const openAgenda = agenda.filter(item => item.status === 'Open');
 
     return (
         <AnimatePresence>
@@ -311,47 +313,33 @@ const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
                         </button>
                     </div>
 
-                    <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date</label>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Date *</label>
                                 <input
                                     type="date"
-                                    value={form.date}
-                                    onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    value={form.scheduled_date}
+                                    onChange={e => setForm(prev => ({ ...prev, scheduled_date: e.target.value }))}
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Time</label>
+                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Time *</label>
                                 <input
                                     type="time"
-                                    value={form.time_slot}
-                                    onChange={e => setForm(prev => ({ ...prev, time_slot: e.target.value }))}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    value={form.scheduled_time}
+                                    onChange={e => setForm(prev => ({ ...prev, scheduled_time: e.target.value }))}
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Duration</label>
-                                <select
-                                    value={form.duration_minutes}
-                                    onChange={e => setForm(prev => ({ ...prev, duration_minutes: parseInt(e.target.value, 10) }))}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                >
-                                    <option value={30}>30 min</option>
-                                    <option value={60}>60 min</option>
-                                    <option value={90}>90 min</option>
-                                </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Venue</label>
                                 <input
                                     value={form.venue}
                                     onChange={e => setForm(prev => ({ ...prev, venue: e.target.value }))}
-                                    placeholder="Meeting room"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                    placeholder="Conference Hall, Collectorate..."
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 />
                             </div>
                         </div>
@@ -360,8 +348,17 @@ const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
                             <input
                                 value={form.attendees}
                                 onChange={e => setForm(prev => ({ ...prev, attendees: e.target.value }))}
-                                placeholder="Comma separated names"
-                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder="CEO, Project Director, JE, BDO..."
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Officer Phone (optional)</label>
+                            <input
+                                value={form.officer_phone}
+                                onChange={e => setForm(prev => ({ ...prev, officer_phone: e.target.value }))}
+                                placeholder="WhatsApp no. with country code"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                             />
                         </div>
                         <div>
@@ -371,8 +368,12 @@ const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
                                 value={form.notes}
                                 onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
                                 placeholder="Agenda context / notes"
-                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none"
                             />
+                        </div>
+                        <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3 text-xs text-indigo-700">
+                            <p className="font-bold mb-1">Open agenda points attached: {openAgenda.length}</p>
+                            <p className="text-[11px]">Action Table is auto-created and this meeting auto-syncs to Planner.</p>
                         </div>
                     </div>
 
@@ -384,10 +385,10 @@ const QuickScheduleModal = ({ department, isOpen, onClose, onConfirm }) => {
                             Cancel
                         </button>
                         <button
-                            onClick={() => onConfirm(form)}
+                            onClick={() => form.scheduled_date && onConfirm(form)}
                             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700"
                         >
-                            Confirm Meeting
+                            Schedule
                         </button>
                     </div>
                 </motion.div>
@@ -606,6 +607,7 @@ const Departments = ({ user, onLogout }) => {
     const [busy, setBusy] = useState(false);
     const [quickDept, setQuickDept] = useState(null);
     const [quickMeetingOpen, setQuickMeetingOpen] = useState(false);
+    const [quickAgenda, setQuickAgenda] = useState([]);
 
     const groupedCategories = useMemo(() => buildCategoryBuckets(departments), [departments]);
     const categoryNames = useMemo(() => groupedCategories.map(c => c.name), [groupedCategories]);
@@ -627,6 +629,23 @@ const Departments = ({ user, onLogout }) => {
     useEffect(() => {
         localStorage.setItem('department_view_mode', viewMode);
     }, [viewMode]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!quickMeetingOpen || !quickDept) {
+            setQuickAgenda([]);
+            return () => { };
+        }
+        (async () => {
+            try {
+                const rows = await api.getAgendaPoints(quickDept.id);
+                if (!cancelled) setQuickAgenda(rows || []);
+            } catch {
+                if (!cancelled) setQuickAgenda([]);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [quickMeetingOpen, quickDept?.id]);
 
     const persistGroupedLayout = async (nextBuckets, successMessage) => {
         const previousDepartments = [...departments];
@@ -787,23 +806,18 @@ const Departments = ({ user, onLogout }) => {
     const handleQuickSchedule = async (form) => {
         if (!quickDept) return;
         try {
-            await api.createPlannerEvent({
-                title: `${quickDept.short_name || quickDept.name} Review Meeting`,
-                date: form.date,
-                time_slot: form.time_slot,
-                duration_minutes: form.duration_minutes || 30,
-                event_type: 'meeting',
-                status: 'Confirmed',
-                color: quickDept.color || 'indigo',
-                description: form.notes || '',
+            await api.createMeeting(quickDept.id, {
+                scheduled_date: form.scheduled_date,
+                scheduled_time: form.scheduled_time || null,
                 venue: form.venue || null,
                 attendees: form.attendees || null,
-                department_id: quickDept.id,
-                source: 'department_meeting',
+                officer_phone: form.officer_phone || null,
+                notes: form.notes || null,
             });
-            toast.success('Meeting scheduled from department card');
+            toast.success('Meeting scheduled');
             setQuickMeetingOpen(false);
             setQuickDept(null);
+            setQuickAgenda([]);
         } catch {
             toast.error('Failed to schedule meeting');
         }
@@ -973,8 +987,9 @@ const Departments = ({ user, onLogout }) => {
             />
             <QuickScheduleModal
                 department={quickDept}
+                agenda={quickAgenda}
                 isOpen={quickMeetingOpen}
-                onClose={() => { setQuickMeetingOpen(false); setQuickDept(null); }}
+                onClose={() => { setQuickMeetingOpen(false); setQuickDept(null); setQuickAgenda([]); }}
                 onConfirm={handleQuickSchedule}
             />
         </Layout>
