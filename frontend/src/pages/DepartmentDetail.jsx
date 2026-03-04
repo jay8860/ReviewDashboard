@@ -83,17 +83,16 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
     useEffect(() => { setForm({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '' }); }, [isOpen]);
     useEffect(() => { setOfficerSearch(''); }, [isOpen]);
 
-    if (!isOpen) return null;
-
     const openAgenda = agenda.filter(a => a.status === 'Open');
-    const matchedEmployees = useMemo(() => {
+    const matchedEmployees = (() => {
         const q = officerSearch.trim().toLowerCase();
         if (q.length < 1) return [];
         return (employees || [])
             .filter(emp => emp?.is_active !== false)
             .filter(emp => (`${emp?.name || ''} ${emp?.display_username || ''} ${emp?.mobile_number || ''}`).toLowerCase().includes(q))
             .slice(0, 8);
-    }, [officerSearch, employees]);
+    })();
+    if (!isOpen) return null;
 
     const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
 

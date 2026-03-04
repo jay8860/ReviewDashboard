@@ -304,16 +304,16 @@ const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, o
         setOfficerSearch('');
     }, [isOpen, department?.id, today]);
 
-    if (!isOpen || !department) return null;
     const openAgenda = agenda.filter(item => item.status === 'Open');
-    const matchedEmployees = useMemo(() => {
+    const matchedEmployees = (() => {
         const q = officerSearch.trim().toLowerCase();
         if (q.length < 1) return [];
         return (employees || [])
             .filter(emp => emp?.is_active !== false)
             .filter(emp => (`${emp?.name || ''} ${emp?.display_username || ''} ${emp?.mobile_number || ''}`).toLowerCase().includes(q))
             .slice(0, 8);
-    }, [officerSearch, employees]);
+    })();
+    if (!isOpen || !department) return null;
     const waMsg = `Meeting Agenda - ${department.name}\nDate: ${formatDateSafe(form.scheduled_date)}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
     const waLink = form.officer_phone
         ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
