@@ -32,14 +32,14 @@ class APIService {
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: "api_base_url")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        baseURL = normalizeBaseURL(saved)
+        baseURL = Self.normalizeBaseURL(saved)
     }
 
     private var token: String? {
         UserDefaults.standard.string(forKey: "auth_token")
     }
 
-    private func normalizeBaseURL(_ value: String) -> String {
+    private static func normalizeBaseURL(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return Self.defaultBaseURL }
 
@@ -62,7 +62,7 @@ class APIService {
     }
 
     func setBaseURL(_ value: String) {
-        let next = normalizeBaseURL(value)
+        let next = Self.normalizeBaseURL(value)
         baseURL = next
         UserDefaults.standard.set(next, forKey: "api_base_url")
     }
