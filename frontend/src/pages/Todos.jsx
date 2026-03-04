@@ -59,6 +59,8 @@ const Todos = ({ user, onLogout }) => {
 
         if (sortBy === 'newest') rows.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
         if (sortBy === 'oldest') rows.sort((a, b) => new Date(a.updated_at || a.created_at || 0) - new Date(b.updated_at || b.created_at || 0));
+        if (sortBy === 'created_newest') rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        if (sortBy === 'created_oldest') rows.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
         if (sortBy === 'title_az') rows.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
         if (sortBy === 'title_za') rows.sort((a, b) => String(b.title || '').localeCompare(String(a.title || '')));
         if (sortBy === 'done_first') rows.sort((a, b) => (a.status === 'Done' ? -1 : 1) - (b.status === 'Done' ? -1 : 1));
@@ -423,6 +425,8 @@ const Todos = ({ user, onLogout }) => {
                             <option value="manual">Manual order</option>
                             <option value="newest">Recently updated</option>
                             <option value="oldest">Oldest updated</option>
+                            <option value="created_newest">Recently created</option>
+                            <option value="created_oldest">Oldest created</option>
                             <option value="title_az">Title A-Z</option>
                             <option value="title_za">Title Z-A</option>
                             <option value="done_first">Done first</option>

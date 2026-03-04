@@ -109,7 +109,7 @@ struct DashboardWebView: UIViewRepresentable {
 
         context.coordinator.attach(webView)
         _ = context.coordinator.syncAuth(token: token, user: user)
-        context.coordinator.load(route: route, force: true)
+        context.coordinator.load(route: route, force: false)
         context.coordinator.lastReloadID = reloadID
 
         return webView
@@ -123,8 +123,12 @@ struct DashboardWebView: UIViewRepresentable {
         let routeChanged = context.coordinator.currentRoute != context.coordinator.normalize(route)
         let reloadChanged = context.coordinator.lastReloadID != reloadID
 
-        if authChanged || routeChanged || reloadChanged {
+        if routeChanged {
+            context.coordinator.load(route: route, force: false)
+        } else if reloadChanged {
             context.coordinator.load(route: route, force: true)
+        } else if authChanged {
+            context.coordinator.injectRuntimeAuth()
         }
         context.coordinator.lastReloadID = reloadID
     }
@@ -229,7 +233,7 @@ struct DashboardWebView: UIViewRepresentable {
             }
 
             currentRoute = normalizedRoute
-            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 45)
+            let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 45)
             webView?.load(request)
         }
 
