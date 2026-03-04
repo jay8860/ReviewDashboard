@@ -296,7 +296,7 @@ struct LoginView: View {
                         errorMessage = apiError.errorDescription ?? "Login failed. Please try again."
                     }
                 } else {
-                    errorMessage = "Login failed. Please try again."
+                    errorMessage = error.localizedDescription
                 }
                 isLoading = false
             }

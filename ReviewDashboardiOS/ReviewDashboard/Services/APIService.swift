@@ -42,12 +42,18 @@ class APIService {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = body
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
         return request
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.unknown(error)
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.noData
         }
@@ -67,7 +73,13 @@ class APIService {
     }
 
     private func performEmpty(_ request: URLRequest) async throws {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.unknown(error)
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.noData
         }
@@ -179,7 +191,7 @@ class APIService {
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token = token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        req.timeoutInterval = 30
+        req.timeoutInterval = 60
         return try await perform(req)
     }
 
@@ -219,7 +231,7 @@ class APIService {
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token = token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        req.timeoutInterval = 30
+        req.timeoutInterval = 60
         return try await perform(req)
     }
 
