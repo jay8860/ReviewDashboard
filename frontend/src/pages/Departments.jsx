@@ -452,11 +452,11 @@ const DepartmentCard = ({
             if (!editMode) onOpen(dept.id);
         }}
     >
-        <div className={`h-2 bg-gradient-to-r ${colorGrad[dept.color] || colorGrad.indigo}`} />
-        <div className="p-5">
-            <div className="flex items-start justify-between mb-4">
-                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${colorGrad[dept.color] || colorGrad.indigo} flex items-center justify-center shadow-lg`}>
-                    <span className="text-white font-black text-sm">{dept.short_name || dept.name.slice(0, 2).toUpperCase()}</span>
+        <div className={`h-1.5 bg-gradient-to-r ${colorGrad[dept.color] || colorGrad.indigo}`} />
+        <div className="p-4">
+            <div className="flex items-start justify-between mb-3">
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorGrad[dept.color] || colorGrad.indigo} flex items-center justify-center shadow-md`}>
+                    <span className="text-white font-black text-xs">{dept.short_name || dept.name.slice(0, 2).toUpperCase()}</span>
                 </div>
                 {editMode && (
                     <div className="flex items-center gap-1">
@@ -492,14 +492,14 @@ const DepartmentCard = ({
                 )}
             </div>
 
-            <h3 className="font-black text-lg text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
-            <p className="text-[11px] font-semibold text-violet-600 mb-3">{reviewTickerText(dept)}</p>
+            <h3 className="font-black text-[1.1rem] text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
+            <p className="text-[11px] font-semibold text-violet-600 mb-2.5">{reviewTickerText(dept)}</p>
             {editMode && dept.head_name && (
-                <p className="text-xs text-slate-400 mb-3">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
+                <p className="text-xs text-slate-400 mb-2.5">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
             )}
 
             {editMode && (
-                <div className="mb-3">
+                <div className="mb-2.5">
                     <select
                         value={dept.category_name || 'General'}
                         onChange={(e) => onCategoryChange(dept, e.target.value)}
@@ -511,13 +511,13 @@ const DepartmentCard = ({
                 </div>
             )}
 
-            <div className="grid gap-2 grid-cols-2">
+            <div className="grid gap-2 grid-cols-2 mt-1">
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
                         onQuickSchedule(dept);
                     }}
-                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-xs hover:bg-violet-200 transition-colors"
+                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-violet-100 text-violet-700 font-bold text-xs hover:bg-violet-200 transition-colors"
                 >
                     <CalendarPlus size={13} /> Schedule
                 </button>
@@ -526,7 +526,7 @@ const DepartmentCard = ({
                         e.stopPropagation();
                         onOpen(dept.id);
                     }}
-                    className={`w-full flex items-center justify-center gap-1 px-2 py-2.5 rounded-xl font-bold text-xs transition-colors group/btn ${editMode
+                    className={`w-full flex items-center justify-center gap-1 px-2 py-2 rounded-xl font-bold text-xs transition-colors group/btn ${editMode
                         ? 'bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                 >
