@@ -911,20 +911,21 @@ const parseBulkAgendaInput = (rawText) => {
 
         if (!cleaned) continue;
 
-        let title = cleaned;
-        if (cleaned.includes('|')) {
-            const [left] = cleaned.split('|');
-            title = (left || '').trim();
-        } else {
-            const dashParts = cleaned.split(/\s+[—-]\s+/);
-            if (dashParts.length > 1) title = (dashParts.shift() || '').trim();
-        }
-
-        if (!title) continue;
-        parsed.push({ title });
+        if (!cleaned) continue;
+        parsed.push({ title: cleaned });
     }
 
     return parsed;
+};
+
+const getAgendaText = (item) => {
+    const title = String(item?.title || '').trim();
+    const details = String(item?.details || '').trim();
+    if (title && details) {
+        if (title.includes(details)) return title;
+        return `${title} - ${details}`;
+    }
+    return title || details;
 };
 
 const agendaErrorMessage = (error, fallback) => {
@@ -958,7 +959,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         if (!editMode) return;
         const draftRows = agenda.map(item => ({
             id: item.id,
-            title: item.title || '',
+            title: getAgendaText(item),
             status: item.status || 'Open',
         }));
         setLocalRows(draftRows);
@@ -1069,7 +1070,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         try {
             if (payloadItems.length > 0) {
                 await api.bulkUpdateAgendaPoints(deptId, {
-                    items: payloadItems.map((item, idx) => ({ ...item, order_index: idx })),
+                    items: payloadItems.map((item, idx) => ({ ...item, details: '', order_index: idx })),
                 });
             }
             if (pendingDeleteIds.length > 0) {
@@ -1340,7 +1341,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                                         />
                                     ) : (
                                         <span className={`text-sm font-semibold text-slate-700 dark:text-slate-200 ${ap.status === 'Done' ? 'line-through opacity-50' : ''}`}>
-                                            {ap.title}
+                                            {getAgendaText(ap)}
                                         </span>
                                     )}
                                 </td>
