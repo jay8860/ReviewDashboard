@@ -289,7 +289,6 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
         venue: '',
         attendees: '',
         officer_phone: '',
-        notes: '',
     });
 
     useEffect(() => {
@@ -300,13 +299,12 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
             venue: '',
             attendees: '',
             officer_phone: '',
-            notes: '',
         });
     }, [isOpen, department?.id, today]);
 
     if (!isOpen || !department) return null;
     const openAgenda = agenda.filter(item => item.status === 'Open');
-    const waMsg = `Meeting Agenda - ${department.name}\nDate: ${formatDateSafe(form.scheduled_date)}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
+    const waMsg = `Meeting Agenda - ${department.name}\nDate: ${formatDateSafe(form.scheduled_date)}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
     const waLink = form.officer_phone
         ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
         : `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
@@ -381,27 +379,15 @@ const QuickScheduleModal = ({ department, agenda = [], isOpen, onClose, onConfir
                                 className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm"
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-1.5">Notes</label>
-                            <textarea
-                                rows={3}
-                                value={form.notes}
-                                onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
-                                placeholder="Meeting notes or agenda details..."
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 text-sm resize-none"
-                            />
-                        </div>
-
                         {openAgenda.length > 0 && (
                             <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 p-4">
                                 <p className="text-xs font-black uppercase text-slate-400 mb-2">Agenda snapshot ({openAgenda.length} open items)</p>
-                                <div className="space-y-1">
-                                    {openAgenda.slice(0, 4).map((a, i) => (
+                                <div className="space-y-1 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                                    {openAgenda.map((a, i) => (
                                         <p key={a.id} className="text-xs text-slate-600 dark:text-slate-300">
                                             <span className="font-bold text-slate-400">{i + 1}.</span> {a.title}
                                         </p>
                                     ))}
-                                    {openAgenda.length > 4 && <p className="text-xs text-slate-400">+{openAgenda.length - 4} more…</p>}
                                 </div>
                             </div>
                         )}
@@ -845,7 +831,6 @@ const Departments = ({ user, onLogout }) => {
                 venue: form.venue || null,
                 attendees: form.attendees || null,
                 officer_phone: form.officer_phone || null,
-                notes: form.notes || null,
             });
             toast.success('Meeting scheduled');
             setQuickMeetingOpen(false);
