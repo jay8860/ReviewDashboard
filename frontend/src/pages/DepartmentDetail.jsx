@@ -924,7 +924,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
     const [saving, setSaving] = useState(false);
     const [selectedIds, setSelectedIds] = useState([]);
     const [pendingDeleteIds, setPendingDeleteIds] = useState([]);
-    const [initialEditRows, setInitialEditRows] = useState([]);
+    const [undoStack, setUndoStack] = useState([]);
+    const [redoStack, setRedoStack] = useState([]);
     const parsedBulkRows = parseBulkAgendaInput(bulkText);
 
     useEffect(() => {
@@ -935,9 +936,10 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             status: item.status || 'Open',
         }));
         setLocalRows(draftRows);
-        setInitialEditRows(draftRows);
         setSelectedIds([]);
         setPendingDeleteIds([]);
+        setUndoStack([]);
+        setRedoStack([]);
     }, [editMode]);
 
     useEffect(() => {
@@ -961,7 +963,20 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setSelectedIds(localRows.map(r => r.id));
     };
 
+    const makeSnapshot = (rows, deleteIds) => ({
+        localRows: rows.map(item => ({ ...item })),
+        pendingDeleteIds: [...deleteIds],
+    });
+
+    const pushUndoSnapshot = () => {
+        setUndoStack(prev => [...prev, makeSnapshot(localRows, pendingDeleteIds)]);
+        setRedoStack([]);
+    };
+
     const updateLocalRow = (id, key, value) => {
+        const current = localRows.find(item => item.id === id);
+        if (!current || current[key] === value) return;
+        pushUndoSnapshot();
         setLocalRows(prev => prev.map(item => (item.id === id ? { ...item, [key]: value } : item)));
     };
 
@@ -984,18 +999,31 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         setLocalRows([]);
         setSelectedIds([]);
         setPendingDeleteIds([]);
-        setInitialEditRows([]);
+        setUndoStack([]);
+        setRedoStack([]);
         setAddingNew(false);
         setInsertAfterId(null);
         setInsertRow({ title: '' });
     };
 
-    const undoDraftChanges = () => {
-        if (!editMode || saving) return;
-        setLocalRows(initialEditRows.map(item => ({ ...item })));
+    const undoDraftChange = () => {
+        if (!editMode || saving || undoStack.length === 0) return;
+        const previous = undoStack[undoStack.length - 1];
+        setUndoStack(prev => prev.slice(0, -1));
+        setRedoStack(prev => [...prev, makeSnapshot(localRows, pendingDeleteIds)]);
+        setLocalRows(previous.localRows.map(item => ({ ...item })));
+        setPendingDeleteIds([...previous.pendingDeleteIds]);
         setSelectedIds([]);
-        setPendingDeleteIds([]);
-        toast.success('Draft changes reverted');
+    };
+
+    const redoDraftChange = () => {
+        if (!editMode || saving || redoStack.length === 0) return;
+        const next = redoStack[redoStack.length - 1];
+        setRedoStack(prev => prev.slice(0, -1));
+        setUndoStack(prev => [...prev, makeSnapshot(localRows, pendingDeleteIds)]);
+        setLocalRows(next.localRows.map(item => ({ ...item })));
+        setPendingDeleteIds([...next.pendingDeleteIds]);
+        setSelectedIds([]);
     };
 
     const saveAll = async () => {
@@ -1026,6 +1054,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
             setLocalRows([]);
             setSelectedIds([]);
             setPendingDeleteIds([]);
+            setUndoStack([]);
+            setRedoStack([]);
             const changedCount = payloadItems.length + pendingDeleteIds.length;
             toast.success(`Saved changes for ${changedCount} agenda item${changedCount > 1 ? 's' : ''}`);
         } catch (error) {
@@ -1109,6 +1139,7 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
         if (!editMode || !selectedCount) return;
         const idsToDelete = [...selectedIds];
         if (!window.confirm(`Delete ${idsToDelete.length} selected agenda item${idsToDelete.length > 1 ? 's' : ''}?`)) return;
+        pushUndoSnapshot();
         setLocalRows(prev => prev.filter(item => !idsToDelete.includes(item.id)));
         setPendingDeleteIds(prev => [...new Set([...prev, ...idsToDelete])]);
         clearSelection();
@@ -1159,13 +1190,8 @@ const AgendaTable = ({ deptId, agenda, setAgenda }) => {
                             >
                                 Delete Selected
                             </button>
-                            <button
-                                onClick={undoDraftChanges}
-                                disabled={saving}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-60 transition-colors"
-                            >
-                                Undo Changes
-                            </button>
+                            <button onClick={undoDraftChange} disabled={saving || undoStack.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-60 transition-colors">Undo</button>
+                            <button onClick={redoDraftChange} disabled={saving || redoStack.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-100 text-sky-800 hover:bg-sky-200 disabled:opacity-60 transition-colors">Redo</button>
                             <button
                                 onClick={cancelEdit}
                                 disabled={saving}
