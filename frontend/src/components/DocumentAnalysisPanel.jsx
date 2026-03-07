@@ -116,19 +116,28 @@ const DocumentAnalysisPanel = ({
 
             let analyzedSuccess = 0;
             let analyzedFailed = 0;
+            const failedDocs = [];
             for (const createdDoc of createdDocs) {
                 try {
-                    await runAnalysis(createdDoc, mode, cleanPrompt);
+                    await runAnalysis(createdDoc, mode, cleanPrompt, { suppressErrorToast: true });
                     analyzedSuccess += 1;
-                } catch {
+                } catch (err) {
                     analyzedFailed += 1;
+                    failedDocs.push(`${createdDoc.original_filename}: ${err?.message || 'Analysis failed'}`);
                 }
             }
 
             const modeLabel = isCustom ? 'custom' : 'default';
-            toast.success(
-                `Uploaded ${createdDocs.length} file(s); ${analyzedSuccess} analyzed in ${modeLabel} mode${analyzedFailed ? `, ${analyzedFailed} failed` : ''}`
-            );
+            if (analyzedFailed) {
+                const topReasons = failedDocs.slice(0, 2).join(' | ');
+                toast.error(
+                    `Uploaded ${createdDocs.length} file(s); ${analyzedSuccess} analyzed in ${modeLabel} mode, ${analyzedFailed} failed. ${topReasons}`
+                );
+            } else {
+                toast.success(
+                    `Uploaded ${createdDocs.length} file(s); ${analyzedSuccess} analyzed in ${modeLabel} mode`
+                );
+            }
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Upload failed';
             toast.error(msg);
@@ -147,7 +156,8 @@ const DocumentAnalysisPanel = ({
         await uploadAndAnalyze('custom', promptText);
     };
 
-    const runAnalysis = async (docOrId, mode, promptText = null) => {
+    const runAnalysis = async (docOrId, mode, promptText = null, options = {}) => {
+        const { suppressErrorToast = false } = options;
         const doc = typeof docOrId === 'object' ? docOrId : docs.find((item) => item.id === docOrId);
         if (!doc) return null;
         setAnalyzingDocId(doc.id);
@@ -164,8 +174,10 @@ const DocumentAnalysisPanel = ({
             return updated;
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Analysis failed';
-            toast.error(msg);
-            throw e;
+            if (!suppressErrorToast) {
+                toast.error(msg);
+            }
+            throw new Error(msg);
         } finally {
             setAnalyzingDocId(null);
         }

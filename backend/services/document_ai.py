@@ -23,6 +23,11 @@ except Exception:
     PdfReader = None
 
 try:
+    import pdfplumber
+except Exception:
+    pdfplumber = None
+
+try:
     from pptx import Presentation
 except Exception:
     Presentation = None
@@ -100,16 +105,47 @@ def _read_pptx(path: str) -> str:
 
 
 def _read_pdf(path: str) -> str:
-    if PdfReader is None:
-        raise RuntimeError("pypdf is not installed. Install dependency to analyze .pdf files.")
-    reader = PdfReader(path)
     chunks = []
-    for i, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        if text:
-            chunks.append(f"Page {i}:")
-            chunks.append(text)
-    return "\n".join(chunks)
+    extract_errors = []
+
+    # Primary extraction via pypdf
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(path)
+            for i, page in enumerate(reader.pages, start=1):
+                text = (page.extract_text() or "").strip()
+                if text:
+                    chunks.append(f"Page {i}:")
+                    chunks.append(text)
+        except Exception as exc:
+            extract_errors.append(f"pypdf: {exc}")
+    else:
+        extract_errors.append("pypdf unavailable")
+
+    if chunks:
+        return "\n".join(chunks)
+
+    # Fallback extraction for PDFs where pypdf fails to decode text objects.
+    if pdfplumber is not None:
+        try:
+            with pdfplumber.open(path) as pdf:
+                for i, page in enumerate(pdf.pages, start=1):
+                    text = (page.extract_text() or "").strip()
+                    if text:
+                        chunks.append(f"Page {i}:")
+                        chunks.append(text)
+        except Exception as exc:
+            extract_errors.append(f"pdfplumber: {exc}")
+    else:
+        extract_errors.append("pdfplumber unavailable")
+
+    if chunks:
+        return "\n".join(chunks)
+
+    raise ValueError(
+        "No readable text found in PDF. This usually means it is a scanned/image PDF "
+        "without a text layer. Please run OCR first or upload a text-based PDF."
+    )
 
 
 def _read_xlsx(path: str) -> str:

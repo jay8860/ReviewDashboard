@@ -10,4 +10,5 @@ openpyxl
 python-docx
 python-pptx
 pypdf
+pdfplumber
 psycopg2-binary

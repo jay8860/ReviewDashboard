@@ -1237,6 +1237,12 @@ def analyze_department_document(dept_id: int, doc_id: int, data: DocumentAnalyze
         doc.analysis_output = analysis
         doc.analysis_status = "Completed"
         doc.analysis_error = None
+    except ValueError as exc:
+        doc.analysis_status = "Failed"
+        doc.analysis_error = str(exc)
+        db.commit()
+        db.refresh(doc)
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         doc.analysis_status = "Failed"
         doc.analysis_error = str(exc)
@@ -1471,6 +1477,12 @@ def analyze_meeting_document(dept_id: int, meeting_id: int, doc_id: int, data: D
         doc.analysis_output = analysis
         doc.analysis_status = "Completed"
         doc.analysis_error = None
+    except ValueError as exc:
+        doc.analysis_status = "Failed"
+        doc.analysis_error = str(exc)
+        db.commit()
+        db.refresh(doc)
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         doc.analysis_status = "Failed"
         doc.analysis_error = str(exc)
