@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, Calendar, MapPin, Users, Phone, Save, Trash2,
-    CheckCircle2, XCircle, RefreshCw, Table2, Edit2,
-    PlusCircle, Minus, Upload, Download, FileText
+    CheckCircle2, XCircle, RefreshCw, FileText
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Layout from '../components/Layout';
@@ -50,16 +49,11 @@ const MeetingWorkspace = ({ user, onLogout }) => {
         venue: '',
         attendees: '',
         officer_phone: '',
-        notes: '',
         status: 'Scheduled',
     });
 
-    const [columns, setColumns] = useState(DEFAULT_COLUMNS);
-    const [rows, setRows] = useState([]);
-    const [editMode, setEditMode] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savingStatus, setSavingStatus] = useState(false);
-    const fileInputRef = useRef(null);
 
     const load = async () => {
         setLoading(true);
@@ -78,11 +72,8 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                     venue: found.venue || '',
                     attendees: found.attendees || '',
                     officer_phone: found.officer_phone || '',
-                    notes: found.notes || '',
                     status: found.status || 'Scheduled',
                 });
-                setColumns(found.action_table_columns?.length ? found.action_table_columns : DEFAULT_COLUMNS);
-                setRows(found.action_table_rows || []);
             }
         } catch (e) {
             console.error(e);
@@ -100,11 +91,8 @@ const MeetingWorkspace = ({ user, onLogout }) => {
             venue: updated.venue || '',
             attendees: updated.attendees || '',
             officer_phone: updated.officer_phone || '',
-            notes: updated.notes || '',
             status: updated.status || 'Scheduled',
         });
-        setColumns(updated.action_table_columns?.length ? updated.action_table_columns : DEFAULT_COLUMNS);
-        setRows(updated.action_table_rows || []);
     };
 
     const saveWorkspace = async () => {
@@ -115,13 +103,9 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                 venue: form.venue,
                 attendees: form.attendees,
                 officer_phone: form.officer_phone,
-                notes: form.notes,
                 status: form.status,
-                action_table_columns: columns,
-                action_table_rows: rows,
             });
             syncFromMeeting(updated);
-            setEditMode(false);
             toast.success('Meeting workspace saved');
         } catch {
             toast.error('Failed to save meeting workspace');
@@ -152,70 +136,6 @@ const MeetingWorkspace = ({ user, onLogout }) => {
         } catch {
             toast.error('Failed to delete meeting');
         }
-    };
-
-    const updateCell = (rIdx, cIdx, val) => {
-        setRows(prev => {
-            const next = prev.map(r => [...r]);
-            while (next[rIdx].length < columns.length) next[rIdx].push('');
-            next[rIdx][cIdx] = val;
-            return next;
-        });
-    };
-
-    const addRow = () => setRows(prev => [...prev, Array(columns.length).fill('')]);
-    const removeRow = (rIdx) => setRows(prev => prev.filter((_, i) => i !== rIdx));
-
-    const addCol = () => {
-        const next = `Col ${columns.length + 1}`;
-        setColumns(prev => [...prev, next]);
-        setRows(prev => prev.map(r => [...r, '']));
-    };
-
-    const removeCol = (cIdx) => {
-        if (columns.length <= 1) return;
-        setColumns(prev => prev.filter((_, i) => i !== cIdx));
-        setRows(prev => prev.map(r => r.filter((_, i) => i !== cIdx)));
-    };
-
-    const renameCol = (cIdx, value) => {
-        setColumns(prev => prev.map((c, i) => (i === cIdx ? value : c)));
-    };
-
-    const importCSV = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            const text = String(ev.target?.result || '');
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            if (!lines.length) return;
-            const parsed = lines.map(line => line.split(',').map(cell => cell.replace(/^"|"$/g, '').trim()));
-            const importedCols = parsed[0] || [];
-            const importedRows = parsed.slice(1);
-            if (!importedCols.length) {
-                toast.error('CSV has no columns');
-                return;
-            }
-            setColumns(importedCols);
-            setRows(importedRows);
-            toast.success(`Imported ${importedRows.length} rows`);
-        };
-        reader.readAsText(file);
-        e.target.value = '';
-    };
-
-    const exportCSV = () => {
-        const csv = [columns, ...rows]
-            .map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))
-            .join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `meeting-${meetingIdInt}-action-table.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
     };
 
     const generateMeetingTaskSuggestions = async () => {
@@ -384,22 +304,12 @@ const MeetingWorkspace = ({ user, onLogout }) => {
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     <div className="space-y-6">
-                        <div className="glass-card rounded-3xl overflow-hidden border border-indigo-100/70 dark:border-indigo-500/20">
-                            <div className="px-5 py-4 border-b border-indigo-100 bg-gradient-to-r from-violet-50/70 to-white">
-                                <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                                    <FileText size={16} className="text-violet-600" /> Minutes Of Meeting
-                                </h2>
-                            </div>
-                            <div className="p-5 bg-white/90">
-                                <textarea
-                                    rows={13}
-                                    value={form.notes}
-                                    onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))}
-                                    placeholder="Write detailed minutes, observations, decisions and follow-ups..."
-                                    className="w-full px-4 py-3 rounded-2xl border border-indigo-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none text-sm"
-                                />
-                            </div>
-                        </div>
+                        <BulletTaskPad
+                            title="Meeting Task Notepad"
+                            subtitle="Write quick bullets during discussion. Your note text is retained even after creating tasks from selected rows."
+                            storageKey={`meeting-bullet-notes-${deptIdInt}-${meetingIdInt}`}
+                            onConfirmCreate={confirmTaskSuggestions}
+                        />
 
                         <div className="glass-card rounded-3xl overflow-hidden border border-indigo-100/70 dark:border-indigo-500/20">
                             <div className="px-5 py-4 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-white">
@@ -497,131 +407,20 @@ const MeetingWorkspace = ({ user, onLogout }) => {
 
                         <TaskSuggestionsEditor
                             title="Task Suggestions From Meeting Notes"
-                            subtitle="Generate tasks only from MOM notes and the action grid. Edit rows before creating tasks."
+                            subtitle="Generate tasks from saved meeting workspace context. Edit rows before creating tasks."
                             generateLabel="Suggest From Meeting"
                             onGenerate={generateMeetingTaskSuggestions}
                             onConfirmCreate={confirmTaskSuggestions}
                         />
+                    </div>
 
-                        <BulletTaskPad
-                            title="Meeting Task Notepad"
-                            subtitle="Write quick bullets during discussion and convert selected rows directly into tasks."
-                            storageKey={`meeting-bullet-notes-${deptIdInt}-${meetingIdInt}`}
-                            onConfirmCreate={confirmTaskSuggestions}
-                        />
-
+                    <div className="xl:col-span-2">
                         <DocumentAnalysisPanel
                             deptId={deptIdInt}
                             meetingId={meetingIdInt}
                             title="Meeting Documents & AI Analysis"
                             includeDepartmentDocs
                         />
-                    </div>
-
-                    <div className="xl:col-span-2 glass-card rounded-3xl overflow-hidden border border-violet-100/70 dark:border-violet-500/20 min-h-[620px] flex flex-col">
-                        <div className="px-5 py-4 border-b border-violet-100 dark:border-violet-500/20 bg-gradient-to-r from-violet-50 to-indigo-50 flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
-                                <Table2 size={18} className="text-violet-600" />
-                                <h2 className="text-lg font-black text-slate-900">Action Points Grid</h2>
-                                <span className="text-xs bg-violet-100 text-violet-700 font-black px-2 py-0.5 rounded-full">{rows.length} rows × {columns.length} cols</span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <button onClick={exportCSV} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-violet-700 hover:bg-violet-100 transition-colors">
-                                    <Download size={13} /> Export
-                                </button>
-                                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-violet-700 hover:bg-violet-100 transition-colors">
-                                    <Upload size={13} /> Import CSV
-                                </button>
-                                <input ref={fileInputRef} type="file" accept=".csv" onChange={importCSV} className="hidden" />
-                                <button
-                                    onClick={() => setEditMode(v => !v)}
-                                    className={`flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors ${editMode ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
-                                >
-                                    <Edit2 size={13} /> {editMode ? 'Done Editing' : 'Edit Grid'}
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar bg-white/95">
-                            <table className="w-full text-sm border-collapse">
-                                <thead className="sticky top-0 z-10 bg-violet-50">
-                                    <tr>
-                                        <th className="w-9 px-2 py-2 text-xs text-violet-500 font-black border-b border-r border-violet-100">#</th>
-                                        {columns.map((col, cIdx) => (
-                                            <th key={cIdx} className="px-2 py-2 border-b border-r border-violet-100 text-left font-black text-violet-700 text-xs uppercase tracking-wider min-w-[130px]">
-                                                {editMode ? (
-                                                    <div className="flex items-center gap-1">
-                                                        <input
-                                                            value={col}
-                                                            onChange={(e) => renameCol(cIdx, e.target.value)}
-                                                            className="w-full text-xs font-bold bg-white border border-violet-300 rounded px-1 py-0.5 focus:outline-none"
-                                                        />
-                                                        {columns.length > 1 && (
-                                                            <button onClick={() => removeCol(cIdx)} className="p-0.5 text-rose-500 hover:bg-rose-50 rounded">
-                                                                <Minus size={10} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ) : col}
-                                            </th>
-                                        ))}
-                                        {editMode && (
-                                            <th className="px-2 py-2 border-b border-violet-100">
-                                                <button onClick={addCol} className="flex items-center gap-1 text-xs text-violet-600 font-bold hover:text-violet-800 whitespace-nowrap">
-                                                    <PlusCircle size={12} /> Col
-                                                </button>
-                                            </th>
-                                        )}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {rows.length === 0 && !editMode && (
-                                        <tr>
-                                            <td colSpan={columns.length + 1} className="text-center py-10 text-slate-400 italic text-xs">
-                                                No action points yet. Click Edit Grid to start.
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {rows.map((row, rIdx) => (
-                                        <tr key={rIdx} className="hover:bg-violet-50/50 transition-colors">
-                                            <td className="px-2 py-1.5 text-xs text-slate-400 font-bold text-center border-r border-b border-violet-100 w-9">
-                                                {editMode ? (
-                                                    <button onClick={() => removeRow(rIdx)} className="text-rose-500 hover:text-rose-700">
-                                                        <Minus size={12} />
-                                                    </button>
-                                                ) : rIdx + 1}
-                                            </td>
-                                            {columns.map((_, cIdx) => (
-                                                <td key={cIdx} className="px-2 py-1 border-r border-b border-violet-100 min-w-[130px]">
-                                                    {editMode ? (
-                                                        <input
-                                                            value={row[cIdx] || ''}
-                                                            onChange={(e) => updateCell(rIdx, cIdx, e.target.value)}
-                                                            className="w-full text-xs bg-transparent border-b border-transparent focus:border-violet-400 focus:outline-none px-1 py-0.5 text-slate-700 rounded transition-colors"
-                                                            placeholder="—"
-                                                        />
-                                                    ) : (
-                                                        <span className="text-xs text-slate-700 px-1">
-                                                            {row[cIdx] || <span className="text-slate-300">—</span>}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            ))}
-                                            {editMode && <td className="border-b border-violet-100" />}
-                                        </tr>
-                                    ))}
-                                    {editMode && (
-                                        <tr>
-                                            <td colSpan={columns.length + 2} className="px-4 py-2">
-                                                <button onClick={addRow} className="flex items-center gap-1.5 text-xs text-violet-600 font-bold hover:text-violet-800 transition-colors">
-                                                    <PlusCircle size={14} /> Add Row
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
                     </div>
                 </div>
             </div>
