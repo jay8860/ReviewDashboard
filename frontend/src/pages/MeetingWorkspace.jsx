@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
 import TaskSuggestionsEditor from '../components/TaskSuggestionsEditor';
+import BulletTaskPad from '../components/BulletTaskPad';
 
 const DEFAULT_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"];
 
@@ -502,10 +503,18 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                             onConfirmCreate={confirmTaskSuggestions}
                         />
 
+                        <BulletTaskPad
+                            title="Meeting Task Notepad"
+                            subtitle="Write quick bullets during discussion and convert selected rows directly into tasks."
+                            storageKey={`meeting-bullet-notes-${deptIdInt}-${meetingIdInt}`}
+                            onConfirmCreate={confirmTaskSuggestions}
+                        />
+
                         <DocumentAnalysisPanel
                             deptId={deptIdInt}
                             meetingId={meetingIdInt}
                             title="Meeting Documents & AI Analysis"
+                            includeDepartmentDocs
                         />
                     </div>
 

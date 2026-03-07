@@ -18,6 +18,7 @@ from services.document_ai import (
     extract_text_from_document,
     analyze_with_gemini,
     generate_task_suggestions_with_gemini,
+    compare_analysis_outputs_with_gemini,
 )
 
 router = APIRouter()
@@ -92,6 +93,18 @@ def _store_uploaded_document(file: UploadFile, dept_id: int, meeting_id: Optiona
         file.file.close()
 
     return file_path, stored_filename, total_bytes, ext
+
+
+def _collect_upload_files(file: Optional[UploadFile], files: Optional[List[UploadFile]]) -> List[UploadFile]:
+    collected: List[UploadFile] = []
+    if file is not None:
+        collected.append(file)
+    if files:
+        collected.extend([item for item in files if item is not None])
+    valid = [item for item in collected if (item.filename or "").strip()]
+    if not valid:
+        raise HTTPException(status_code=400, detail="At least one valid file is required")
+    return valid
 
 
 def _get_meeting_or_404(db: Session, dept_id: int, meeting_id: int) -> models.DepartmentMeeting:
@@ -336,6 +349,50 @@ def _build_meeting_task_source(meeting: models.DepartmentMeeting) -> str:
         chunks.append("Meeting notes and action table are currently empty.")
 
     return _clip_text(chunks, limit=22000)
+
+
+def _doc_compare_label(doc: models.DocumentAttachment) -> str:
+    stamp = doc.created_at.isoformat() if doc.created_at else "unknown-date"
+    scope = "Meeting" if doc.meeting_id else "Department"
+    return f"{doc.original_filename} ({scope}, {stamp})"
+
+
+def _build_fallback_analysis_comparison(
+    left_doc: models.DocumentAttachment,
+    right_doc: models.DocumentAttachment,
+    error_note: Optional[str] = None,
+) -> str:
+    left_text = (left_doc.analysis_output or "").strip()
+    right_text = (right_doc.analysis_output or "").strip()
+    left_words = len(re.findall(r"\S+", left_text))
+    right_words = len(re.findall(r"\S+", right_text))
+    delta_words = right_words - left_words
+    change = "expanded" if delta_words > 0 else "shortened" if delta_words < 0 else "unchanged"
+    note_line = f"\n\n> Auto compare fallback used because AI compare failed: {error_note}" if error_note else ""
+
+    return (
+        "## Executive Progress Verdict\n"
+        f"- Compared **{_doc_compare_label(left_doc)}** with **{_doc_compare_label(right_doc)}**.\n"
+        f"- Output length moved from **{left_words}** to **{right_words}** words ({change}).\n"
+        "- Open both analyses side-by-side to validate parameter-wise movement.\n\n"
+        "## Comparable Parameter Matrix\n"
+        "| Parameter | Older Analysis | Newer Analysis | Trend | Evidence |\n"
+        "|---|---|---|---|---|\n"
+        f"| Word Count | {left_words} | {right_words} | {'Improved detail' if delta_words > 0 else 'Reduced detail' if delta_words < 0 else 'No change'} | Automatic fallback metric |\n"
+        f"| Analysis Mode | {left_doc.analysis_mode or 'Unknown'} | {right_doc.analysis_mode or 'Unknown'} | {'Changed' if (left_doc.analysis_mode or '') != (right_doc.analysis_mode or '') else 'No change'} | Document metadata |\n\n"
+        "## Notable Improvements\n"
+        "- AI comparison was unavailable, so only baseline metadata was compared.\n"
+        "- Use custom compare again after verifying Gemini/API connectivity.\n\n"
+        "## Persistent / New Gaps\n"
+        "- Parameter-level semantic comparison is not available in fallback mode.\n"
+        "- Evidence citations require AI comparison output.\n\n"
+        "## Priority Follow-up Actions\n"
+        "| Action | Owner Suggestion | Timeline | Why It Matters |\n"
+        "|---|---|---|---|\n"
+        "| Re-run compare with AI available | Review dashboard admin | Immediate | Enables true progress comparison across parameters |\n"
+        "| Validate both analyses manually | Department owner | Same day | Avoid missing regressions while fallback is active |"
+        f"{note_line}"
+    )
 
 
 class DepartmentCreate(BaseModel):
@@ -1082,6 +1139,11 @@ class TaskSuggestionConfirmRequest(BaseModel):
     suggestions: List[TaskSuggestionItem]
 
 
+class AnalysisCompareRequest(BaseModel):
+    left_doc_id: int
+    right_doc_id: int
+
+
 @router.get("/{dept_id}/documents")
 def list_department_documents(dept_id: int, db: Session = Depends(get_db)):
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
@@ -1095,30 +1157,57 @@ def list_department_documents(dept_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{dept_id}/documents")
-def upload_department_document(dept_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_department_document(
+    dept_id: int,
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+):
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="File name is missing")
+    upload_items = _collect_upload_files(file, files)
 
-    file_path, stored_filename, file_size, ext = _store_uploaded_document(file, dept_id=dept_id, meeting_id=None)
-    doc = models.DocumentAttachment(
-        department_id=dept_id,
-        meeting_id=None,
-        scope="department",
-        original_filename=file.filename,
-        stored_filename=stored_filename,
-        file_path=file_path,
-        mime_type=file.content_type,
-        file_extension=ext,
-        file_size=file_size,
-        analysis_status="Not Analyzed",
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    return _serialize_attachment(doc)
+    created_docs: List[models.DocumentAttachment] = []
+    created_paths: List[str] = []
+    try:
+        for upload in upload_items:
+            file_path, stored_filename, file_size, ext = _store_uploaded_document(upload, dept_id=dept_id, meeting_id=None)
+            created_paths.append(file_path)
+            doc = models.DocumentAttachment(
+                department_id=dept_id,
+                meeting_id=None,
+                scope="department",
+                original_filename=upload.filename,
+                stored_filename=stored_filename,
+                file_path=file_path,
+                mime_type=upload.content_type,
+                file_extension=ext,
+                file_size=file_size,
+                analysis_status="Not Analyzed",
+            )
+            db.add(doc)
+            db.flush()
+            created_docs.append(doc)
+        db.commit()
+    except Exception:
+        db.rollback()
+        for path in created_paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+        raise
+
+    for doc in created_docs:
+        db.refresh(doc)
+    if len(created_docs) == 1:
+        return _serialize_attachment(created_docs[0])
+    return {
+        "uploaded_count": len(created_docs),
+        "uploaded": [_serialize_attachment(doc) for doc in created_docs],
+    }
 
 
 @router.post("/{dept_id}/documents/{doc_id}/analyze")
@@ -1240,6 +1329,57 @@ def suggest_tasks_from_department_document(
         raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
 
 
+@router.post("/{dept_id}/documents/compare-analysis")
+def compare_document_analyses(
+    dept_id: int,
+    data: AnalysisCompareRequest,
+    db: Session = Depends(get_db),
+):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    if data.left_doc_id == data.right_doc_id:
+        raise HTTPException(status_code=400, detail="Choose two different document versions for comparison")
+
+    docs = db.query(models.DocumentAttachment).filter(
+        models.DocumentAttachment.department_id == dept_id,
+        models.DocumentAttachment.id.in_([data.left_doc_id, data.right_doc_id]),
+    ).all()
+    by_id = {doc.id: doc for doc in docs}
+
+    left_doc = by_id.get(data.left_doc_id)
+    right_doc = by_id.get(data.right_doc_id)
+    if not left_doc or not right_doc:
+        raise HTTPException(status_code=404, detail="One or both document versions were not found")
+    if not (left_doc.analysis_output or "").strip():
+        raise HTTPException(status_code=400, detail="Older/left document has no completed analysis output")
+    if not (right_doc.analysis_output or "").strip():
+        raise HTTPException(status_code=400, detail="Newer/right document has no completed analysis output")
+
+    compare_engine = "gemini"
+    compare_error = None
+    try:
+        comparison_output = compare_analysis_outputs_with_gemini(
+            left_label=_doc_compare_label(left_doc),
+            left_analysis=left_doc.analysis_output or "",
+            right_label=_doc_compare_label(right_doc),
+            right_analysis=right_doc.analysis_output or "",
+        )
+    except Exception as exc:
+        compare_engine = "fallback"
+        compare_error = str(exc)
+        comparison_output = _build_fallback_analysis_comparison(left_doc, right_doc, error_note=compare_error)
+
+    return {
+        "left": _serialize_attachment(left_doc),
+        "right": _serialize_attachment(right_doc),
+        "comparison_output": comparison_output,
+        "compare_engine": compare_engine,
+        "compare_error": compare_error,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
 @router.get("/{dept_id}/meetings/{meeting_id}/documents")
 def list_meeting_documents(dept_id: int, meeting_id: int, db: Session = Depends(get_db)):
     _get_meeting_or_404(db, dept_id, meeting_id)
@@ -1251,28 +1391,56 @@ def list_meeting_documents(dept_id: int, meeting_id: int, db: Session = Depends(
 
 
 @router.post("/{dept_id}/meetings/{meeting_id}/documents")
-def upload_meeting_document(dept_id: int, meeting_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_meeting_document(
+    dept_id: int,
+    meeting_id: int,
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+):
     _get_meeting_or_404(db, dept_id, meeting_id)
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="File name is missing")
+    upload_items = _collect_upload_files(file, files)
 
-    file_path, stored_filename, file_size, ext = _store_uploaded_document(file, dept_id=dept_id, meeting_id=meeting_id)
-    doc = models.DocumentAttachment(
-        department_id=dept_id,
-        meeting_id=meeting_id,
-        scope="meeting",
-        original_filename=file.filename,
-        stored_filename=stored_filename,
-        file_path=file_path,
-        mime_type=file.content_type,
-        file_extension=ext,
-        file_size=file_size,
-        analysis_status="Not Analyzed",
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    return _serialize_attachment(doc)
+    created_docs: List[models.DocumentAttachment] = []
+    created_paths: List[str] = []
+    try:
+        for upload in upload_items:
+            file_path, stored_filename, file_size, ext = _store_uploaded_document(upload, dept_id=dept_id, meeting_id=meeting_id)
+            created_paths.append(file_path)
+            doc = models.DocumentAttachment(
+                department_id=dept_id,
+                meeting_id=meeting_id,
+                scope="meeting",
+                original_filename=upload.filename,
+                stored_filename=stored_filename,
+                file_path=file_path,
+                mime_type=upload.content_type,
+                file_extension=ext,
+                file_size=file_size,
+                analysis_status="Not Analyzed",
+            )
+            db.add(doc)
+            db.flush()
+            created_docs.append(doc)
+        db.commit()
+    except Exception:
+        db.rollback()
+        for path in created_paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+        raise
+
+    for doc in created_docs:
+        db.refresh(doc)
+    if len(created_docs) == 1:
+        return _serialize_attachment(created_docs[0])
+    return {
+        "uploaded_count": len(created_docs),
+        "uploaded": [_serialize_attachment(doc) for doc in created_docs],
+    }
 
 
 @router.post("/{dept_id}/meetings/{meeting_id}/documents/{doc_id}/analyze")

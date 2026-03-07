@@ -484,6 +484,114 @@ Input text:
     )
 
 
+def compare_analysis_outputs_with_gemini(
+    left_label: str,
+    left_analysis: str,
+    right_label: str,
+    right_analysis: str,
+) -> str:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set. Please add it in environment variables.")
+
+    left_text = (left_analysis or "").strip()[:16000]
+    right_text = (right_analysis or "").strip()[:16000]
+    if not left_text or not right_text:
+        raise ValueError("Both analyses must contain text to compare.")
+
+    prompt = f"""
+You are a governance review comparison analyst.
+
+Compare these two analysis outputs and evaluate progress between dates.
+
+Analysis A (older):
+{left_label}
+
+Analysis B (newer):
+{right_label}
+
+Return Markdown with exactly these sections:
+
+1) Executive Progress Verdict
+- 4-6 bullets summarizing overall movement.
+
+2) Comparable Parameter Matrix
+- Markdown table with columns:
+  Parameter | Analysis A | Analysis B | Trend (Improved/No Change/Regressed) | Evidence
+
+3) Notable Improvements
+- 3-8 specific bullets.
+
+4) Persistent / New Gaps
+- 3-8 specific bullets with severity tags (High/Medium/Low).
+
+5) Priority Follow-up Actions
+- Markdown table with columns:
+  Action | Owner Suggestion | Timeline | Why It Matters
+
+Rules:
+- Use only evidence from the provided analyses.
+- If evidence is missing, write "Insufficient evidence".
+- Keep output practical for department review meetings.
+
+Analysis A text:
+{left_text}
+
+Analysis B text:
+{right_text}
+""".strip()
+
+    preferred = _normalize_model_name(GEMINI_MODEL)
+    model_candidates = [
+        preferred,
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+    model_candidates = [_normalize_model_name(m) for m in model_candidates]
+    model_candidates = [m for i, m in enumerate(model_candidates) if m and m not in model_candidates[:i]]
+
+    tried = []
+    last_error = None
+    token_candidates = [8192, 6144, 4096, 3072, 2048]
+
+    for model_name in model_candidates:
+        tried.append(model_name)
+        for output_tokens in token_candidates:
+            try:
+                result, _ = _gemini_generate_once(api_key, model_name, prompt, output_tokens)
+                return result.strip()
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="ignore")
+                detail_l = detail.lower()
+                if exc.code == 404 and ("not found" in detail_l or "not supported" in detail_l):
+                    last_error = GeminiModelNotFoundError(f"Model '{model_name}' unavailable")
+                    break
+                if exc.code == 400 and (
+                    "maxoutputtokens" in detail_l
+                    or "max output token" in detail_l
+                    or "invalid argument" in detail_l
+                    or "unexpected model name format" in detail_l
+                ):
+                    last_error = RuntimeError(
+                        f"Model '{model_name}' rejected comparison request. Retrying fallback."
+                    )
+                    continue
+                raise RuntimeError(f"Gemini API error ({exc.code}): {detail[:500]}") from exc
+            except urllib.error.URLError as exc:
+                raise RuntimeError(f"Gemini API network error: {exc}") from exc
+            except Exception as exc:
+                last_error = exc
+                continue
+
+    raise RuntimeError(
+        f"No compatible Gemini model found for analysis comparison. Tried: {', '.join(tried)}. "
+        f"Last error: {last_error}"
+    )
+
+
 def analyze_with_gemini(document_name: str, extracted_text: str, mode: str = "default", custom_prompt: Optional[str] = None) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:

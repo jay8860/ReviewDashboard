@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, FileText, Download, Brain, MessageSquareText,
-    RefreshCw, Copy, Check
+    RefreshCw, Copy, Check, GitCompareArrows, History
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import MarkdownAnalysis from '../components/MarkdownAnalysis';
 import TaskSuggestionsEditor from '../components/TaskSuggestionsEditor';
+import BulletTaskPad from '../components/BulletTaskPad';
 
 const formatSize = (bytes = 0) => {
     if (!bytes) return '0 B';
@@ -28,6 +29,18 @@ const fileNameFromDisposition = (header) => {
     return match?.[1] ? decodeURIComponent(match[1]) : null;
 };
 
+const isMeetingDocument = (item) => item?.meeting_id !== null && item?.meeting_id !== undefined;
+
+const sortDocsByNewest = (items = []) =>
+    [...items].sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+
+const formatDateTime = (value) => {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+};
+
 const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const { deptId, meetingId, docId } = useParams();
     const location = useLocation();
@@ -44,6 +57,11 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const [dept, setDept] = useState(null);
     const [doc, setDoc] = useState(null);
     const [copied, setCopied] = useState(false);
+    const [historyDocs, setHistoryDocs] = useState([]);
+    const [leftCompareId, setLeftCompareId] = useState('');
+    const [rightCompareId, setRightCompareId] = useState('');
+    const [comparing, setComparing] = useState(false);
+    const [comparisonResult, setComparisonResult] = useState(null);
 
     useEffect(() => {
         const snapshot = location.state?.docSnapshot;
@@ -53,15 +71,31 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
         }
     }, [location.state, docIdInt]);
 
+    const fetchHistoryDocs = async () => {
+        if (isMeetingScope) {
+            const [meetingDocs, departmentDocs] = await Promise.all([
+                api.getMeetingDocuments(deptIdInt, meetingIdInt),
+                api.getDepartmentDocuments(deptIdInt),
+            ]);
+            return sortDocsByNewest([...(meetingDocs || []), ...(departmentDocs || [])]);
+        }
+        const departmentDocs = await api.getDepartmentDocuments(deptIdInt);
+        return sortDocsByNewest(departmentDocs || []);
+    };
+
     const load = async () => {
         setLoading(true);
         try {
-            const deptData = await api.getDepartment(deptIdInt);
-            const docData = isMeetingScope
-                ? await api.getMeetingDocument(deptIdInt, meetingIdInt, docIdInt)
-                : await api.getDepartmentDocument(deptIdInt, docIdInt);
+            const [deptData, docData, history] = await Promise.all([
+                api.getDepartment(deptIdInt),
+                isMeetingScope
+                    ? api.getMeetingDocument(deptIdInt, meetingIdInt, docIdInt)
+                    : api.getDepartmentDocument(deptIdInt, docIdInt),
+                fetchHistoryDocs(),
+            ]);
             setDept(deptData);
             setDoc(docData);
+            setHistoryDocs(history);
         } catch {
             toast.error('Failed to load analysis workspace');
         } finally {
@@ -71,11 +105,30 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
 
     useEffect(() => { load(); }, [deptId, meetingId, docId]);
 
+    const comparableDocs = useMemo(
+        () => historyDocs.filter((item) => (item.analysis_output || '').trim().length > 0),
+        [historyDocs]
+    );
+
+    useEffect(() => {
+        if (comparableDocs.length < 2) {
+            setLeftCompareId('');
+            setRightCompareId('');
+            return;
+        }
+        if (!leftCompareId || !comparableDocs.find((item) => String(item.id) === String(leftCompareId))) {
+            setLeftCompareId(String(comparableDocs[1]?.id || comparableDocs[0].id));
+        }
+        if (!rightCompareId || !comparableDocs.find((item) => String(item.id) === String(rightCompareId))) {
+            setRightCompareId(String(comparableDocs[0].id));
+        }
+    }, [comparableDocs, leftCompareId, rightCompareId]);
+
     const downloadDoc = async () => {
         if (!doc) return;
         try {
-            const response = isMeetingScope
-                ? await api.downloadMeetingDocument(deptIdInt, meetingIdInt, doc.id)
+            const response = isMeetingDocument(doc)
+                ? await api.downloadMeetingDocument(deptIdInt, Number(doc.meeting_id), doc.id)
                 : await api.downloadDepartmentDocument(deptIdInt, doc.id);
             const disposition = response.headers['content-disposition'];
             const filename = fileNameFromDisposition(disposition) || doc.original_filename || 'document';
@@ -101,10 +154,16 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
 
         setAnalyzing(true);
         try {
-            const updated = isMeetingScope
-                ? await api.analyzeMeetingDocument(deptIdInt, meetingIdInt, doc.id, payload)
+            const updated = isMeetingDocument(doc)
+                ? await api.analyzeMeetingDocument(deptIdInt, Number(doc.meeting_id), doc.id, payload)
                 : await api.analyzeDepartmentDocument(deptIdInt, doc.id, payload);
             setDoc(updated);
+            try {
+                setHistoryDocs(await fetchHistoryDocs());
+            } catch {
+                // Keep latest analysis visible even if history refresh fails.
+            }
+            setComparisonResult(null);
             toast.success(mode === 'custom' ? 'Custom analysis completed' : 'Default analysis completed');
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Analysis failed';
@@ -127,8 +186,8 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
 
     const generateTaskSuggestions = async () => {
         if (!doc) return { suggestions: [] };
-        if (isMeetingScope) {
-            return api.suggestTasksFromMeetingDocument(deptIdInt, meetingIdInt, doc.id, {});
+        if (isMeetingDocument(doc)) {
+            return api.suggestTasksFromMeetingDocument(deptIdInt, Number(doc.meeting_id), doc.id, {});
         }
         return api.suggestTasksFromDepartmentDocument(deptIdInt, doc.id, {});
     };
@@ -140,6 +199,40 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const backPath = isMeetingScope
         ? `/departments/${deptIdInt}/meetings/${meetingIdInt}`
         : `/departments/${deptIdInt}`;
+
+    const openHistoryDoc = (historyDoc) => {
+        if (!historyDoc) return;
+        const path = isMeetingDocument(historyDoc)
+            ? `/departments/${deptIdInt}/meetings/${Number(historyDoc.meeting_id)}/documents/${historyDoc.id}/analysis`
+            : `/departments/${deptIdInt}/documents/${historyDoc.id}/analysis`;
+        navigate(path, { state: { docSnapshot: historyDoc } });
+    };
+
+    const runComparison = async () => {
+        const leftId = Number(leftCompareId);
+        const rightId = Number(rightCompareId);
+        if (!Number.isFinite(leftId) || !Number.isFinite(rightId)) {
+            toast.error('Choose two analysis versions');
+            return;
+        }
+        if (leftId === rightId) {
+            toast.error('Choose two different dates/versions');
+            return;
+        }
+        setComparing(true);
+        try {
+            const result = await api.compareDepartmentDocumentAnalyses(deptIdInt, {
+                left_doc_id: leftId,
+                right_doc_id: rightId,
+            });
+            setComparisonResult(result);
+        } catch (e) {
+            const msg = e?.response?.data?.detail || 'Failed to compare analysis outputs';
+            toast.error(msg);
+        } finally {
+            setComparing(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -236,6 +329,112 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                     subtitle="Generate actionable tasks from this document analysis, edit as needed, then confirm creation."
                     generateLabel="Suggest Tasks"
                     onGenerate={generateTaskSuggestions}
+                    onConfirmCreate={confirmTaskSuggestions}
+                />
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="glass-card rounded-3xl overflow-hidden border border-violet-100/70">
+                        <div className="px-5 py-4 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white">
+                            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                                <History size={16} className="text-violet-600" /> Analysis History (Date-wise)
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Click any dated version to open that analysis in this workspace.
+                            </p>
+                        </div>
+                        <div className="p-4 bg-white/95">
+                            {historyDocs.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic">No document versions available.</p>
+                            ) : (
+                                <div className="max-h-[360px] overflow-auto custom-scrollbar space-y-2">
+                                    {historyDocs.map((item) => (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => openHistoryDoc(item)}
+                                            className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                                                item.id === doc.id
+                                                    ? 'border-violet-300 bg-violet-50'
+                                                    : 'border-violet-100 bg-white hover:bg-violet-50/50'
+                                            }`}
+                                        >
+                                            <p className="text-xs font-black text-slate-800 break-all">{item.original_filename}</p>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                                {formatDateTime(item.created_at)} · {item.analysis_status || 'Not analyzed'} · {isMeetingDocument(item) ? 'Meeting' : 'Department'}
+                                            </p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="glass-card rounded-3xl overflow-hidden border border-violet-100/70">
+                        <div className="px-5 py-4 border-b border-violet-100 bg-gradient-to-r from-indigo-50 to-white">
+                            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                                <GitCompareArrows size={16} className="text-indigo-600" /> Compare Two Dates / Versions
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Pick any two analysis outputs to evaluate progress in comparable parameters.
+                            </p>
+                        </div>
+                        <div className="p-4 bg-white/95 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <select
+                                    value={leftCompareId}
+                                    onChange={(e) => setLeftCompareId(e.target.value)}
+                                    className="px-3 py-2 rounded-xl border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                >
+                                    <option value="">Select Version A</option>
+                                    {comparableDocs.map((item) => (
+                                        <option key={`left-${item.id}`} value={String(item.id)}>
+                                            {formatDateTime(item.created_at)} - {item.original_filename}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={rightCompareId}
+                                    onChange={(e) => setRightCompareId(e.target.value)}
+                                    className="px-3 py-2 rounded-xl border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                >
+                                    <option value="">Select Version B</option>
+                                    {comparableDocs.map((item) => (
+                                        <option key={`right-${item.id}`} value={String(item.id)}>
+                                            {formatDateTime(item.created_at)} - {item.original_filename}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button
+                                onClick={runComparison}
+                                disabled={comparing || comparableDocs.length < 2}
+                                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-black hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+                            >
+                                {comparing ? <RefreshCw size={13} className="animate-spin" /> : <GitCompareArrows size={13} />}
+                                {comparing ? 'Comparing…' : 'Compare Versions'}
+                            </button>
+
+                            {comparisonResult?.comparison_output ? (
+                                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/35 p-4 max-h-[440px] overflow-auto custom-scrollbar">
+                                    {comparisonResult.compare_engine === 'fallback' ? (
+                                        <p className="text-[11px] font-semibold text-amber-700 mb-2">
+                                            AI compare was unavailable, so fallback comparison is shown.
+                                        </p>
+                                    ) : null}
+                                    <MarkdownAnalysis content={comparisonResult.comparison_output} compact />
+                                </div>
+                            ) : (
+                                <p className="text-xs text-slate-400 italic">
+                                    Select two versions and click compare.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <BulletTaskPad
+                    title="Document Workspace Task Notepad"
+                    subtitle="Type bullet points from this review and convert selected items directly into tasks."
+                    storageKey={`document-bullet-notes-${deptIdInt}-${meetingIdInt || 'department'}-${docIdInt}`}
                     onConfirmCreate={confirmTaskSuggestions}
                 />
             </div>

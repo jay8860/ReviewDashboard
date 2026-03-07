@@ -26,24 +26,52 @@ const fileNameFromDisposition = (header) => {
     return match?.[1] ? decodeURIComponent(match[1]) : null;
 };
 
-const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & AI Analysis' }) => {
+const formatDateTime = (value) => {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+};
+
+const isMeetingDocument = (doc) => doc?.meeting_id !== null && doc?.meeting_id !== undefined;
+
+const sortDocsByNewest = (items = []) =>
+    [...items].sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+
+const DocumentAnalysisPanel = ({
+    deptId,
+    meetingId = null,
+    title = 'Documents & AI Analysis',
+    includeDepartmentDocs = false,
+}) => {
     const navigate = useNavigate();
     const toast = useToast();
     const [docs, setDocs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [analyzingDocId, setAnalyzingDocId] = useState(null);
-    const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]);
 
     const isMeetingScope = useMemo(() => Number.isFinite(meetingId) && meetingId !== null, [meetingId]);
 
     const loadDocs = async () => {
         setLoading(true);
         try {
-            const data = isMeetingScope
-                ? await api.getMeetingDocuments(deptId, meetingId)
-                : await api.getDepartmentDocuments(deptId);
-            setDocs(data || []);
+            if (isMeetingScope) {
+                if (includeDepartmentDocs) {
+                    const [meetingDocs, departmentDocs] = await Promise.all([
+                        api.getMeetingDocuments(deptId, meetingId),
+                        api.getDepartmentDocuments(deptId),
+                    ]);
+                    setDocs(sortDocsByNewest([...(meetingDocs || []), ...(departmentDocs || [])]));
+                } else {
+                    const meetingDocs = await api.getMeetingDocuments(deptId, meetingId);
+                    setDocs(sortDocsByNewest(meetingDocs || []));
+                }
+            } else {
+                const departmentDocs = await api.getDepartmentDocuments(deptId);
+                setDocs(sortDocsByNewest(departmentDocs || []));
+            }
         } catch {
             toast.error('Failed to load documents');
         } finally {
@@ -54,11 +82,11 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
     useEffect(() => {
         if (!deptId) return;
         loadDocs();
-    }, [deptId, meetingId]);
+    }, [deptId, meetingId, includeDepartmentDocs]);
 
     const uploadAndAnalyze = async (mode, promptText = null) => {
-        if (!selectedFile) {
-            toast.error('Please select a file first');
+        if (!selectedFiles.length) {
+            toast.error('Please select one or more files first');
             return;
         }
 
@@ -71,18 +99,35 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
 
         setUploading(true);
         try {
-            const created = isMeetingScope
-                ? await api.uploadMeetingDocument(deptId, meetingId, selectedFile)
-                : await api.uploadDepartmentDocument(deptId, selectedFile);
+            const createdPayload = isMeetingScope
+                ? await api.uploadMeetingDocument(deptId, meetingId, selectedFiles)
+                : await api.uploadDepartmentDocument(deptId, selectedFiles);
+            const createdDocs = Array.isArray(createdPayload?.uploaded)
+                ? createdPayload.uploaded
+                : (createdPayload ? [createdPayload] : []);
 
-            setDocs(prev => [created, ...prev]);
-            setSelectedFile(null);
+            if (!createdDocs.length) {
+                toast.error('No files were uploaded');
+                return;
+            }
 
-            await runAnalysis(created.id, mode, cleanPrompt);
+            setDocs(prev => sortDocsByNewest([...createdDocs, ...prev]));
+            setSelectedFiles([]);
+
+            let analyzedSuccess = 0;
+            let analyzedFailed = 0;
+            for (const createdDoc of createdDocs) {
+                try {
+                    await runAnalysis(createdDoc, mode, cleanPrompt);
+                    analyzedSuccess += 1;
+                } catch {
+                    analyzedFailed += 1;
+                }
+            }
+
+            const modeLabel = isCustom ? 'custom' : 'default';
             toast.success(
-                isCustom
-                    ? 'Uploaded and analyzed (custom mode)'
-                    : 'Uploaded and analyzed (default mode)'
+                `Uploaded ${createdDocs.length} file(s); ${analyzedSuccess} analyzed in ${modeLabel} mode${analyzedFailed ? `, ${analyzedFailed} failed` : ''}`
             );
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Upload failed';
@@ -102,18 +147,20 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         await uploadAndAnalyze('custom', promptText);
     };
 
-    const runAnalysis = async (docId, mode, promptText = null) => {
-        setAnalyzingDocId(docId);
+    const runAnalysis = async (docOrId, mode, promptText = null) => {
+        const doc = typeof docOrId === 'object' ? docOrId : docs.find((item) => item.id === docOrId);
+        if (!doc) return null;
+        setAnalyzingDocId(doc.id);
         try {
             const payload = mode === 'custom'
                 ? { mode: 'custom', prompt: promptText }
                 : { mode: 'default' };
 
-            const updated = isMeetingScope
-                ? await api.analyzeMeetingDocument(deptId, meetingId, docId, payload)
-                : await api.analyzeDepartmentDocument(deptId, docId, payload);
+            const updated = isMeetingDocument(doc)
+                ? await api.analyzeMeetingDocument(deptId, Number(doc.meeting_id), doc.id, payload)
+                : await api.analyzeDepartmentDocument(deptId, doc.id, payload);
 
-            setDocs(prev => prev.map(d => (d.id === docId ? updated : d)));
+            setDocs(prev => prev.map(d => (d.id === doc.id ? updated : d)));
             return updated;
         } catch (e) {
             const msg = e?.response?.data?.detail || 'Analysis failed';
@@ -124,36 +171,36 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         }
     };
 
-    const runCustomAnalysis = async (docId) => {
+    const runCustomAnalysis = async (doc) => {
         const promptText = window.prompt('Enter custom instruction for this document analysis:');
         if (!promptText || !promptText.trim()) return;
-        await runAnalysis(docId, 'custom', promptText.trim());
+        await runAnalysis(doc, 'custom', promptText.trim());
         toast.success('Custom analysis completed');
     };
 
-    const deleteDoc = async (docId) => {
+    const deleteDoc = async (doc) => {
         if (!window.confirm('Delete this document?')) return;
         try {
-            if (isMeetingScope) {
-                await api.deleteMeetingDocument(deptId, meetingId, docId);
+            if (isMeetingDocument(doc)) {
+                await api.deleteMeetingDocument(deptId, Number(doc.meeting_id), doc.id);
             } else {
-                await api.deleteDepartmentDocument(deptId, docId);
+                await api.deleteDepartmentDocument(deptId, doc.id);
             }
-            setDocs(prev => prev.filter(d => d.id !== docId));
+            setDocs(prev => prev.filter(d => d.id !== doc.id));
             toast.success('Document deleted');
         } catch {
             toast.error('Delete failed');
         }
     };
 
-    const downloadDoc = async (docId) => {
+    const downloadDoc = async (doc) => {
         try {
-            const response = isMeetingScope
-                ? await api.downloadMeetingDocument(deptId, meetingId, docId)
-                : await api.downloadDepartmentDocument(deptId, docId);
+            const response = isMeetingDocument(doc)
+                ? await api.downloadMeetingDocument(deptId, Number(doc.meeting_id), doc.id)
+                : await api.downloadDepartmentDocument(deptId, doc.id);
 
             const disposition = response.headers['content-disposition'];
-            const fallbackName = docs.find(d => d.id === docId)?.original_filename || 'document';
+            const fallbackName = doc.original_filename || 'document';
             const filename = fileNameFromDisposition(disposition) || fallbackName;
 
             const blobUrl = URL.createObjectURL(response.data);
@@ -167,10 +214,10 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
         }
     };
 
-    const openWorkspace = (docId, docSnapshot = null) => {
-        const path = isMeetingScope
-            ? `/departments/${deptId}/meetings/${meetingId}/documents/${docId}/analysis`
-            : `/departments/${deptId}/documents/${docId}/analysis`;
+    const openWorkspace = (doc, docSnapshot = null) => {
+        const path = isMeetingDocument(doc)
+            ? `/departments/${deptId}/meetings/${Number(doc.meeting_id)}/documents/${doc.id}/analysis`
+            : `/departments/${deptId}/documents/${doc.id}/analysis`;
         navigate(path, { state: docSnapshot ? { docSnapshot } : undefined });
     };
 
@@ -184,6 +231,11 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                 <p className="text-xs text-slate-500 mt-1">
                     Default mode gives agenda-wise findings automatically. Custom mode asks your prompt.
                 </p>
+                {isMeetingScope && includeDepartmentDocs ? (
+                    <p className="text-[11px] text-violet-700 mt-1 font-semibold">
+                        Showing both meeting-level documents and department-level analysis history.
+                    </p>
+                ) : null}
             </div>
 
             <div className="p-5 bg-white/95 dark:bg-white/5 border-b border-violet-100/70 dark:border-violet-500/20">
@@ -192,13 +244,18 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                         <input
                             type="file"
                             className="hidden"
-                            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                            multiple
+                            onChange={(e) => setSelectedFiles(Array.from(e.target.files || []))}
                             accept=".txt,.md,.csv,.json,.docx,.pptx,.pdf,.xlsx"
                         />
-                        <span className="inline-flex items-center gap-1"><Upload size={12} /> Choose File</span>
+                        <span className="inline-flex items-center gap-1"><Upload size={12} /> Choose File(s)</span>
                     </label>
-                    {selectedFile && (
-                        <span className="text-xs text-slate-500 font-semibold truncate max-w-[300px]">{selectedFile.name}</span>
+                    {selectedFiles.length > 0 && (
+                        <span className="text-xs text-slate-500 font-semibold truncate max-w-[360px]">
+                            {selectedFiles.length === 1
+                                ? selectedFiles[0].name
+                                : `${selectedFiles.length} files selected`}
+                        </span>
                     )}
                     <div className="ml-auto flex items-center gap-2">
                         <button
@@ -238,37 +295,39 @@ const DocumentAnalysisPanel = ({ deptId, meetingId = null, title = 'Documents & 
                                         <p className="text-[11px] text-slate-500 mt-0.5">
                                             {formatSize(doc.file_size)} · {doc.analysis_status || 'Not Analyzed'}
                                             {doc.extraction_truncated ? ' · text truncated' : ''}
+                                            {isMeetingDocument(doc) ? ' · Meeting file' : ' · Department file'}
                                         </p>
+                                        <p className="text-[11px] text-slate-400 mt-0.5">{formatDateTime(doc.created_at)}</p>
                                     </div>
                                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                         <button
-                                            onClick={() => runAnalysis(doc.id, 'default')}
+                                            onClick={() => runAnalysis(doc, 'default')}
                                             disabled={analyzingDocId === doc.id}
                                             className="px-2.5 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-[11px] font-bold hover:bg-indigo-200 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
                                         >
                                             <Brain size={12} /> Default
                                         </button>
                                         <button
-                                            onClick={() => runCustomAnalysis(doc.id)}
+                                            onClick={() => runCustomAnalysis(doc)}
                                             disabled={analyzingDocId === doc.id}
                                             className="px-2.5 py-1.5 rounded-lg bg-violet-100 text-violet-700 text-[11px] font-bold hover:bg-violet-200 transition-colors disabled:opacity-60 inline-flex items-center gap-1"
                                         >
                                             <MessageSquareText size={12} /> Custom
                                         </button>
                                         <button
-                                            onClick={() => openWorkspace(doc.id, doc)}
+                                            onClick={() => openWorkspace(doc, doc)}
                                             className="px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-bold hover:bg-violet-700 transition-colors inline-flex items-center gap-1"
                                         >
                                             <ExternalLink size={12} /> Workspace
                                         </button>
                                         <button
-                                            onClick={() => downloadDoc(doc.id)}
+                                            onClick={() => downloadDoc(doc)}
                                             className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200 transition-colors inline-flex items-center gap-1"
                                         >
                                             <Download size={12} /> Download
                                         </button>
                                         <button
-                                            onClick={() => deleteDoc(doc.id)}
+                                            onClick={() => deleteDoc(doc)}
                                             className="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-[11px] font-bold hover:bg-rose-100 transition-colors inline-flex items-center gap-1"
                                         >
                                             <Trash2 size={12} /> Delete

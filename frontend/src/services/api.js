@@ -42,6 +42,13 @@ const extractErrorDetail = async (error) => {
     return '';
 };
 
+const appendFiles = (formData, fileOrFiles) => {
+    const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+    files.filter(Boolean).forEach((file) => {
+        formData.append('files', file);
+    });
+};
+
 // Attach JWT token to all requests
 axios.interceptors.request.use((config) => {
     const token = readToken();
@@ -135,9 +142,9 @@ export const api = {
         const res = await axios.get(`${DEPT_URL}/${deptId}/documents`);
         return res.data;
     },
-    uploadDepartmentDocument: async (deptId, file) => {
+    uploadDepartmentDocument: async (deptId, fileOrFiles) => {
         const fd = new FormData();
-        fd.append('file', file);
+        appendFiles(fd, fileOrFiles);
         const res = await axios.post(`${DEPT_URL}/${deptId}/documents`, fd);
         return res.data;
     },
@@ -147,6 +154,10 @@ export const api = {
     },
     suggestTasksFromDepartmentDocument: async (deptId, docId, data = {}) => {
         const res = await axios.post(`${DEPT_URL}/${deptId}/documents/${docId}/task-suggestions`, data);
+        return res.data;
+    },
+    compareDepartmentDocumentAnalyses: async (deptId, data) => {
+        const res = await axios.post(`${DEPT_URL}/${deptId}/documents/compare-analysis`, data);
         return res.data;
     },
     getDepartmentDocument: async (deptId, docId) => {
@@ -212,9 +223,9 @@ export const api = {
         const res = await axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents`);
         return res.data;
     },
-    uploadMeetingDocument: async (deptId, meetingId, file) => {
+    uploadMeetingDocument: async (deptId, meetingId, fileOrFiles) => {
         const fd = new FormData();
-        fd.append('file', file);
+        appendFiles(fd, fileOrFiles);
         const res = await axios.post(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents`, fd);
         return res.data;
     },
