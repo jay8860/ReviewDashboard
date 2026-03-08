@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import date, datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from urllib.parse import urlparse, urlunparse
 import json
 import re
 import secrets
@@ -398,7 +399,7 @@ def _parse_ics_dt(value: str) -> Optional[datetime]:
 
 
 def _fetch_ics_text(url: str) -> str:
-    request = Request(url, headers={"User-Agent": "GovernanceDashboard/1.0"})
+    request = Request(_normalize_ics_url(url), headers={"User-Agent": "GovernanceDashboard/1.0"})
     with urlopen(request, timeout=20) as resp:
         raw = resp.read()
     for enc in ("utf-8", "latin-1"):
@@ -407,6 +408,24 @@ def _fetch_ics_text(url: str) -> str:
         except Exception:
             continue
     return raw.decode("utf-8", errors="ignore")
+
+
+def _normalize_ics_url(url: Optional[str]) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+
+    if raw.startswith("//"):
+        return f"https:{raw}"
+    if "://" not in raw:
+        return f"https://{raw}"
+
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower()
+    if scheme in {"webcal", "webcals"}:
+        parsed = parsed._replace(scheme="https")
+        return urlunparse(parsed)
+    return raw
 
 
 def _parse_ics_events(raw_text: str, start_date: date, end_date: date, default_day_start: str) -> List[dict]:
@@ -495,6 +514,9 @@ def update_planner_settings(data: PlannerSettingsUpdate, db: Session = Depends(g
         payload["lunch_start"] = _normalize_time(payload["lunch_start"], "13:30")
     if "lunch_end" in payload:
         payload["lunch_end"] = _normalize_time(payload["lunch_end"], "14:30")
+    if "apple_ics_url" in payload:
+        normalized = _normalize_ics_url(payload["apple_ics_url"])
+        payload["apple_ics_url"] = normalized or None
     if "recurring_blocks" in payload:
         payload["recurring_blocks"] = json.dumps(payload["recurring_blocks"] or DEFAULT_RECURRING_BLOCKS)
 
@@ -613,7 +635,7 @@ def export_planner_ics(
 @router.post("/sync-ics")
 def sync_ics_events(data: IcsSyncRequest, db: Session = Depends(get_db)):
     settings = _get_or_create_settings(db)
-    ics_url = (data.ics_url or settings.apple_ics_url or "").strip()
+    ics_url = _normalize_ics_url(data.ics_url or settings.apple_ics_url or "")
     if not ics_url:
         raise HTTPException(status_code=400, detail="Apple ICS URL is not configured")
 
@@ -671,8 +693,9 @@ def sync_ics_events(data: IcsSyncRequest, db: Session = Depends(get_db)):
             db.delete(row)
             deleted += 1
 
-    if data.ics_url and data.ics_url != settings.apple_ics_url:
-        settings.apple_ics_url = data.ics_url
+    if data.ics_url is not None:
+        normalized_input = _normalize_ics_url(data.ics_url)
+        settings.apple_ics_url = normalized_input or None
     settings.last_ics_sync_at = datetime.utcnow()
 
     db.commit()

@@ -1447,8 +1447,27 @@ const Planner = ({ user, onLogout }) => {
                             const eventByTime = new Map();
                             const unslotted = [];
                             dayEvents.forEach(evt => {
-                                if (slots.some(s => s.start === evt.time_slot)) eventByTime.set(evt.time_slot, evt);
-                                else unslotted.push(evt);
+                                const eventTime = evt?.time_slot || '';
+                                const eventMinutes = toMinutes(eventTime);
+                                let targetSlot = slots.find(s => s.start === eventTime);
+                                if (!targetSlot && Number.isFinite(eventMinutes)) {
+                                    targetSlot = slots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes);
+                                }
+                                if (!targetSlot && Number.isFinite(eventMinutes) && slots.length > 0) {
+                                    targetSlot = slots.reduce((closest, slot) => {
+                                        const diff = Math.abs(slot.startMinutes - eventMinutes);
+                                        const bestDiff = Math.abs(closest.startMinutes - eventMinutes);
+                                        return diff < bestDiff ? slot : closest;
+                                    }, slots[0]);
+                                }
+
+                                if (targetSlot) {
+                                    const bucket = eventByTime.get(targetSlot.start) || [];
+                                    bucket.push(evt);
+                                    eventByTime.set(targetSlot.start, bucket);
+                                } else {
+                                    unslotted.push(evt);
+                                }
                             });
                             const dayStr = format(day, 'yyyy-MM-dd');
 
@@ -1456,7 +1475,8 @@ const Planner = ({ user, onLogout }) => {
                                 <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
                                     <div className="space-y-1.5">
                                         {slots.map((slot, slotIdx) => {
-                                            const event = eventByTime.get(slot.start);
+                                            const eventsAtSlot = eventByTime.get(slot.start) || [];
+                                            const hasEvents = eventsAtSlot.length > 0;
                                             const lunchBlocked = isLunchBlocked(slot);
                                             const recurringBlock = getRecurringBlockAtSlot(day, slot);
                                             const blockedLabel = lunchBlocked
@@ -1470,7 +1490,7 @@ const Planner = ({ user, onLogout }) => {
                                                     <div
                                                         className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${blockedLabel ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
                                                         onClick={() => {
-                                                            if (blockedLabel || event) return;
+                                                            if (blockedLabel || hasEvents) return;
                                                             setEditEvent(null);
                                                             setPrefillData(null);
                                                             setClickedDate(dayStr);
@@ -1491,74 +1511,78 @@ const Planner = ({ user, onLogout }) => {
                                                     >
                                                         <div className="flex items-center justify-between mb-1">
                                                             <p className="text-[10px] font-black text-slate-400">{slot.start} - {slot.end}</p>
-                                                            {!event && !blockedLabel && <span className="text-[10px] text-slate-300">Draft Slot</span>}
+                                                            {!hasEvents && !blockedLabel && <span className="text-[10px] text-slate-300">Draft Slot</span>}
                                                         </div>
 
-                                                        {blockedLabel && !event && (
+                                                        {blockedLabel && !hasEvents && (
                                                             <p className="text-[11px] font-semibold text-slate-500">{blockedLabel}</p>
                                                         )}
 
-                                                        {event && (
-                                                            <motion.div
-                                                                layout
-                                                                draggable={!event.is_locked}
-                                                                onDragStart={(e) => {
-                                                                    if (event.is_locked) return;
-                                                                    setDragEventId(event.id);
-                                                                    e.dataTransfer.setData('text/plain', String(event.id));
-                                                                }}
-                                                                className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold cursor-pointer ${event.is_locked ? externalStyle : statusStyles[normalizeStatus(event.status)] || statusStyles.Draft} ${dragEventId === event.id ? 'opacity-50' : ''}`}
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEditEvent(event);
-                                                                    setPrefillData(null);
-                                                                    setModalOpen(true);
-                                                                }}
-                                                            >
-                                                                <div className="flex items-start gap-1">
-                                                                    {!event.is_locked && <GripVertical size={12} className="mt-0.5 opacity-60" />}
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <p className="font-black truncate">{event.title}</p>
-                                                                        <p className="text-[10px] opacity-70 capitalize">{event.event_type} · {normalizeStatus(event.status)}</p>
-                                                                        {event.department_name && (
-                                                                            <p className="text-[10px] opacity-70 truncate">{event.department_name}</p>
+                                                        <div className="space-y-1.5">
+                                                            {eventsAtSlot.map((event) => (
+                                                                <motion.div
+                                                                    key={event.id}
+                                                                    layout
+                                                                    draggable={!event.is_locked}
+                                                                    onDragStart={(e) => {
+                                                                        if (event.is_locked) return;
+                                                                        setDragEventId(event.id);
+                                                                        e.dataTransfer.setData('text/plain', String(event.id));
+                                                                    }}
+                                                                    className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold cursor-pointer ${event.is_locked ? externalStyle : statusStyles[normalizeStatus(event.status)] || statusStyles.Draft} ${dragEventId === event.id ? 'opacity-50' : ''}`}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditEvent(event);
+                                                                        setPrefillData(null);
+                                                                        setModalOpen(true);
+                                                                    }}
+                                                                >
+                                                                    <div className="flex items-start gap-1">
+                                                                        {!event.is_locked && <GripVertical size={12} className="mt-0.5 opacity-60" />}
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="font-black truncate">{event.title}</p>
+                                                                            <p className="text-[10px] opacity-70 capitalize">{event.event_type} · {normalizeStatus(event.status)}</p>
+                                                                            <p className="text-[10px] opacity-70">Time: {event.time_slot || slot.start}</p>
+                                                                            {event.department_name && (
+                                                                                <p className="text-[10px] opacity-70 truncate">{event.department_name}</p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                        {event.department_meeting_id && event.department_id && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    navigate(`/departments/${event.department_id}/meetings/${event.department_meeting_id}`);
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold"
+                                                                            >
+                                                                                <CalendarClock size={10} /> Workspace
+                                                                            </button>
+                                                                        )}
+                                                                        {event.field_visit_draft_id && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    navigate('/field-visits');
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
+                                                                            >
+                                                                                <Link2 size={10} /> Visit Plan
+                                                                            </button>
+                                                                        )}
+                                                                        {!event.is_locked && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
+                                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold"
+                                                                            >
+                                                                                <Trash2 size={10} />
+                                                                            </button>
                                                                         )}
                                                                     </div>
-                                                                </div>
-                                                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                    {event.department_meeting_id && event.department_id && (
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                navigate(`/departments/${event.department_id}/meetings/${event.department_meeting_id}`);
-                                                                            }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-600 text-white text-[10px] font-bold"
-                                                                        >
-                                                                            <CalendarClock size={10} /> Workspace
-                                                                        </button>
-                                                                    )}
-                                                                    {event.field_visit_draft_id && (
-                                                                        <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                navigate('/field-visits');
-                                                                            }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
-                                                                        >
-                                                                            <Link2 size={10} /> Visit Plan
-                                                                        </button>
-                                                                    )}
-                                                                    {!event.is_locked && (
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500 text-white text-[10px] font-bold"
-                                                                        >
-                                                                            <Trash2 size={10} />
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </motion.div>
-                                                        )}
+                                                                </motion.div>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                     {slotIdx < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
                                                         <div className="h-4 flex items-center justify-center">

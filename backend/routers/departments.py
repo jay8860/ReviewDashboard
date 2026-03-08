@@ -901,9 +901,23 @@ class MeetingUpdate(BaseModel):
 
 @router.get("/{dept_id}/meetings")
 def get_meetings(dept_id: int, db: Session = Depends(get_db)):
+    dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
     meetings = db.query(models.DepartmentMeeting).filter(
         models.DepartmentMeeting.department_id == dept_id
     ).order_by(models.DepartmentMeeting.scheduled_date.desc(), models.DepartmentMeeting.scheduled_time.desc()).all()
+
+    # Self-heal planner linkage for legacy/missed sync records.
+    for m in meetings:
+        _sync_planner_event_from_department_meeting(
+            db,
+            m,
+            department_name=dept.name,
+            department_color=dept.color,
+        )
+    db.commit()
 
     result = []
     for m in meetings:
