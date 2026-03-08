@@ -129,6 +129,36 @@ def _normalize_meeting_time_for_planner(value: Optional[str]) -> str:
     return "10:00"
 
 
+def _normalize_optional_meeting_time(value: Optional[str]) -> Optional[str]:
+    text = (value or "").strip()
+    if not text:
+        return None
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::\d{2})?", text)
+    if not match:
+        return None
+    hi = int(match.group(1))
+    mi = int(match.group(2))
+    if not (0 <= hi <= 23 and 0 <= mi <= 59):
+        return None
+    return f"{hi:02d}:{mi:02d}"
+
+
+def _clean_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_meeting_status(value: Optional[str]) -> str:
+    val = (value or "").strip().lower()
+    if val == "done":
+        return "Done"
+    if val in {"cancelled", "canceled"}:
+        return "Cancelled"
+    return "Scheduled"
+
+
 def _planner_status_from_meeting_status(status: Optional[str]) -> str:
     val = (status or "").strip().lower()
     if val in {"cancelled", "canceled"}:
@@ -965,11 +995,12 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
     meeting = models.DepartmentMeeting(
         department_id=dept_id,
         scheduled_date=data.scheduled_date,
-        scheduled_time=data.scheduled_time,
-        venue=data.venue,
-        attendees=data.attendees,
-        notes=data.notes,
-        officer_phone=data.officer_phone,
+        scheduled_time=_normalize_optional_meeting_time(data.scheduled_time),
+        venue=_clean_optional_text(data.venue),
+        attendees=_clean_optional_text(data.attendees),
+        notes=_clean_optional_text(data.notes),
+        officer_phone=_clean_optional_text(data.officer_phone),
+        status=_normalize_meeting_status(None),
         agenda_snapshot=snapshot,
         action_table_columns=json.dumps(table_columns),
         action_table_rows=json.dumps(table_rows),
@@ -1022,6 +1053,18 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
         meeting.action_table_columns = json.dumps(payload.pop("action_table_columns") or DEFAULT_MEETING_TABLE_COLUMNS)
     if "action_table_rows" in payload:
         meeting.action_table_rows = json.dumps(payload.pop("action_table_rows") or [])
+    if "scheduled_time" in payload:
+        payload["scheduled_time"] = _normalize_optional_meeting_time(payload.get("scheduled_time"))
+    if "venue" in payload:
+        payload["venue"] = _clean_optional_text(payload.get("venue"))
+    if "attendees" in payload:
+        payload["attendees"] = _clean_optional_text(payload.get("attendees"))
+    if "notes" in payload:
+        payload["notes"] = _clean_optional_text(payload.get("notes"))
+    if "officer_phone" in payload:
+        payload["officer_phone"] = _clean_optional_text(payload.get("officer_phone"))
+    if "status" in payload:
+        payload["status"] = _normalize_meeting_status(payload.get("status"))
     for k, v in payload.items():
         setattr(meeting, k, v)
     _sync_planner_event_from_department_meeting(

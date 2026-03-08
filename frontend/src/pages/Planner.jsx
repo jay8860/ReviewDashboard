@@ -1068,6 +1068,12 @@ const Planner = ({ user, onLogout }) => {
     }, [settings]);
 
     const recurringBlocks = useMemo(() => settings?.recurring_blocks || [], [settings]);
+    const plannerCadenceText = useMemo(() => {
+        const slotMin = settings?.slot_minutes || 30;
+        const gapMin = settings?.slot_gap_minutes ?? 15;
+        if (gapMin > 0) return `${slotMin} min slots · ${gapMin} min breaks`;
+        return `${slotMin} min slots`;
+    }, [settings?.slot_minutes, settings?.slot_gap_minutes]);
 
     const loadSettings = useCallback(async () => {
         const cfg = await api.getPlannerSettings();
@@ -1308,7 +1314,7 @@ const Planner = ({ user, onLogout }) => {
                     <div>
                         <h1 className="text-4xl font-black dark:text-white tracking-tight">Weekly Planner</h1>
                         <p className="text-slate-500 mt-1">
-                            {format(weekStart, 'd MMM')} — {format(addDays(weekStart, 6), 'd MMM yyyy')} · 30 min slots · 15 min breaks
+                            {format(weekStart, 'd MMM')} — {format(addDays(weekStart, 6), 'd MMM yyyy')} · {plannerCadenceText}
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

@@ -12,6 +12,7 @@ import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { format, parseISO } from 'date-fns';
 import DocumentAnalysisPanel from '../components/DocumentAnalysisPanel';
+import { buildMeetingAgendaMessage, buildWhatsAppSendUrl, normalizeWhatsAppNumber } from '../utils/meetingMessaging';
 
 const colorGrad = {
     indigo: 'from-indigo-500 to-indigo-700',
@@ -57,19 +58,6 @@ const WAIcon = () => (
     </svg>
 );
 
-const getMeetingWhatsAppMessage = (meeting, deptName) => {
-    const agendaSnapshot = Array.isArray(meeting?.agenda_snapshot) ? meeting.agenda_snapshot : [];
-    const dateText = formatDateSafe(meeting?.scheduled_date, 'd MMMM yyyy', 'TBD');
-    const timeText = meeting?.scheduled_time ? `\nTime: ${meeting.scheduled_time}` : '';
-    const venueText = meeting?.venue ? `\nVenue: ${meeting.venue}` : '';
-    const notesText = meeting?.notes ? `\n\nNotes:\n${meeting.notes}` : '';
-    const agendaText = agendaSnapshot.length
-        ? agendaSnapshot.map((a, idx) => `${idx + 1}. ${a?.title || ''}${a?.details ? ` — ${a.details}` : ''}`).join('\n')
-        : 'No agenda points attached.';
-
-    return `Meeting Agenda - ${deptName || 'Department'}\nDate: ${dateText}${timeText}${venueText}\n\nAgenda Points:\n${agendaText}${notesText}`;
-};
-
 const isStenoEmployee = (emp) => {
     const haystack = `${emp?.name || ''} ${emp?.display_username || ''}`.toLowerCase();
     return haystack.includes('steno') || haystack.includes('secretary');
@@ -94,11 +82,12 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
     })();
     if (!isOpen) return null;
 
-    const waMsg = `Meeting Agenda - ${deptName}\nDate: ${formatDateSafe(form.scheduled_date, 'd MMMM yyyy', 'TBD')}${form.scheduled_time ? `\nTime: ${form.scheduled_time}` : ''}${form.venue ? `\nVenue: ${form.venue}` : ''}${form.attendees ? `\nAttendees: ${form.attendees}` : ''}\n\nAgenda Points:\n${openAgenda.map((a, i) => `${i + 1}. ${a.title}${a.details ? `\n   - ${a.details}` : ''}`).join('\n')}\n\nPlease ensure your presence and come prepared.`;
-
-    const waLink = form.officer_phone
-        ? `https://wa.me/${form.officer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMsg)}`
-        : `https://wa.me/?text=${encodeURIComponent(waMsg)}`;
+    const waMsg = buildMeetingAgendaMessage({
+        departmentName: deptName,
+        meeting: form,
+        agendaSnapshot: openAgenda,
+    });
+    const waLink = buildWhatsAppSendUrl(form.officer_phone, waMsg);
 
     return (
         <AnimatePresence>
@@ -220,7 +209,11 @@ const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = 
 
     useEffect(() => {
         if (!isOpen || !meeting) return;
-        setMessage(getMeetingWhatsAppMessage(meeting, deptName));
+        setMessage(buildMeetingAgendaMessage({
+            departmentName: deptName,
+            meeting,
+            agendaSnapshot: meeting.agenda_snapshot,
+        }));
         setSearchTerm('');
         setSelectedEmployeeIds([]);
         setIncludeOfficer(Boolean(meeting.officer_phone));
@@ -264,7 +257,7 @@ const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = 
             });
         }
         const normalized = numbers
-            .map(value => String(value || '').replace(/\D/g, ''))
+            .map(value => normalizeWhatsAppNumber(value))
             .filter(Boolean);
         return [...new Set(normalized)];
     };
@@ -280,10 +273,9 @@ const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = 
             toast.error('Select at least one recipient or officer number');
             return;
         }
-        const encoded = encodeURIComponent(finalMessage);
         recipients.forEach((number, idx) => {
             setTimeout(() => {
-                window.open(`https://wa.me/${number}?text=${encoded}`, '_blank', 'noopener,noreferrer');
+                window.open(buildWhatsAppSendUrl(number, finalMessage), '_blank', 'noopener,noreferrer');
             }, idx * 250);
         });
         toast.success(`Opening WhatsApp for ${recipients.length} recipient${recipients.length > 1 ? 's' : ''}`);
@@ -1453,7 +1445,13 @@ const DepartmentDetail = ({ user, onLogout }) => {
 
     const handleScheduleMeeting = async (form) => {
         try {
-            await api.createMeeting(deptIdInt, form);
+            await api.createMeeting(deptIdInt, {
+                scheduled_date: form.scheduled_date,
+                scheduled_time: String(form.scheduled_time || '').trim() || null,
+                venue: String(form.venue || '').trim() || null,
+                attendees: String(form.attendees || '').trim() || null,
+                officer_phone: String(form.officer_phone || '').trim() || null,
+            });
             setMeetingModal(false);
             await refreshMeetingsOnly();
             toast.success('Meeting scheduled');

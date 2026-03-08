@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Set
 from datetime import date, datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -389,6 +389,10 @@ def _parse_ics_dt(value: str) -> Optional[datetime]:
             return datetime.strptime(text, "%Y%m%d")
         if text.endswith("Z"):
             return datetime.strptime(text, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+        if re.fullmatch(r"\d{8}T\d{6}[+-]\d{4}$", text):
+            return datetime.strptime(text, "%Y%m%dT%H%M%S%z").astimezone().replace(tzinfo=None)
+        if re.fullmatch(r"\d{8}T\d{4}[+-]\d{4}$", text):
+            return datetime.strptime(text, "%Y%m%dT%H%M%z").astimezone().replace(tzinfo=None)
         if re.fullmatch(r"\d{8}T\d{6}$", text):
             return datetime.strptime(text, "%Y%m%dT%H%M%S")
         if re.fullmatch(r"\d{8}T\d{4}$", text):
@@ -396,6 +400,182 @@ def _parse_ics_dt(value: str) -> Optional[datetime]:
     except Exception:
         return None
     return None
+
+
+ICS_WEEKDAY_MAP = {
+    "MO": 0,
+    "TU": 1,
+    "WE": 2,
+    "TH": 3,
+    "FR": 4,
+    "SA": 5,
+    "SU": 6,
+}
+
+
+def _parse_ics_rrule(value: Optional[str]) -> Dict[str, str]:
+    rules: Dict[str, str] = {}
+    for chunk in str(value or "").split(";"):
+        if "=" not in chunk:
+            continue
+        k, v = chunk.split("=", 1)
+        key = k.strip().upper()
+        val = v.strip()
+        if key and val:
+            rules[key] = val
+    return rules
+
+
+def _parse_ics_byday(value: Optional[str]) -> List[int]:
+    days: List[int] = []
+    for token in str(value or "").split(","):
+        item = token.strip().upper()
+        if not item:
+            continue
+        # BYDAY may include ordinals like -1SU / 1MO. Keep trailing day code.
+        day_code = item[-2:]
+        if day_code in ICS_WEEKDAY_MAP:
+            days.append(ICS_WEEKDAY_MAP[day_code])
+    return sorted(set(days))
+
+
+def _parse_ics_exdates(values: List[str]) -> tuple[Set[date], Set[datetime]]:
+    out_dates: Set[date] = set()
+    out_datetimes: Set[datetime] = set()
+    for row in values or []:
+        for token in str(row or "").split(","):
+            parsed = _parse_ics_dt(token)
+            if not parsed:
+                continue
+            out_dates.add(parsed.date())
+            out_datetimes.add(parsed.replace(second=0, microsecond=0))
+    return out_dates, out_datetimes
+
+
+def _is_matching_ics_occurrence(
+    candidate_date: date,
+    base_date: date,
+    freq: str,
+    interval: int,
+    byday: List[int],
+    base_weekday: int,
+) -> bool:
+    if candidate_date < base_date:
+        return False
+
+    delta_days = (candidate_date - base_date).days
+    if freq == "DAILY":
+        if delta_days % interval != 0:
+            return False
+        if byday and candidate_date.weekday() not in byday:
+            return False
+        return True
+
+    if freq == "WEEKLY":
+        weeks_since = delta_days // 7
+        if weeks_since % interval != 0:
+            return False
+        allowed = byday or [base_weekday]
+        return candidate_date.weekday() in allowed
+
+    if freq == "MONTHLY":
+        months_since = (candidate_date.year - base_date.year) * 12 + (candidate_date.month - base_date.month)
+        if months_since < 0 or months_since % interval != 0:
+            return False
+        if candidate_date.day != base_date.day:
+            return False
+        if byday and candidate_date.weekday() not in byday:
+            return False
+        return True
+
+    if freq == "YEARLY":
+        years_since = candidate_date.year - base_date.year
+        if years_since < 0 or years_since % interval != 0:
+            return False
+        if candidate_date.month != base_date.month or candidate_date.day != base_date.day:
+            return False
+        if byday and candidate_date.weekday() not in byday:
+            return False
+        return True
+
+    return candidate_date == base_date
+
+
+def _expand_ics_occurrences(
+    dt_start: datetime,
+    dt_end: datetime,
+    rrule_text: Optional[str],
+    exdate_values: List[str],
+    start_date: date,
+    end_date: date,
+) -> List[tuple[datetime, datetime]]:
+    duration = dt_end - dt_start
+    if duration.total_seconds() <= 0:
+        duration = timedelta(minutes=30)
+
+    exdate_days, exdate_datetimes = _parse_ics_exdates(exdate_values)
+    rules = _parse_ics_rrule(rrule_text)
+    freq = rules.get("FREQ", "").upper()
+
+    if not freq:
+        if dt_start.date() < start_date or dt_start.date() > end_date:
+            return []
+        if dt_start.date() in exdate_days or dt_start.replace(second=0, microsecond=0) in exdate_datetimes:
+            return []
+        return [(dt_start, dt_start + duration)]
+    if freq not in {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}:
+        if dt_start.date() < start_date or dt_start.date() > end_date:
+            return []
+        if dt_start.date() in exdate_days or dt_start.replace(second=0, microsecond=0) in exdate_datetimes:
+            return []
+        return [(dt_start, dt_start + duration)]
+
+    try:
+        interval = max(1, int(rules.get("INTERVAL", "1")))
+    except Exception:
+        interval = 1
+    try:
+        count_limit = max(0, int(rules.get("COUNT", "0")))
+    except Exception:
+        count_limit = 0
+    until_dt = _parse_ics_dt(rules.get("UNTIL", ""))
+    byday = _parse_ics_byday(rules.get("BYDAY", ""))
+
+    max_date = end_date
+    if until_dt and until_dt.date() < max_date:
+        max_date = until_dt.date()
+    if max_date < dt_start.date():
+        return []
+
+    occurrences: List[tuple[datetime, datetime]] = []
+    emitted = 0
+    cursor = dt_start.date()
+    while cursor <= max_date:
+        if _is_matching_ics_occurrence(
+            cursor,
+            dt_start.date(),
+            freq,
+            interval,
+            byday,
+            dt_start.weekday(),
+        ):
+            occ_start = datetime.combine(cursor, dt_start.time())
+            if occ_start >= dt_start:
+                emitted += 1
+                if count_limit and emitted > count_limit:
+                    break
+                if until_dt and occ_start > until_dt:
+                    cursor += timedelta(days=1)
+                    continue
+                normalized = occ_start.replace(second=0, microsecond=0)
+                if normalized in exdate_datetimes or occ_start.date() in exdate_days:
+                    cursor += timedelta(days=1)
+                    continue
+                if start_date <= occ_start.date() <= end_date:
+                    occurrences.append((occ_start, occ_start + duration))
+        cursor += timedelta(days=1)
+
+    return occurrences
 
 
 def _fetch_ics_text(url: str) -> str:
@@ -453,30 +633,37 @@ def _parse_ics_events(raw_text: str, start_date: date, end_date: date, default_d
             if not dt_end:
                 dt_end = dt_start + timedelta(minutes=30)
 
-            event_date = dt_start.date()
-            if event_date < start_date or event_date > end_date:
-                continue
+            occurrences = _expand_ics_occurrences(
+                dt_start=dt_start,
+                dt_end=dt_end,
+                rrule_text=current.get("RRULE"),
+                exdate_values=current.get("EXDATE") or [],
+                start_date=start_date,
+                end_date=end_date,
+            )
 
-            time_slot = dt_start.strftime("%H:%M") if dt_start.time() != datetime.min.time() else default_day_start
-            duration = max(30, int((dt_end - dt_start).total_seconds() // 60 or 30))
-            occurrence_uid = f"{uid}::{dt_start.isoformat()}"
+            for occ_start, occ_end in occurrences:
+                event_date = occ_start.date()
+                time_slot = occ_start.strftime("%H:%M") if occ_start.time() != datetime.min.time() else default_day_start
+                duration = max(30, int((occ_end - occ_start).total_seconds() // 60 or 30))
+                occurrence_uid = f"{uid}::{occ_start.isoformat()}"
 
-            parsed.append({
-                "title": summary,
-                "date": event_date,
-                "time_slot": time_slot,
-                "duration_minutes": duration,
-                "event_type": "other",
-                "status": "Confirmed",
-                "color": "sky",
-                "description": description,
-                "venue": location,
-                "attendees": None,
-                "source": "external_calendar",
-                "external_uid": occurrence_uid,
-                "external_calendar": "Apple Calendar",
-                "is_locked": True,
-            })
+                parsed.append({
+                    "title": summary,
+                    "date": event_date,
+                    "time_slot": time_slot,
+                    "duration_minutes": duration,
+                    "event_type": "other",
+                    "status": "Confirmed",
+                    "color": "sky",
+                    "description": description,
+                    "venue": location,
+                    "attendees": None,
+                    "source": "external_calendar",
+                    "external_uid": occurrence_uid,
+                    "external_calendar": "Apple Calendar",
+                    "is_locked": True,
+                })
             current = {}
             continue
 
@@ -485,8 +672,10 @@ def _parse_ics_events(raw_text: str, start_date: date, end_date: date, default_d
 
         key_part, value = line.split(":", 1)
         prop_name = key_part.split(";", 1)[0].upper()
-        if prop_name in {"UID", "SUMMARY", "DESCRIPTION", "DTSTART", "DTEND", "LOCATION"}:
+        if prop_name in {"UID", "SUMMARY", "DESCRIPTION", "DTSTART", "DTEND", "LOCATION", "RRULE"}:
             current[prop_name] = value
+        elif prop_name == "EXDATE":
+            current.setdefault("EXDATE", []).append(value)
 
     return parsed
 

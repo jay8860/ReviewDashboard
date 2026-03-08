@@ -46,6 +46,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
 
     const [form, setForm] = useState({
         scheduled_date: '',
+        scheduled_time: '',
         venue: '',
         attendees: '',
         officer_phone: '',
@@ -69,6 +70,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
             if (found) {
                 setForm({
                     scheduled_date: found.scheduled_date || '',
+                    scheduled_time: found.scheduled_time || '',
                     venue: found.venue || '',
                     attendees: found.attendees || '',
                     officer_phone: found.officer_phone || '',
@@ -88,6 +90,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
         setMeeting(updated);
         setForm({
             scheduled_date: updated.scheduled_date || '',
+            scheduled_time: updated.scheduled_time || '',
             venue: updated.venue || '',
             attendees: updated.attendees || '',
             officer_phone: updated.officer_phone || '',
@@ -100,6 +103,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
         try {
             const updated = await api.updateMeeting(deptIdInt, meetingIdInt, {
                 scheduled_date: form.scheduled_date,
+                scheduled_time: form.scheduled_time || null,
                 venue: form.venue,
                 attendees: form.attendees,
                 officer_phone: form.officer_phone,
@@ -262,13 +266,22 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                         </div>
                     </div>
 
-                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white/90 dark:bg-white/5">
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 bg-white/90 dark:bg-white/5">
                         <label className="block">
                             <span className="text-xs font-black uppercase tracking-wider text-violet-500">Date</span>
                             <input
                                 type="date"
                                 value={form.scheduled_date}
                                 onChange={(e) => setForm(prev => ({ ...prev, scheduled_date: e.target.value }))}
+                                className="mt-1 w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                            />
+                        </label>
+                        <label className="block">
+                            <span className="text-xs font-black uppercase tracking-wider text-violet-500">Time</span>
+                            <input
+                                type="time"
+                                value={form.scheduled_time}
+                                onChange={(e) => setForm(prev => ({ ...prev, scheduled_time: e.target.value }))}
                                 className="mt-1 w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
                             />
                         </label>
