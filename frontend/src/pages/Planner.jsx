@@ -1450,21 +1450,48 @@ const Planner = ({ user, onLogout }) => {
                     <div className="grid grid-cols-7 min-w-[980px]">
                         {weekDays.map((day, dayIdx) => {
                             const dayEvents = getDayEvents(day);
+                            const daySlots = [];
+                            slots.forEach((baseSlot, baseIdx) => {
+                                const markers = [baseSlot.startMinutes, baseSlot.endMinutes];
+                                dayEvents.forEach((evt) => {
+                                    const eventMinutes = toMinutes(evt?.time_slot || '');
+                                    if (!Number.isFinite(eventMinutes)) return;
+                                    if (eventMinutes > baseSlot.startMinutes && eventMinutes < baseSlot.endMinutes) {
+                                        markers.push(eventMinutes);
+                                    }
+                                });
+
+                                const boundaries = [...new Set(markers)].sort((a, b) => a - b);
+                                for (let i = 0; i < boundaries.length - 1; i += 1) {
+                                    const startMinutes = boundaries[i];
+                                    const endMinutes = boundaries[i + 1];
+                                    if (!(endMinutes > startMinutes)) continue;
+                                    daySlots.push({
+                                        ...baseSlot,
+                                        start: toTime(startMinutes),
+                                        end: toTime(endMinutes),
+                                        startMinutes,
+                                        endMinutes,
+                                        baseIndex: baseIdx,
+                                        isBaseTail: i === boundaries.length - 2,
+                                    });
+                                }
+                            });
                             const eventByTime = new Map();
                             const unslotted = [];
                             dayEvents.forEach(evt => {
                                 const eventTime = evt?.time_slot || '';
                                 const eventMinutes = toMinutes(eventTime);
-                                let targetSlot = slots.find(s => s.start === eventTime);
+                                let targetSlot = daySlots.find(s => s.start === eventTime);
                                 if (!targetSlot && Number.isFinite(eventMinutes)) {
-                                    targetSlot = slots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes);
+                                    targetSlot = daySlots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes);
                                 }
-                                if (!targetSlot && Number.isFinite(eventMinutes) && slots.length > 0) {
-                                    targetSlot = slots.reduce((closest, slot) => {
+                                if (!targetSlot && Number.isFinite(eventMinutes) && daySlots.length > 0) {
+                                    targetSlot = daySlots.reduce((closest, slot) => {
                                         const diff = Math.abs(slot.startMinutes - eventMinutes);
                                         const bestDiff = Math.abs(closest.startMinutes - eventMinutes);
                                         return diff < bestDiff ? slot : closest;
-                                    }, slots[0]);
+                                    }, daySlots[0]);
                                 }
 
                                 if (targetSlot) {
@@ -1480,7 +1507,7 @@ const Planner = ({ user, onLogout }) => {
                             return (
                                 <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
                                     <div className="space-y-1.5">
-                                        {slots.map((slot, slotIdx) => {
+                                        {daySlots.map((slot) => {
                                             const eventsAtSlot = eventByTime.get(slot.start) || [];
                                             const hasEvents = eventsAtSlot.length > 0;
                                             const lunchBlocked = isLunchBlocked(slot);
@@ -1492,7 +1519,7 @@ const Planner = ({ user, onLogout }) => {
                                                     : null;
 
                                             return (
-                                                <React.Fragment key={`${dayStr}-${slot.start}`}>
+                                                <React.Fragment key={`${dayStr}-${slot.baseIndex}-${slot.start}-${slot.end}`}>
                                                     <div
                                                         className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${blockedLabel ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
                                                         onClick={() => {
@@ -1590,7 +1617,7 @@ const Planner = ({ user, onLogout }) => {
                                                             ))}
                                                         </div>
                                                     </div>
-                                                    {slotIdx < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
+                                                    {slot.isBaseTail && slot.baseIndex < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
                                                         <div className="h-4 flex items-center justify-center">
                                                             <span className="text-[9px] uppercase tracking-wide text-slate-300">
                                                                 {(settings.slot_gap_minutes ?? 15)}m break
