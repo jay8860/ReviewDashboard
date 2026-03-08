@@ -1450,121 +1450,200 @@ const Planner = ({ user, onLogout }) => {
                     <div className="grid grid-cols-7 min-w-[980px]">
                         {weekDays.map((day, dayIdx) => {
                             const dayEvents = getDayEvents(day);
-                            const daySlots = [];
-                            slots.forEach((baseSlot, baseIdx) => {
-                                const markers = [baseSlot.startMinutes, baseSlot.endMinutes];
-                                dayEvents.forEach((evt) => {
-                                    const eventMinutes = toMinutes(evt?.time_slot || '');
-                                    const durationMinutes = Math.max(15, parseInt(evt?.duration_minutes, 10) || 30);
-                                    const eventEndMinutes = eventMinutes + durationMinutes;
-                                    if (!Number.isFinite(eventMinutes)) return;
-                                    if (eventMinutes > baseSlot.startMinutes && eventMinutes < baseSlot.endMinutes) {
-                                        markers.push(eventMinutes);
-                                    }
-                                    if (eventEndMinutes > baseSlot.startMinutes && eventEndMinutes < baseSlot.endMinutes) {
-                                        markers.push(eventEndMinutes);
-                                    }
-                                });
-
-                                const boundaries = [...new Set(markers)].sort((a, b) => a - b);
-                                for (let i = 0; i < boundaries.length - 1; i += 1) {
-                                    const startMinutes = boundaries[i];
-                                    const endMinutes = boundaries[i + 1];
-                                    if (!(endMinutes > startMinutes)) continue;
-                                    daySlots.push({
-                                        ...baseSlot,
-                                        start: toTime(startMinutes),
-                                        end: toTime(endMinutes),
-                                        startMinutes,
-                                        endMinutes,
-                                        baseIndex: baseIdx,
-                                        isBaseTail: i === boundaries.length - 2,
-                                    });
+                            const dayStartMinutes = slots.length > 0 ? slots[0].startMinutes : toMinutes(settings.day_start || '10:00');
+                            const dayEndMinutes = slots.length > 0
+                                ? slots[slots.length - 1].endMinutes
+                                : toMinutes(settings.day_end || '18:00');
+                            const breakRanges = [];
+                            for (let idx = 0; idx < slots.length - 1; idx += 1) {
+                                const breakStart = slots[idx].endMinutes;
+                                const breakEnd = slots[idx + 1].startMinutes;
+                                if (breakEnd > breakStart) {
+                                    breakRanges.push({ startMinutes: breakStart, endMinutes: breakEnd });
                                 }
-                            });
-                            const eventStartsBySlot = new Map();
-                            const eventOccupancyBySlot = new Map();
+                            }
+                            const lunchStart = toMinutes(settings.lunch_start || '');
+                            const lunchEnd = toMinutes(settings.lunch_end || '');
+                            const lunchRange = Number.isFinite(lunchStart) && Number.isFinite(lunchEnd) && lunchEnd > lunchStart
+                                ? { startMinutes: lunchStart, endMinutes: lunchEnd }
+                                : null;
+                            const dayIso = getISODay(day);
+                            const recurringRanges = (recurringBlocks || [])
+                                .map((block) => {
+                                    const days = Array.isArray(block?.days) ? block.days : [];
+                                    if (!days.includes(dayIso)) return null;
+                                    const startMinutes = toMinutes(block.start || '');
+                                    const endMinutes = toMinutes(block.end || '');
+                                    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) return null;
+                                    return { name: block.name || 'Blocked', startMinutes, endMinutes };
+                                })
+                                .filter(Boolean);
+
                             const unslotted = [];
-                            dayEvents.forEach(evt => {
-                                const eventTime = evt?.time_slot || '';
-                                const eventMinutes = toMinutes(eventTime);
+                            const normalizedEvents = [];
+                            dayEvents.forEach((evt) => {
+                                const eventMinutes = toMinutes(evt?.time_slot || '');
                                 const durationMinutes = Math.max(15, parseInt(evt?.duration_minutes, 10) || 30);
                                 if (!Number.isFinite(eventMinutes)) {
                                     unslotted.push(evt);
                                     return;
                                 }
                                 const eventEndMinutes = eventMinutes + durationMinutes;
-
-                                const overlappingSlots = daySlots.filter((slot) => (
-                                    eventMinutes < slot.endMinutes && eventEndMinutes > slot.startMinutes
-                                ));
-                                if (!overlappingSlots.length) {
+                                if (eventEndMinutes <= dayStartMinutes || eventMinutes >= dayEndMinutes) {
                                     unslotted.push(evt);
                                     return;
                                 }
-
-                                overlappingSlots.forEach((slot) => {
-                                    const occupied = eventOccupancyBySlot.get(slot.start) || [];
-                                    occupied.push(evt);
-                                    eventOccupancyBySlot.set(slot.start, occupied);
+                                normalizedEvents.push({
+                                    ...evt,
+                                    __startMinutes: eventMinutes,
+                                    __endMinutes: eventEndMinutes,
+                                    __clipStartMinutes: Math.max(dayStartMinutes, eventMinutes),
+                                    __clipEndMinutes: Math.min(dayEndMinutes, eventEndMinutes),
                                 });
+                            });
 
-                                const startSlot = daySlots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes)
-                                    || overlappingSlots[0]
-                                    || null;
-                                if (!startSlot) {
-                                    unslotted.push(evt);
+                            const boundaryPoints = new Set([dayStartMinutes, dayEndMinutes]);
+                            slots.forEach((slot) => {
+                                boundaryPoints.add(slot.startMinutes);
+                                boundaryPoints.add(slot.endMinutes);
+                            });
+                            breakRanges.forEach((gap) => {
+                                boundaryPoints.add(gap.startMinutes);
+                                boundaryPoints.add(gap.endMinutes);
+                            });
+                            if (lunchRange) {
+                                boundaryPoints.add(lunchRange.startMinutes);
+                                boundaryPoints.add(lunchRange.endMinutes);
+                            }
+                            recurringRanges.forEach((range) => {
+                                boundaryPoints.add(range.startMinutes);
+                                boundaryPoints.add(range.endMinutes);
+                            });
+                            normalizedEvents.forEach((event) => {
+                                boundaryPoints.add(event.__clipStartMinutes);
+                                boundaryPoints.add(event.__clipEndMinutes);
+                            });
+
+                            const sortedBoundaries = [...boundaryPoints]
+                                .filter((value) => Number.isFinite(value) && value >= dayStartMinutes && value <= dayEndMinutes)
+                                .sort((a, b) => a - b);
+
+                            const rawRows = [];
+                            for (let idx = 0; idx < sortedBoundaries.length - 1; idx += 1) {
+                                const startMinutes = sortedBoundaries[idx];
+                                const endMinutes = sortedBoundaries[idx + 1];
+                                if (!(endMinutes > startMinutes)) continue;
+
+                                const activeEvents = normalizedEvents.filter((event) => (
+                                    event.__clipStartMinutes < endMinutes && event.__clipEndMinutes > startMinutes
+                                ));
+
+                                let blockedLabel = null;
+                                if (!activeEvents.length) {
+                                    if (lunchRange && overlaps(startMinutes, endMinutes, lunchRange.startMinutes, lunchRange.endMinutes)) {
+                                        blockedLabel = 'Lunch Break';
+                                    }
+                                    if (!blockedLabel) {
+                                        const recurring = recurringRanges.find((range) => (
+                                            overlaps(startMinutes, endMinutes, range.startMinutes, range.endMinutes)
+                                        ));
+                                        if (recurring) blockedLabel = recurring.name;
+                                    }
+                                }
+
+                                const isGapBreak = !activeEvents.length
+                                    && !blockedLabel
+                                    && breakRanges.some((gap) => startMinutes >= gap.startMinutes && endMinutes <= gap.endMinutes);
+
+                                rawRows.push({
+                                    startMinutes,
+                                    endMinutes,
+                                    type: activeEvents.length ? 'event' : blockedLabel ? 'blocked' : isGapBreak ? 'break' : 'free',
+                                    blockedLabel,
+                                    events: activeEvents,
+                                    eventKey: activeEvents.map((event) => event.id).sort((a, b) => a - b).join(','),
+                                });
+                            }
+
+                            const rows = [];
+                            rawRows.forEach((row) => {
+                                const previous = rows[rows.length - 1];
+                                const canMerge = Boolean(
+                                    previous
+                                    && previous.endMinutes === row.startMinutes
+                                    && previous.type === row.type
+                                    && (
+                                        row.type === 'event'
+                                            ? previous.eventKey === row.eventKey
+                                            : row.type === 'blocked'
+                                                ? previous.blockedLabel === row.blockedLabel
+                                                : true
+                                    )
+                                );
+                                if (!canMerge) {
+                                    rows.push({ ...row });
                                     return;
                                 }
-                                const starters = eventStartsBySlot.get(startSlot.start) || [];
-                                starters.push(evt);
-                                eventStartsBySlot.set(startSlot.start, starters);
+                                previous.endMinutes = row.endMinutes;
                             });
+
+                            const eventStartsByRow = new Map();
+                            normalizedEvents.forEach((event) => {
+                                const startRow = rows.find((row) => (
+                                    row.type === 'event'
+                                    && event.__clipStartMinutes >= row.startMinutes
+                                    && event.__clipStartMinutes < row.endMinutes
+                                    && row.events.some((item) => item.id === event.id)
+                                ));
+                                if (!startRow) return;
+                                const key = `${startRow.startMinutes}-${startRow.endMinutes}`;
+                                const list = eventStartsByRow.get(key) || [];
+                                list.push(event);
+                                eventStartsByRow.set(key, list);
+                            });
+
                             const dayStr = format(day, 'yyyy-MM-dd');
 
                             return (
                                 <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
                                     <div className="space-y-1.5">
-                                        {daySlots.map((slot) => {
-                                            const eventsAtSlot = eventStartsBySlot.get(slot.start) || [];
-                                            const occupyingEvents = eventOccupancyBySlot.get(slot.start) || [];
-                                            const hasEvents = occupyingEvents.length > 0;
-                                            const eventIdsStarting = new Set(eventsAtSlot.map((event) => event.id));
-                                            const continuingEvents = occupyingEvents.filter((event) => !eventIdsStarting.has(event.id));
-                                            const lunchBlocked = isLunchBlocked(slot);
-                                            const recurringBlock = getRecurringBlockAtSlot(day, slot);
-                                            const blockedLabel = lunchBlocked
-                                                ? 'Lunch Break'
-                                                : recurringBlock
-                                                    ? recurringBlock.name
+                                        {rows.map((row) => {
+                                            const rowKey = `${row.startMinutes}-${row.endMinutes}`;
+                                            const eventsAtRow = eventStartsByRow.get(rowKey) || [];
+                                            const hasEvents = row.type === 'event';
+                                            const blockedLabel = row.type === 'blocked'
+                                                ? row.blockedLabel
+                                                : row.type === 'break'
+                                                    ? `${row.endMinutes - row.startMinutes}M BREAK`
                                                     : null;
+                                            const isInteractive = row.type === 'free';
 
                                             return (
-                                                <React.Fragment key={`${dayStr}-${slot.baseIndex}-${slot.start}-${slot.end}`}>
+                                                <div key={`${dayStr}-${rowKey}`}>
                                                     <div
-                                                        className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${blockedLabel ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
+                                                        className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${row.type === 'blocked' || row.type === 'break' ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
                                                         onClick={() => {
-                                                            if (blockedLabel || hasEvents) return;
+                                                            if (!isInteractive) return;
                                                             setEditEvent(null);
                                                             setPrefillData(null);
                                                             setClickedDate(dayStr);
-                                                            setClickedTime(slot.start);
+                                                            setClickedTime(toTime(row.startMinutes));
                                                             setModalOpen(true);
                                                         }}
                                                         onDragOver={(e) => {
-                                                            if (blockedLabel) return;
+                                                            if (!isInteractive) return;
                                                             e.preventDefault();
                                                         }}
                                                         onDrop={(e) => {
                                                             e.preventDefault();
-                                                            if (blockedLabel) return;
+                                                            if (!isInteractive) return;
                                                             const draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                                                            handleDropEvent(draggedId, dayStr, slot.start);
+                                                            handleDropEvent(draggedId, dayStr, toTime(row.startMinutes));
                                                             setDragEventId(null);
                                                         }}
                                                     >
                                                         <div className="flex items-center justify-between mb-1">
-                                                            <p className="text-[10px] font-black text-slate-400">{slot.start} - {slot.end}</p>
+                                                            <p className="text-[10px] font-black text-slate-400">{toTime(row.startMinutes)} - {toTime(row.endMinutes)}</p>
                                                             {!hasEvents && !blockedLabel && <span className="text-[10px] text-slate-300">Draft Slot</span>}
                                                         </div>
 
@@ -1573,7 +1652,7 @@ const Planner = ({ user, onLogout }) => {
                                                         )}
 
                                                         <div className="space-y-1.5">
-                                                            {eventsAtSlot.map((event) => (
+                                                            {(eventsAtRow.length ? eventsAtRow : row.events).map((event) => (
                                                                 <motion.div
                                                                     key={event.id}
                                                                     layout
@@ -1596,7 +1675,7 @@ const Planner = ({ user, onLogout }) => {
                                                                         <div className="min-w-0 flex-1">
                                                                             <p className="font-black truncate">{event.title}</p>
                                                                             <p className="text-[10px] opacity-70 capitalize">{event.event_type} · {normalizeStatus(event.status)}</p>
-                                                                            <p className="text-[10px] opacity-70">Time: {event.time_slot || slot.start}</p>
+                                                                            <p className="text-[10px] opacity-70">Time: {event.time_slot || toTime(row.startMinutes)}</p>
                                                                             {event.department_name && (
                                                                                 <p className="text-[10px] opacity-70 truncate">{event.department_name}</p>
                                                                             )}
@@ -1636,21 +1715,9 @@ const Planner = ({ user, onLogout }) => {
                                                                     </div>
                                                                 </motion.div>
                                                             ))}
-                                                            {eventsAtSlot.length === 0 && continuingEvents.length > 0 && (
-                                                                <div className="rounded-lg px-2 py-1.5 text-[10px] font-semibold bg-slate-100 border border-slate-200 text-slate-500">
-                                                                    Busy · {continuingEvents.length === 1 ? 'continued from earlier slot' : `${continuingEvents.length} ongoing events`}
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     </div>
-                                                    {slot.isBaseTail && slot.baseIndex < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
-                                                        <div className="h-4 flex items-center justify-center">
-                                                            <span className="text-[9px] uppercase tracking-wide text-slate-300">
-                                                                {(settings.slot_gap_minutes ?? 15)}m break
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                </React.Fragment>
+                                                </div>
                                             );
                                         })}
                                     </div>
