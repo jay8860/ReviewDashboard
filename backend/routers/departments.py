@@ -17,6 +17,7 @@ from services.document_ai import (
     SUPPORTED_EXTENSIONS,
     extract_text_from_document,
     analyze_with_gemini,
+    analyze_file_with_gemini,
     generate_task_suggestions_with_gemini,
     compare_analysis_outputs_with_gemini,
 )
@@ -1224,10 +1225,11 @@ def analyze_department_document(dept_id: int, doc_id: int, data: DocumentAnalyze
     doc.analysis_error = None
     db.commit()
 
+    mode = (data.mode or "default").strip().lower()
+    prompt = (data.prompt or "").strip() if data.prompt else None
+
     try:
         extracted_text, was_truncated = extract_text_from_document(doc.file_path, doc.file_extension or "")
-        mode = (data.mode or "default").strip().lower()
-        prompt = (data.prompt or "").strip() if data.prompt else None
         analysis = analyze_with_gemini(doc.original_filename, extracted_text, mode=mode, custom_prompt=prompt)
 
         doc.extracted_text = extracted_text
@@ -1238,11 +1240,37 @@ def analyze_department_document(dept_id: int, doc_id: int, data: DocumentAnalyze
         doc.analysis_status = "Completed"
         doc.analysis_error = None
     except ValueError as exc:
-        doc.analysis_status = "Failed"
-        doc.analysis_error = str(exc)
-        db.commit()
-        db.refresh(doc)
-        raise HTTPException(status_code=422, detail=str(exc))
+        fallback_reason = str(exc)
+        if "no readable text" not in fallback_reason.lower():
+            doc.analysis_status = "Failed"
+            doc.analysis_error = fallback_reason
+            db.commit()
+            db.refresh(doc)
+            raise HTTPException(status_code=422, detail=fallback_reason)
+        try:
+            analysis = analyze_file_with_gemini(
+                document_name=doc.original_filename,
+                file_path=doc.file_path,
+                mime_type=doc.mime_type,
+                mode=mode,
+                custom_prompt=prompt,
+            )
+            doc.extracted_text = None
+            doc.extraction_truncated = False
+            doc.analysis_mode = mode
+            doc.analysis_prompt = prompt if mode == "custom" else None
+            doc.analysis_output = analysis
+            doc.analysis_status = "Completed"
+            doc.analysis_error = None
+        except Exception as fallback_exc:
+            detail = (
+                f"{fallback_reason} Also Gemini file-based OCR analysis failed: {fallback_exc}"
+            )
+            doc.analysis_status = "Failed"
+            doc.analysis_error = detail
+            db.commit()
+            db.refresh(doc)
+            raise HTTPException(status_code=422, detail=detail)
     except Exception as exc:
         doc.analysis_status = "Failed"
         doc.analysis_error = str(exc)
@@ -1464,10 +1492,11 @@ def analyze_meeting_document(dept_id: int, meeting_id: int, doc_id: int, data: D
     doc.analysis_error = None
     db.commit()
 
+    mode = (data.mode or "default").strip().lower()
+    prompt = (data.prompt or "").strip() if data.prompt else None
+
     try:
         extracted_text, was_truncated = extract_text_from_document(doc.file_path, doc.file_extension or "")
-        mode = (data.mode or "default").strip().lower()
-        prompt = (data.prompt or "").strip() if data.prompt else None
         analysis = analyze_with_gemini(doc.original_filename, extracted_text, mode=mode, custom_prompt=prompt)
 
         doc.extracted_text = extracted_text
@@ -1478,11 +1507,37 @@ def analyze_meeting_document(dept_id: int, meeting_id: int, doc_id: int, data: D
         doc.analysis_status = "Completed"
         doc.analysis_error = None
     except ValueError as exc:
-        doc.analysis_status = "Failed"
-        doc.analysis_error = str(exc)
-        db.commit()
-        db.refresh(doc)
-        raise HTTPException(status_code=422, detail=str(exc))
+        fallback_reason = str(exc)
+        if "no readable text" not in fallback_reason.lower():
+            doc.analysis_status = "Failed"
+            doc.analysis_error = fallback_reason
+            db.commit()
+            db.refresh(doc)
+            raise HTTPException(status_code=422, detail=fallback_reason)
+        try:
+            analysis = analyze_file_with_gemini(
+                document_name=doc.original_filename,
+                file_path=doc.file_path,
+                mime_type=doc.mime_type,
+                mode=mode,
+                custom_prompt=prompt,
+            )
+            doc.extracted_text = None
+            doc.extraction_truncated = False
+            doc.analysis_mode = mode
+            doc.analysis_prompt = prompt if mode == "custom" else None
+            doc.analysis_output = analysis
+            doc.analysis_status = "Completed"
+            doc.analysis_error = None
+        except Exception as fallback_exc:
+            detail = (
+                f"{fallback_reason} Also Gemini file-based OCR analysis failed: {fallback_exc}"
+            )
+            doc.analysis_status = "Failed"
+            doc.analysis_error = detail
+            db.commit()
+            db.refresh(doc)
+            raise HTTPException(status_code=422, detail=detail)
     except Exception as exc:
         doc.analysis_status = "Failed"
         doc.analysis_error = str(exc)
