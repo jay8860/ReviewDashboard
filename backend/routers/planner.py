@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse, urlunparse
+import hashlib
 import json
 import re
 import secrets
@@ -802,6 +803,8 @@ def export_planner_ics(
         "PRODID:-//ReviewDashboard//Planner//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
+        "REFRESH-INTERVAL;VALUE=DURATION:PT5M",
+        "X-PUBLISHED-TTL:PT5M",
         f"X-WR-CALNAME:{_escape_ics_text('Review Dashboard Planner')}",
         f"X-WR-TIMEZONE:{_escape_ics_text(tz_name)}",
     ]
@@ -811,12 +814,18 @@ def export_planner_ics(
 
     lines.append("END:VCALENDAR")
     content = "\r\n".join(lines) + "\r\n"
+    content_etag = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    now_http = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
     return Response(
         content=content,
         media_type="text/calendar; charset=utf-8",
         headers={
             "Content-Disposition": 'inline; filename="reviewdashboard-planner.ics"',
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0, s-maxage=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "ETag": f"\"{content_etag}\"",
+            "Last-Modified": now_http,
         },
     )
 
