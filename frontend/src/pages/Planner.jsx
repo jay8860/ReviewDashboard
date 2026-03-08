@@ -1455,9 +1455,14 @@ const Planner = ({ user, onLogout }) => {
                                 const markers = [baseSlot.startMinutes, baseSlot.endMinutes];
                                 dayEvents.forEach((evt) => {
                                     const eventMinutes = toMinutes(evt?.time_slot || '');
+                                    const durationMinutes = Math.max(15, parseInt(evt?.duration_minutes, 10) || 30);
+                                    const eventEndMinutes = eventMinutes + durationMinutes;
                                     if (!Number.isFinite(eventMinutes)) return;
                                     if (eventMinutes > baseSlot.startMinutes && eventMinutes < baseSlot.endMinutes) {
                                         markers.push(eventMinutes);
+                                    }
+                                    if (eventEndMinutes > baseSlot.startMinutes && eventEndMinutes < baseSlot.endMinutes) {
+                                        markers.push(eventEndMinutes);
                                     }
                                 });
 
@@ -1477,30 +1482,43 @@ const Planner = ({ user, onLogout }) => {
                                     });
                                 }
                             });
-                            const eventByTime = new Map();
+                            const eventStartsBySlot = new Map();
+                            const eventOccupancyBySlot = new Map();
                             const unslotted = [];
                             dayEvents.forEach(evt => {
                                 const eventTime = evt?.time_slot || '';
                                 const eventMinutes = toMinutes(eventTime);
-                                let targetSlot = daySlots.find(s => s.start === eventTime);
-                                if (!targetSlot && Number.isFinite(eventMinutes)) {
-                                    targetSlot = daySlots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes);
+                                const durationMinutes = Math.max(15, parseInt(evt?.duration_minutes, 10) || 30);
+                                if (!Number.isFinite(eventMinutes)) {
+                                    unslotted.push(evt);
+                                    return;
                                 }
-                                if (!targetSlot && Number.isFinite(eventMinutes) && daySlots.length > 0) {
-                                    targetSlot = daySlots.reduce((closest, slot) => {
-                                        const diff = Math.abs(slot.startMinutes - eventMinutes);
-                                        const bestDiff = Math.abs(closest.startMinutes - eventMinutes);
-                                        return diff < bestDiff ? slot : closest;
-                                    }, daySlots[0]);
+                                const eventEndMinutes = eventMinutes + durationMinutes;
+
+                                const overlappingSlots = daySlots.filter((slot) => (
+                                    eventMinutes < slot.endMinutes && eventEndMinutes > slot.startMinutes
+                                ));
+                                if (!overlappingSlots.length) {
+                                    unslotted.push(evt);
+                                    return;
                                 }
 
-                                if (targetSlot) {
-                                    const bucket = eventByTime.get(targetSlot.start) || [];
-                                    bucket.push(evt);
-                                    eventByTime.set(targetSlot.start, bucket);
-                                } else {
+                                overlappingSlots.forEach((slot) => {
+                                    const occupied = eventOccupancyBySlot.get(slot.start) || [];
+                                    occupied.push(evt);
+                                    eventOccupancyBySlot.set(slot.start, occupied);
+                                });
+
+                                const startSlot = daySlots.find((s) => eventMinutes >= s.startMinutes && eventMinutes < s.endMinutes)
+                                    || overlappingSlots[0]
+                                    || null;
+                                if (!startSlot) {
                                     unslotted.push(evt);
+                                    return;
                                 }
+                                const starters = eventStartsBySlot.get(startSlot.start) || [];
+                                starters.push(evt);
+                                eventStartsBySlot.set(startSlot.start, starters);
                             });
                             const dayStr = format(day, 'yyyy-MM-dd');
 
@@ -1508,8 +1526,11 @@ const Planner = ({ user, onLogout }) => {
                                 <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
                                     <div className="space-y-1.5">
                                         {daySlots.map((slot) => {
-                                            const eventsAtSlot = eventByTime.get(slot.start) || [];
-                                            const hasEvents = eventsAtSlot.length > 0;
+                                            const eventsAtSlot = eventStartsBySlot.get(slot.start) || [];
+                                            const occupyingEvents = eventOccupancyBySlot.get(slot.start) || [];
+                                            const hasEvents = occupyingEvents.length > 0;
+                                            const eventIdsStarting = new Set(eventsAtSlot.map((event) => event.id));
+                                            const continuingEvents = occupyingEvents.filter((event) => !eventIdsStarting.has(event.id));
                                             const lunchBlocked = isLunchBlocked(slot);
                                             const recurringBlock = getRecurringBlockAtSlot(day, slot);
                                             const blockedLabel = lunchBlocked
@@ -1615,6 +1636,11 @@ const Planner = ({ user, onLogout }) => {
                                                                     </div>
                                                                 </motion.div>
                                                             ))}
+                                                            {eventsAtSlot.length === 0 && continuingEvents.length > 0 && (
+                                                                <div className="rounded-lg px-2 py-1.5 text-[10px] font-semibold bg-slate-100 border border-slate-200 text-slate-500">
+                                                                    Busy · {continuingEvents.length === 1 ? 'continued from earlier slot' : `${continuingEvents.length} ongoing events`}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     {slot.isBaseTail && slot.baseIndex < slots.length - 1 && (settings.slot_gap_minutes ?? 15) > 0 && (
