@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Optional
+import re
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
@@ -34,15 +35,47 @@ def _parse_date_maybe(value: Optional[str]) -> Optional[date]:
     return None
 
 
+def _canonical_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = " ".join(str(value).strip().split())
+    return text or None
+
+
+def _agency_key(value: Optional[str]) -> Optional[str]:
+    text = _canonical_text(value)
+    if not text:
+        return None
+    key = re.sub(r"[^a-z0-9]+", "", text.casefold())
+    return key or text.casefold()
+
+
 def _effective_agency(task: models.Task) -> str:
     if task.assigned_agency and task.assigned_agency.strip():
-        return task.assigned_agency.strip()
+        return _canonical_text(task.assigned_agency) or "Unassigned"
     if task.assigned_employee:
         if task.assigned_employee.display_username and task.assigned_employee.display_username.strip():
-            return task.assigned_employee.display_username.strip()
+            return _canonical_text(task.assigned_employee.display_username) or "Unassigned"
         if task.assigned_employee.name and task.assigned_employee.name.strip():
-            return task.assigned_employee.name.strip()
+            return _canonical_text(task.assigned_employee.name) or "Unassigned"
     return "Unassigned"
+
+
+def _pick_group_label(task: models.Task, group_key: str) -> tuple[str, int]:
+    emp = task.assigned_employee
+    if emp and emp.display_username:
+        label = _canonical_text(emp.display_username)
+        if label and _agency_key(label) == group_key:
+            return label, 0
+    if task.assigned_agency:
+        label = _canonical_text(task.assigned_agency)
+        if label and _agency_key(label) == group_key:
+            return label, 1
+    if emp and emp.name:
+        label = _canonical_text(emp.name)
+        if label and _agency_key(label) == group_key:
+            return label, 2
+    return "Unassigned", 3
 
 
 def _task_bucket(task: models.Task, today: date) -> str:
@@ -77,6 +110,8 @@ def get_task_analytics(db: Session = Depends(get_db)):
     bottlenecks = defaultdict(int)
     workload = defaultdict(int)
     oldest_pending = []
+    agency_labels = {}
+    agency_label_priority = {}
 
     agency_perf = defaultdict(lambda: {
         "agency": "",
@@ -92,6 +127,17 @@ def get_task_analytics(db: Session = Depends(get_db)):
     for task in tasks:
         bucket = _task_bucket(task, today)
         agency = _effective_agency(task)
+        agency_group_key = _agency_key(agency) or "unassigned"
+        label, label_priority = _pick_group_label(task, agency_group_key)
+
+        if (
+            agency_group_key not in agency_label_priority
+            or label_priority < agency_label_priority[agency_group_key]
+        ):
+            agency_label_priority[agency_group_key] = label_priority
+            agency_labels[agency_group_key] = label
+
+        agency_label = agency_labels.get(agency_group_key, agency)
 
         summary["total"] += 1
         if bucket == "Completed":
@@ -103,8 +149,8 @@ def get_task_analytics(db: Session = Depends(get_db)):
         else:
             summary["pending"] += 1
 
-        perf = agency_perf[agency]
-        perf["agency"] = agency
+        perf = agency_perf[agency_group_key]
+        perf["agency"] = agency_label
         perf["total"] += 1
         if bucket == "Completed":
             perf["completed"] += 1
@@ -116,10 +162,10 @@ def get_task_analytics(db: Session = Depends(get_db)):
             perf["pending"] += 1
 
         if bucket == "Overdue":
-            bottlenecks[agency] += 1
+            bottlenecks[agency_group_key] += 1
 
         if bucket in {"Pending", "In Progress", "Overdue"}:
-            workload[agency] += 1
+            workload[agency_group_key] += 1
 
             start_date = task.allocated_date or (task.created_at.date() if task.created_at else today)
             days_open = max((today - start_date).days, 0)
@@ -127,7 +173,7 @@ def get_task_analytics(db: Session = Depends(get_db)):
                 "id": task.id,
                 "task_number": task.task_number,
                 "description": task.description or "No description",
-                "agency": agency,
+                "agency": agency_label,
                 "status": bucket,
                 "days_open": days_open,
                 "deadline_date": str(task.deadline_date) if task.deadline_date else None,
@@ -150,13 +196,19 @@ def get_task_analytics(db: Session = Depends(get_db)):
     ]
 
     critical_bottlenecks = [
-        {"agency": agency, "count": count}
-        for agency, count in sorted(bottlenecks.items(), key=lambda x: (-x[1], x[0]))[:10]
+        {"agency": agency_labels.get(agency_key, "Unassigned"), "count": count}
+        for agency_key, count in sorted(
+            bottlenecks.items(),
+            key=lambda x: (-x[1], agency_labels.get(x[0], "Unassigned").casefold())
+        )[:10]
     ]
 
     highest_workload = [
-        {"agency": agency, "count": count}
-        for agency, count in sorted(workload.items(), key=lambda x: (-x[1], x[0]))[:10]
+        {"agency": agency_labels.get(agency_key, "Unassigned"), "count": count}
+        for agency_key, count in sorted(
+            workload.items(),
+            key=lambda x: (-x[1], agency_labels.get(x[0], "Unassigned").casefold())
+        )[:10]
     ]
 
     oldest_pending = sorted(oldest_pending, key=lambda x: (-x["days_open"], x["id"]))[:10]
@@ -176,7 +228,7 @@ def get_task_analytics(db: Session = Depends(get_db)):
             "avg_speed_days": avg_speed,
         })
 
-    agency_performance.sort(key=lambda x: (-x["overdue"], -x["pending"], -x["total"], x["agency"]))
+    agency_performance.sort(key=lambda x: (-x["overdue"], -x["pending"], -x["total"], x["agency"].casefold()))
 
     return {
         "summary": summary,

@@ -111,6 +111,14 @@ def _canonical_text(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _agency_key(value: Optional[str]) -> Optional[str]:
+    text = _canonical_text(value)
+    if not text:
+        return None
+    key = re.sub(r"[^a-z0-9]+", "", text.casefold())
+    return key or text.casefold()
+
+
 def _effective_agency_expr():
     return func.coalesce(
         func.nullif(func.trim(models.Task.assigned_agency), ""),
@@ -118,6 +126,62 @@ def _effective_agency_expr():
         func.nullif(func.trim(models.Employee.name), ""),
         "Unassigned",
     )
+
+
+def _effective_agency_value(task: models.Task) -> str:
+    if task.assigned_agency and task.assigned_agency.strip():
+        return _canonical_text(task.assigned_agency) or "Unassigned"
+    if task.assigned_employee:
+        if task.assigned_employee.display_username and task.assigned_employee.display_username.strip():
+            return _canonical_text(task.assigned_employee.display_username) or "Unassigned"
+        if task.assigned_employee.name and task.assigned_employee.name.strip():
+            return _canonical_text(task.assigned_employee.name) or "Unassigned"
+    return "Unassigned"
+
+
+def _pick_group_label(task: models.Task, group_key: str) -> tuple[str, int]:
+    emp = task.assigned_employee
+    if emp and emp.display_username:
+        label = _canonical_text(emp.display_username)
+        if label and _agency_key(label) == group_key:
+            return label, 0
+    if task.assigned_agency:
+        label = _canonical_text(task.assigned_agency)
+        if label and _agency_key(label) == group_key:
+            return label, 1
+    if emp and emp.name:
+        label = _canonical_text(emp.name)
+        if label and _agency_key(label) == group_key:
+            return label, 2
+    return "Unassigned", 3
+
+
+def _aggregate_agencies(tasks: List[models.Task], include_unassigned: bool = True) -> List[dict]:
+    unassigned_key = _agency_key("Unassigned")
+    grouped = {}
+
+    for task in tasks:
+        effective_value = _effective_agency_value(task)
+        key = _agency_key(effective_value) or unassigned_key
+        label, priority = _pick_group_label(task, key)
+
+        row = grouped.get(key)
+        if not row:
+            grouped[key] = {"agency": label, "count": 1, "_priority": priority}
+            continue
+
+        row["count"] += 1
+        if priority < row["_priority"]:
+            row["agency"] = label
+            row["_priority"] = priority
+
+    rows = []
+    for key, row in grouped.items():
+        if not include_unassigned and key == unassigned_key:
+            continue
+        rows.append({"agency": row["agency"], "count": row["count"]})
+    rows.sort(key=lambda item: item["agency"].casefold())
+    return rows
 
 
 def generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
@@ -228,10 +292,7 @@ def get_tasks(
     )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
-    if agency:
-        canonical_agency = _canonical_text(agency)
-        if canonical_agency:
-            q = q.filter(func.lower(agency_expr) == canonical_agency.lower())
+    selected_agency_key = _agency_key(agency) if agency else None
     if status:
         raw_statuses = [s.strip() for s in status.split(',') if s.strip()]
         statuses = [_normalize_task_status(s) for s in raw_statuses]
@@ -281,13 +342,19 @@ def get_tasks(
     else:  # deadline_date
         q = q.order_by(models.Task.deadline_date.desc().nullslast() if is_desc else models.Task.deadline_date.asc().nullslast())
 
-    return [task_to_dict(t) for t in q.all()]
+    tasks = q.all()
+    if selected_agency_key:
+        tasks = [
+            task for task in tasks
+            if _agency_key(_effective_agency_value(task)) == selected_agency_key
+        ]
+
+    return [task_to_dict(t) for t in tasks]
 
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
     _sync_task_statuses(db)
-    agency_expr = _effective_agency_expr()
     total = db.query(func.count(models.Task.id)).scalar()
     completed = db.query(func.count(models.Task.id)).filter(
         or_(models.Task.status == "Completed", models.Task.completion_date != None)
@@ -302,36 +369,20 @@ def get_stats(db: Session = Depends(get_db)):
     important = db.query(func.count(models.Task.id)).filter(
         models.Task.priority.in_(["High", "Critical"]), models.Task.completion_date == None
     ).scalar()
-    by_agency = (
-        db.query(agency_expr.label("agency"), func.count(models.Task.id))
-        .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
-        .group_by(agency_expr)
-        .all()
-    )
+    agency_tasks = db.query(models.Task).options(joinedload(models.Task.assigned_employee)).all()
+    by_agency = _aggregate_agencies(agency_tasks, include_unassigned=True)
     return {
         "total": total, "completed": completed, "pending": pending,
         "overdue": overdue, "important": important,
-        "by_agency": [{"agency": (r[0] or "Unassigned"), "count": r[1]} for r in by_agency],
+        "by_agency": by_agency,
     }
 
 
 @router.get("/agencies")
 def get_agencies(db: Session = Depends(get_db)):
-    agency_expr = _effective_agency_expr()
-    rows = (
-        db.query(agency_expr)
-        .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
-        .all()
-    )
-    unique = {}
-    for (value,) in rows:
-        cleaned = _canonical_text(value)
-        if not cleaned:
-            continue
-        key = cleaned.casefold()
-        if key not in unique:
-            unique[key] = cleaned
-    return sorted(unique.values(), key=lambda v: v.casefold())
+    tasks = db.query(models.Task).options(joinedload(models.Task.assigned_employee)).all()
+    rows = _aggregate_agencies(tasks, include_unassigned=False)
+    return [item["agency"] for item in rows]
 
 
 @router.post("/")
