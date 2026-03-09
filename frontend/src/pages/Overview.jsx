@@ -114,7 +114,7 @@ const Overview = ({ user, onLogout }) => {
     const [fieldVisitDraftRows, setFieldVisitDraftRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [deptSectionCollapsed, setDeptSectionCollapsed] = useState(false);
-    const [deptSortMode, setDeptSortMode] = useState('recent_scheduled');
+    const [deptSortMode, setDeptSortMode] = useState('next_upcoming');
     const [timelineFilters, setTimelineFilters] = useState({
         tasks: true,
         reviews: true,
