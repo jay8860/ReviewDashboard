@@ -154,6 +154,7 @@ def task_to_dict(t: models.Task) -> dict:
         "source": t.source,
         "assigned_employee_id": t.assigned_employee_id,
         "assigned_employee_name": t.assigned_employee.name if t.assigned_employee else None,
+        "assigned_employee_display_username": t.assigned_employee.display_username if t.assigned_employee else None,
         "created_at": str(t.created_at)
     }
 

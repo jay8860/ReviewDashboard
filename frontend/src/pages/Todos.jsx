@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import ConfirmDialog from '../components/ConfirmDialog';
+import EmployeeSearchSelect, { getEmployeeAssignmentLabel } from '../components/EmployeeSearchSelect';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 
@@ -18,9 +19,7 @@ const parseNotesLines = (raw = '') => {
 };
 
 const getEmployeeDisplayLabel = (employee) => {
-    const displayName = String(employee?.display_username || '').trim();
-    if (displayName) return displayName;
-    return String(employee?.name || '').trim() || `Employee ${employee?.id || ''}`.trim();
+    return getEmployeeAssignmentLabel(employee) || `Employee ${employee?.id || ''}`.trim();
 };
 
 const Todos = ({ user, onLogout }) => {
@@ -461,20 +460,22 @@ const Todos = ({ user, onLogout }) => {
                                                     className={`w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold ${item.status === 'Done' ? 'line-through text-slate-400' : 'text-slate-800'}`}
                                                 />
                                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                                                    <select
+                                                    <EmployeeSearchSelect
+                                                        employees={sortedEmployees}
                                                         value={todoTaskOptions[item.id]?.assigned_employee_id || item.assigned_employee_id || ''}
-                                                        onChange={(e) => setTodoTaskOptions(prev => ({
+                                                        onChange={(nextId) => setTodoTaskOptions(prev => ({
                                                             ...prev,
                                                             [item.id]: {
                                                                 ...(prev[item.id] || {}),
-                                                                assigned_employee_id: e.target.value,
+                                                                assigned_employee_id: nextId,
                                                             },
                                                         }))}
-                                                        className="px-2 py-1 rounded-lg border border-slate-200 bg-white"
-                                                    >
-                                                        <option value="">Task employee: none</option>
-                                                        {sortedEmployees.map(emp => <option key={emp.id} value={emp.id}>{getEmployeeDisplayLabel(emp)}</option>)}
-                                                    </select>
+                                                        placeholder="Task employee: search name/designation"
+                                                        noneLabel="Task employee: none"
+                                                        className="w-[280px] max-w-full"
+                                                        inputClassName="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs"
+                                                        menuClassName="z-[90]"
+                                                    />
                                                     {item.linked_task_number && (
                                                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
                                                             Task: {item.linked_task_number}

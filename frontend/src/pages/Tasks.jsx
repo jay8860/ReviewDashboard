@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
+import EmployeeSearchSelect from '../components/EmployeeSearchSelect';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
@@ -57,6 +58,14 @@ const sortEmployeesByDisplay = (rows = []) => (
         getEmployeeDisplayLabel(a).localeCompare(getEmployeeDisplayLabel(b), undefined, { sensitivity: 'base' })
     ))
 );
+
+const getTaskAssignedLabel = (task) => {
+    const employeeName = String(task?.assigned_employee_name || '').trim();
+    const designation = String(task?.assigned_employee_display_username || '').trim();
+    if (employeeName && designation) return `${employeeName} (${designation})`;
+    if (employeeName) return employeeName;
+    return String(task?.assigned_agency || '').trim();
+};
 
 // ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
 const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], initial = null }) => {
@@ -168,12 +177,14 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
                                     <label className={labelCls}>Assigned Employee</label>
-                                    <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={inputCls}>
-                                        <option value="">None</option>
-                                        {sortedEmployees.map((e) => (
-                                            <option key={e.id} value={e.id}>{getEmployeeDisplayLabel(e)}</option>
-                                        ))}
-                                    </select>
+                                    <EmployeeSearchSelect
+                                        employees={sortedEmployees}
+                                        value={form.assigned_employee_id}
+                                        onChange={(nextId) => setForm((prev) => ({ ...prev, assigned_employee_id: nextId }))}
+                                        placeholder="Search by name or designation"
+                                        noneLabel="None"
+                                        inputClassName={inputCls}
+                                    />
                                 </div>
                                 {!initial ? (
                                     <div>
@@ -567,8 +578,13 @@ const Tasks = ({ user, onLogout }) => {
             ...patch,
         };
         if (Object.prototype.hasOwnProperty.call(patch, 'assigned_employee_id')) {
-            const match = employees.find((emp) => emp.id === patch.assigned_employee_id);
+            const patchEmployeeId = (patch.assigned_employee_id === '' || patch.assigned_employee_id === null)
+                ? null
+                : Number(patch.assigned_employee_id);
+            optimistic.assigned_employee_id = patchEmployeeId;
+            const match = employees.find((emp) => Number(emp.id) === patchEmployeeId);
             optimistic.assigned_employee_name = match ? match.name : null;
+            optimistic.assigned_employee_display_username = match ? (match.display_username || null) : null;
         }
         setTasks((prev) => prev.map((row) => (row.id === id ? optimistic : row)));
         try {
@@ -602,7 +618,7 @@ const Tasks = ({ user, onLogout }) => {
                 task?.task_number ? `Task ID: ${task.task_number}` : '',
             ].filter(Boolean).join('\n');
 
-            const attendees = (task?.assigned_employee_name || '').trim()
+            const attendees = getTaskAssignedLabel(task)
                 || (task?.assigned_agency || '').trim()
                 || '';
 
@@ -703,6 +719,7 @@ const Tasks = ({ user, onLogout }) => {
             'Task #': t.task_number,
             'Description': t.description,
             'Steno Comment': t.steno_comment,
+            'Assigned To': getTaskAssignedLabel(t),
             'Assigned Agency': t.assigned_agency,
             'Allocated Date': t.allocated_date,
             'Time Given': t.time_given,
@@ -742,7 +759,7 @@ const Tasks = ({ user, onLogout }) => {
             task.task_number || '',
             task.description || '',
             task.steno_comment || '',
-            task.assigned_employee_name || task.assigned_agency || '',
+            getTaskAssignedLabel(task),
             getDueText(task),
             task.deadline_date ? format(new Date(task.deadline_date), 'd MMM yyyy') : '-',
             task.status || '',

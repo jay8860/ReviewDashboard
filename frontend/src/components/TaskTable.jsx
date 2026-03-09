@@ -5,6 +5,7 @@ import {
     MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
+import EmployeeSearchSelect, { getEmployeeAssignmentLabel } from './EmployeeSearchSelect';
 
 // WhatsApp SVG icon
 const WhatsAppIcon = () => (
@@ -117,10 +118,14 @@ const EditableRow = ({ task, rowIndex = 0, onSave, onCancel, departments = [], e
             </td>
             <td className="px-2 py-2 min-w-32">
                 <div className="flex flex-col gap-1">
-                    <select value={form.assigned_employee_id} onChange={f('assigned_employee_id')} className={selectCls}>
-                        <option value="">No Employee</option>
-                        {sortedEmployees.map((e) => <option key={e.id} value={e.id}>{getEmployeeSelectLabel(e)}</option>)}
-                    </select>
+                    <EmployeeSearchSelect
+                        employees={sortedEmployees}
+                        value={form.assigned_employee_id}
+                        onChange={(nextId) => setForm((prev) => ({ ...prev, assigned_employee_id: nextId }))}
+                        placeholder="Search by name or designation"
+                        noneLabel="No employee"
+                        inputClassName={selectCls}
+                    />
                     <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
                 </div>
             </td>
@@ -165,15 +170,20 @@ const ColHeader = ({ label, sortKey, currentSort, onSort, className = '' }) => {
 
 const buildTaskWhatsAppMessage = (task) => {
     const taskName = (task?.description || '').trim() || 'Task';
-    const assignedTo = (task?.assigned_employee_name || task?.assigned_agency || '').trim() || 'Unassigned';
+    const assignedTo = getTaskAssignedText(task) || 'Unassigned';
     return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
 };
 
 const getEmployeeSelectLabel = (employee) => {
-    const displayName = String(employee?.display_username || '').trim();
-    if (displayName) return displayName;
-    const fallback = String(employee?.name || '').trim();
-    return fallback || `Employee ${employee?.id || ''}`.trim();
+    return getEmployeeAssignmentLabel(employee) || `Employee ${employee?.id || ''}`.trim();
+};
+
+const getTaskAssignedText = (task) => {
+    const employeeName = String(task?.assigned_employee_name || '').trim();
+    const designation = String(task?.assigned_employee_display_username || '').trim();
+    if (employeeName && designation) return `${employeeName} (${designation})`;
+    if (employeeName) return employeeName;
+    return String(task?.assigned_agency || '').trim();
 };
 
 const sortEmployeesForSelect = (rows = []) => (
@@ -300,7 +310,7 @@ const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees 
         const date = form.date ? format(new Date(form.date), 'd MMMM yyyy') : 'TBD';
         const time = formatTime12(form.time_slot);
         const recipient = employees.find((emp) => String(emp.id) === String(primaryRecipientId));
-        const personName = recipient?.name || task?.assigned_employee_name || task?.assigned_agency || 'the concerned officer';
+        const personName = recipient ? getEmployeeSelectLabel(recipient) : (getTaskAssignedText(task) || 'the concerned officer');
         const taskName = (task?.description || '').trim() || task?.task_number || 'Task';
         const personTasks = recipient
             ? allTasks
@@ -818,20 +828,17 @@ const TaskTable = ({
                                 <td className="px-3 py-3 max-w-[130px]">
                                     {isBulkEditable ? (
                                         <div className="space-y-1">
-                                            <select
+                                            <EmployeeSearchSelect
+                                                employees={sortedEmployees}
                                                 value={getBulkFieldValue(task, 'assigned_employee_id') ?? ''}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
+                                                onChange={(value) => {
                                                     setBulkField(task.id, 'assigned_employee_id', value);
                                                     commitBulkField(task, 'assigned_employee_id', value);
                                                 }}
-                                                className={inputCls}
-                                            >
-                                                <option value="">No employee</option>
-                                                {sortedEmployees.map((emp) => (
-                                                    <option key={emp.id} value={emp.id}>{getEmployeeSelectLabel(emp)}</option>
-                                                ))}
-                                            </select>
+                                                placeholder="Search by name or designation"
+                                                noneLabel="No employee"
+                                                inputClassName={inputCls}
+                                            />
                                             <input
                                                 value={getBulkFieldValue(task, 'assigned_agency')}
                                                 onChange={(e) => setBulkField(task.id, 'assigned_agency', e.target.value)}
@@ -846,6 +853,9 @@ const TaskTable = ({
                                                 <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{task.assigned_employee_name}</p>
                                             ) : (
                                                 <p className="text-xs text-slate-500">—</p>
+                                            )}
+                                            {task.assigned_employee_display_username && (
+                                                <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{task.assigned_employee_display_username}</p>
                                             )}
                                             {task.assigned_agency && (
                                                 <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>

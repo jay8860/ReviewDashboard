@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckSquare, ListChecks, Loader2, PlusCircle, Trash2 } from 'lucide-react';
 import { useToast } from './Toast';
+import EmployeeSearchSelect from './EmployeeSearchSelect';
 
 const makeRow = (text = '', idx = 1) => ({
     _id: `bullet-${Date.now()}-${idx}`,
@@ -64,7 +65,7 @@ const BulletTaskPad = ({
             .map((emp) => ({
                 id: Number(emp.id),
                 name: String(emp.name || '').trim() || `Employee ${emp.id}`,
-                username: String(emp.display_username || '').trim(),
+                display_username: String(emp.display_username || '').trim(),
             }));
         normalized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
         return normalized;
@@ -110,7 +111,6 @@ const BulletTaskPad = ({
                 deadline_date: r.deadline_date || null,
                 time_given: (r.time_given || '').trim() || null,
                 remarks: (r.remarks || '').trim() || null,
-                source_snippet: 'Created from workspace task notepad',
             }));
             const result = await onConfirmCreate(payload);
             const createdCount = result?.created_count ?? 0;
@@ -203,18 +203,14 @@ const BulletTaskPad = ({
                                         placeholder="Assigned agency / owner"
                                         className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
                                     />
-                                    <select
+                                    <EmployeeSearchSelect
+                                        employees={employeeOptions}
                                         value={row.assigned_employee_id || ''}
-                                        onChange={(e) => updateRow(row._id, 'assigned_employee_id', e.target.value)}
-                                        className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
-                                    >
-                                        <option value="">Assign to employee</option>
-                                        {employeeOptions.map((emp) => (
-                                            <option key={emp.id} value={emp.id}>
-                                                {emp.username ? `${emp.name} (${emp.username})` : emp.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        onChange={(nextId) => updateRow(row._id, 'assigned_employee_id', nextId)}
+                                        placeholder="Search name/designation"
+                                        noneLabel="Assign to employee"
+                                        inputClassName="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                    />
                                     <select
                                         value={row.priority}
                                         onChange={(e) => updateRow(row._id, 'priority', e.target.value)}
