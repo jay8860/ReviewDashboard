@@ -263,6 +263,53 @@ const normalizeTimeForInput = (value, fallback = '10:00') => {
     return fallback;
 };
 
+const normalizeEventForUi = (rawEvent, defaultDayStart = '10:00', defaultDuration = 30) => {
+    const fallbackDate = getTodayIso();
+    const parsed = parseDateSafe(rawEvent?.date);
+    const safeDate = parsed ? format(parsed, 'yyyy-MM-dd') : fallbackDate;
+    const safeTime = normalizeTimeForInput(rawEvent?.time_slot, defaultDayStart);
+    const safeDuration = Math.max(15, parseInt(rawEvent?.duration_minutes, 10) || defaultDuration || 30);
+
+    const numericId = Number(rawEvent?.id);
+    const safeId = Number.isFinite(numericId) && numericId > 0 ? numericId : rawEvent?.id;
+    const numericDeptId = Number(rawEvent?.department_id);
+    const safeDeptId = Number.isFinite(numericDeptId) && numericDeptId > 0 ? numericDeptId : null;
+    const numericMeetingId = Number(rawEvent?.department_meeting_id);
+    const safeMeetingId = Number.isFinite(numericMeetingId) && numericMeetingId > 0 ? numericMeetingId : null;
+    const numericDraftId = Number(rawEvent?.field_visit_draft_id);
+    const safeDraftId = Number.isFinite(numericDraftId) && numericDraftId > 0 ? numericDraftId : null;
+    const numericReviewSessionId = Number(rawEvent?.review_session_id);
+    const safeReviewSessionId = Number.isFinite(numericReviewSessionId) && numericReviewSessionId > 0 ? numericReviewSessionId : null;
+
+    return {
+        ...rawEvent,
+        id: safeId,
+        title: String(rawEvent?.title || 'Untitled Event').trim() || 'Untitled Event',
+        date: safeDate,
+        time_slot: safeTime,
+        duration_minutes: safeDuration,
+        event_type: _normalizeEventTypeForUi(rawEvent?.event_type),
+        status: normalizeStatus(rawEvent?.status),
+        color: String(rawEvent?.color || 'indigo').trim() || 'indigo',
+        description: rawEvent?.description || '',
+        venue: rawEvent?.venue || '',
+        attendees: rawEvent?.attendees || '',
+        department_id: safeDeptId,
+        department_meeting_id: safeMeetingId,
+        field_visit_draft_id: safeDraftId,
+        review_session_id: safeReviewSessionId,
+        source: rawEvent?.source || 'manual',
+        is_locked: Boolean(rawEvent?.is_locked),
+    };
+};
+
+const _normalizeEventTypeForUi = (value) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (EVENT_TYPES.includes(text)) return text;
+    if (text === 'reminder') return 'other';
+    return 'other';
+};
+
 const buildPlannerEventWhatsAppMessage = (event) => {
     const title = (event?.title || 'meeting').trim();
     const dateText = formatDateSafe(event?.date, 'd MMMM yyyy', 'TBD');
@@ -763,6 +810,7 @@ const EventModal = ({
     employees,
 }) => {
     const [showWhatsappModal, setShowWhatsappModal] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [form, setForm] = useState({
         title: '',
         date: defaultDate,
@@ -779,6 +827,7 @@ const EventModal = ({
 
     useEffect(() => {
         if (!isOpen) return;
+        setIsSubmitting(false);
         setShowWhatsappModal(false);
         if (eventData) {
             setForm({
@@ -846,13 +895,31 @@ const EventModal = ({
                     </div>
 
                     <form
-                        onSubmit={(e) => {
+                        onSubmit={async (e) => {
                             e.preventDefault();
-                            onSave({
-                                ...form,
-                                duration_minutes: parseInt(form.duration_minutes, 10),
-                                department_id: form.department_id ? parseInt(form.department_id, 10) : null,
-                            });
+                            if (isSubmitting) return;
+                            const parsedDuration = parseInt(form.duration_minutes, 10);
+                            const durationMinutes = Number.isFinite(parsedDuration) ? Math.max(15, parsedDuration) : (defaultSlotMinutes || 30);
+                            const parsedDeptId = parseInt(form.department_id, 10);
+                            const fallbackDeptId = eventData?.department_id ? parseInt(eventData.department_id, 10) : null;
+                            const departmentId = Number.isFinite(parsedDeptId)
+                                ? parsedDeptId
+                                : (Number.isFinite(fallbackDeptId) ? fallbackDeptId : null);
+                            const safeDate = parseDateSafe(form.date) ? format(parseDateSafe(form.date), 'yyyy-MM-dd') : defaultDate;
+                            const safeTime = normalizeTimeForInput(form.time_slot, defaultTime);
+
+                            setIsSubmitting(true);
+                            try {
+                                await onSave({
+                                    ...form,
+                                    date: safeDate,
+                                    time_slot: safeTime,
+                                    duration_minutes: durationMinutes,
+                                    department_id: departmentId,
+                                });
+                            } finally {
+                                setIsSubmitting(false);
+                            }
                         }}
                         className="space-y-4"
                     >
@@ -989,16 +1056,17 @@ const EventModal = ({
                         <div className="flex gap-2 pt-2">
                             <button
                                 type="button"
+                                disabled={isSubmitting}
                                 onClick={() => setShowWhatsappModal(true)}
-                                className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-1.5"
+                                className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-1.5 disabled:opacity-60"
                             >
                                 <WAIcon /> WhatsApp
                             </button>
-                            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50">
+                            <button type="button" onClick={onClose} disabled={isSubmitting} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 disabled:opacity-60">
                                 Cancel
                             </button>
-                            <button type="submit" className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700">
-                                Save Event
+                            <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60">
+                                {isSubmitting ? 'Saving...' : 'Save Event'}
                             </button>
                         </div>
                     </form>
@@ -1104,11 +1172,16 @@ const Planner = ({ user, onLogout }) => {
                 }
             }
             const data = await api.getPlannerEvents(start, end);
-            setEvents(data || []);
+            const rows = Array.isArray(data) ? data : [];
+            const normalized = rows.map((item) => normalizeEventForUi(item, settings?.day_start || '10:00', settings?.slot_minutes || 30));
+            setEvents(normalized);
+        } catch (e) {
+            console.error('Failed to load planner events', e);
+            toast.error(e?.response?.data?.detail || 'Failed to load planner events');
         } finally {
             setLoading(false);
         }
-    }, [weekStart, settings?.apple_ics_url]);
+    }, [weekStart, settings?.apple_ics_url, settings?.day_start, settings?.slot_minutes, toast]);
 
     useEffect(() => {
         Promise.all([loadSettings(), loadDepartments(), loadEmployees()]);
@@ -1221,10 +1294,13 @@ const Planner = ({ user, onLogout }) => {
             const normalizedType = String(payload.event_type || '').toLowerCase();
             if ((normalizedType === 'meeting' || normalizedType === 'review') && !payload.department_id) {
                 toast.error('Select a department for meeting/review events');
-                return;
+                return false;
             }
             const normalizedPayload = {
                 ...payload,
+                date: parseDateSafe(payload.date) ? format(parseDateSafe(payload.date), 'yyyy-MM-dd') : payload.date,
+                time_slot: normalizeTimeForInput(payload.time_slot, settings?.day_start || '10:00'),
+                duration_minutes: Math.max(15, parseInt(payload.duration_minutes, 10) || settings?.slot_minutes || 30),
                 status: payload.status === 'Cancelled' ? 'Cancelled' : 'Confirmed',
             };
             if (editEvent) {
@@ -1239,8 +1315,10 @@ const Planner = ({ user, onLogout }) => {
             setClickedTime(null);
             await loadEvents();
             toast.success('Event saved');
+            return true;
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to save event');
+            return false;
         }
     };
 
