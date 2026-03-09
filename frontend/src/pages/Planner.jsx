@@ -263,10 +263,19 @@ const normalizeTimeForInput = (value, fallback = '10:00') => {
     return fallback;
 };
 
+const normalizeDateForInput = (value, fallback = getTodayIso()) => {
+    const parsed = parseDateSafe(value);
+    if (!parsed) return fallback;
+    try {
+        return format(parsed, 'yyyy-MM-dd');
+    } catch {
+        return fallback;
+    }
+};
+
 const normalizeEventForUi = (rawEvent, defaultDayStart = '10:00', defaultDuration = 30) => {
     const fallbackDate = getTodayIso();
-    const parsed = parseDateSafe(rawEvent?.date);
-    const safeDate = parsed ? format(parsed, 'yyyy-MM-dd') : fallbackDate;
+    const safeDate = normalizeDateForInput(rawEvent?.date, fallbackDate);
     const safeTime = normalizeTimeForInput(rawEvent?.time_slot, defaultDayStart);
     const safeDuration = Math.max(15, parseInt(rawEvent?.duration_minutes, 10) || defaultDuration || 30);
 
@@ -829,12 +838,15 @@ const EventModal = ({
         if (!isOpen) return;
         setIsSubmitting(false);
         setShowWhatsappModal(false);
+        const fallbackDate = normalizeDateForInput(defaultDate, getTodayIso());
+        const fallbackTime = normalizeTimeForInput(defaultTime, '10:00');
+        const fallbackDuration = Math.max(15, parseInt(defaultSlotMinutes, 10) || 30);
         if (eventData) {
             setForm({
                 title: eventData.title || '',
-                date: eventData.date || defaultDate,
-                time_slot: normalizeTimeForInput(eventData.time_slot || defaultTime, defaultTime),
-                duration_minutes: eventData.duration_minutes || defaultSlotMinutes,
+                date: normalizeDateForInput(eventData.date, fallbackDate),
+                time_slot: normalizeTimeForInput(eventData.time_slot || fallbackTime, fallbackTime),
+                duration_minutes: Math.max(15, parseInt(eventData.duration_minutes, 10) || fallbackDuration),
                 event_type: eventData.event_type || 'meeting',
                 status: normalizeModalStatus(eventData.status),
                 color: eventData.color || 'indigo',
@@ -848,9 +860,9 @@ const EventModal = ({
         if (prefillData) {
             setForm({
                 title: prefillData.title || '',
-                date: prefillData.date || defaultDate,
-                time_slot: normalizeTimeForInput(prefillData.time_slot || defaultTime, defaultTime),
-                duration_minutes: prefillData.duration_minutes || defaultSlotMinutes,
+                date: normalizeDateForInput(prefillData.date, fallbackDate),
+                time_slot: normalizeTimeForInput(prefillData.time_slot || fallbackTime, fallbackTime),
+                duration_minutes: Math.max(15, parseInt(prefillData.duration_minutes, 10) || fallbackDuration),
                 event_type: prefillData.event_type || 'meeting',
                 status: normalizeModalStatus(prefillData.status),
                 color: prefillData.color || 'indigo',
@@ -863,9 +875,9 @@ const EventModal = ({
         }
         setForm({
             title: '',
-            date: defaultDate,
-            time_slot: normalizeTimeForInput(defaultTime, '10:00'),
-            duration_minutes: defaultSlotMinutes,
+            date: fallbackDate,
+            time_slot: fallbackTime,
+            duration_minutes: fallbackDuration,
             event_type: 'meeting',
             status: 'Confirmed',
             color: 'indigo',
@@ -905,7 +917,7 @@ const EventModal = ({
                             const departmentId = Number.isFinite(parsedDeptId)
                                 ? parsedDeptId
                                 : (Number.isFinite(fallbackDeptId) ? fallbackDeptId : null);
-                            const safeDate = parseDateSafe(form.date) ? format(parseDateSafe(form.date), 'yyyy-MM-dd') : defaultDate;
+                            const safeDate = normalizeDateForInput(form.date, defaultDate);
                             const safeTime = normalizeTimeForInput(form.time_slot, defaultTime);
 
                             setIsSubmitting(true);
@@ -940,7 +952,10 @@ const EventModal = ({
                                 <input
                                     type="date"
                                     value={form.date}
-                                    onChange={e => setForm(prev => ({ ...prev, date: e.target.value }))}
+                                    onChange={e => setForm(prev => ({
+                                        ...prev,
+                                        date: normalizeDateForInput(e.target.value, prev.date || defaultDate),
+                                    }))}
                                     className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 />
                             </div>
@@ -949,7 +964,10 @@ const EventModal = ({
                                 <input
                                     type="time"
                                     value={form.time_slot}
-                                    onChange={e => setForm(prev => ({ ...prev, time_slot: e.target.value }))}
+                                    onChange={e => setForm(prev => ({
+                                        ...prev,
+                                        time_slot: normalizeTimeForInput(e.target.value, prev.time_slot || defaultTime),
+                                    }))}
                                     className="w-full px-3 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                                 />
                             </div>
@@ -1298,7 +1316,7 @@ const Planner = ({ user, onLogout }) => {
             }
             const normalizedPayload = {
                 ...payload,
-                date: parseDateSafe(payload.date) ? format(parseDateSafe(payload.date), 'yyyy-MM-dd') : payload.date,
+                date: normalizeDateForInput(payload.date, getTodayIso()),
                 time_slot: normalizeTimeForInput(payload.time_slot, settings?.day_start || '10:00'),
                 duration_minutes: Math.max(15, parseInt(payload.duration_minutes, 10) || settings?.slot_minutes || 30),
                 status: payload.status === 'Cancelled' ? 'Cancelled' : 'Confirmed',
