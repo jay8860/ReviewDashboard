@@ -56,6 +56,7 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const [analyzing, setAnalyzing] = useState(false);
     const [dept, setDept] = useState(null);
     const [doc, setDoc] = useState(null);
+    const [employees, setEmployees] = useState([]);
     const [copied, setCopied] = useState(false);
     const [historyDocs, setHistoryDocs] = useState([]);
     const [leftCompareId, setLeftCompareId] = useState('');
@@ -86,16 +87,18 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
     const load = async () => {
         setLoading(true);
         try {
-            const [deptData, docData, history] = await Promise.all([
+            const [deptData, docData, history, employeeRows] = await Promise.all([
                 api.getDepartment(deptIdInt),
                 isMeetingScope
                     ? api.getMeetingDocument(deptIdInt, meetingIdInt, docIdInt)
                     : api.getDepartmentDocument(deptIdInt, docIdInt),
                 fetchHistoryDocs(),
+                api.getEmployees({ department_id: deptIdInt }),
             ]);
             setDept(deptData);
             setDoc(docData);
             setHistoryDocs(history);
+            setEmployees(employeeRows || []);
         } catch {
             toast.error('Failed to load analysis workspace');
         } finally {
@@ -435,6 +438,7 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                     title="Document Workspace Task Notepad"
                     subtitle="Type bullet points from this review and convert selected items directly into tasks."
                     storageKey={`document-bullet-notes-${deptIdInt}-${meetingIdInt || 'department'}-${docIdInt}`}
+                    employees={employees}
                     onConfirmCreate={confirmTaskSuggestions}
                 />
             </div>

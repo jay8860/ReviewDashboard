@@ -7,6 +7,7 @@ const makeRow = (text = '', idx = 1) => ({
     selected: true,
     description: text,
     assigned_agency: '',
+    assigned_employee_id: '',
     priority: 'Normal',
     deadline_date: '',
     time_given: '',
@@ -25,6 +26,7 @@ const BulletTaskPad = ({
     title = 'Task Notepad (Bullets to Tasks)',
     subtitle = 'Write bullet points, extract them, and create selected items as tasks.',
     storageKey = '',
+    employees = [],
     onConfirmCreate,
     className = '',
 }) => {
@@ -56,6 +58,17 @@ const BulletTaskPad = ({
         () => rows.filter((r) => r.selected && (r.description || '').trim().length >= 6).length,
         [rows]
     );
+    const employeeOptions = useMemo(() => {
+        const normalized = (employees || [])
+            .filter((emp) => Number.isFinite(Number(emp?.id)))
+            .map((emp) => ({
+                id: Number(emp.id),
+                name: String(emp.name || '').trim() || `Employee ${emp.id}`,
+                username: String(emp.display_username || '').trim(),
+            }));
+        normalized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        return normalized;
+    }, [employees]);
 
     const extractBullets = () => {
         const bullets = parseBulletLines(notes);
@@ -92,6 +105,7 @@ const BulletTaskPad = ({
                 selected: true,
                 description: r.description.trim(),
                 assigned_agency: (r.assigned_agency || '').trim() || null,
+                assigned_employee_id: r.assigned_employee_id ? Number(r.assigned_employee_id) : null,
                 priority: r.priority || 'Normal',
                 deadline_date: r.deadline_date || null,
                 time_given: (r.time_given || '').trim() || null,
@@ -176,7 +190,7 @@ const BulletTaskPad = ({
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-2">
                                     <input
                                         value={row.description}
                                         onChange={(e) => updateRow(row._id, 'description', e.target.value)}
@@ -189,6 +203,18 @@ const BulletTaskPad = ({
                                         placeholder="Assigned agency / owner"
                                         className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
                                     />
+                                    <select
+                                        value={row.assigned_employee_id || ''}
+                                        onChange={(e) => updateRow(row._id, 'assigned_employee_id', e.target.value)}
+                                        className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                    >
+                                        <option value="">Assign to employee</option>
+                                        {employeeOptions.map((emp) => (
+                                            <option key={emp.id} value={emp.id}>
+                                                {emp.username ? `${emp.name} (${emp.username})` : emp.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                     <select
                                         value={row.priority}
                                         onChange={(e) => updateRow(row._id, 'priority', e.target.value)}

@@ -1190,6 +1190,7 @@ class TaskSuggestionGenerateRequest(BaseModel):
 class TaskSuggestionItem(BaseModel):
     description: str
     assigned_agency: Optional[str] = None
+    assigned_employee_id: Optional[int] = None
     deadline_date: Optional[date] = None
     priority: Optional[str] = "Normal"
     time_given: Optional[str] = None
@@ -1749,6 +1750,15 @@ def confirm_task_suggestions(
         if len(description) < 6:
             skipped.append({"index": idx, "reason": "Description too short"})
             continue
+        assigned_employee_id = item.assigned_employee_id
+        if assigned_employee_id is not None:
+            employee = db.query(models.Employee).filter(
+                models.Employee.id == assigned_employee_id,
+                models.Employee.is_active == True
+            ).first()
+            if not employee:
+                skipped.append({"index": idx, "reason": "Assigned employee not found"})
+                continue
 
         task = models.Task(
             task_number=_generate_task_number(db, item.assigned_agency, dept_id),
@@ -1762,6 +1772,7 @@ def confirm_task_suggestions(
             remarks=(item.remarks or None),
             steno_comment=(item.source_snippet or None),
             department_id=dept_id,
+            assigned_employee_id=assigned_employee_id,
             source="ai_suggestion",
         )
         db.add(task)

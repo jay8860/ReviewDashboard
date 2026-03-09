@@ -43,6 +43,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
     const [dept, setDept] = useState(null);
     const [meeting, setMeeting] = useState(null);
     const [allMeetings, setAllMeetings] = useState([]);
+    const [employees, setEmployees] = useState([]);
 
     const [form, setForm] = useState({
         scheduled_date: '',
@@ -59,14 +60,16 @@ const MeetingWorkspace = ({ user, onLogout }) => {
     const load = async () => {
         setLoading(true);
         try {
-            const [deptData, meetings] = await Promise.all([
+            const [deptData, meetings, employeeRows] = await Promise.all([
                 api.getDepartment(deptIdInt),
                 api.getMeetings(deptIdInt),
+                api.getEmployees({ department_id: deptIdInt }),
             ]);
             const found = meetings.find(m => m.id === meetingIdInt) || null;
             setDept(deptData);
             setMeeting(found);
             setAllMeetings(meetings || []);
+            setEmployees(employeeRows || []);
             if (found) {
                 setForm({
                     scheduled_date: found.scheduled_date || '',
@@ -321,6 +324,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                             title="Meeting Task Notepad"
                             subtitle="Write quick bullets during discussion. Your note text is retained even after creating tasks from selected rows."
                             storageKey={`meeting-bullet-notes-${deptIdInt}-${meetingIdInt}`}
+                            employees={employees}
                             onConfirmCreate={confirmTaskSuggestions}
                         />
 
