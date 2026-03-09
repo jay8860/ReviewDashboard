@@ -66,6 +66,42 @@ const formatTimeLabel = (value) => {
     return format(dt, 'h:mm a');
 };
 
+const parseTimeToMinutes = (value) => {
+    if (!value) return null;
+    const text = String(value).trim();
+    const parts = text.split(':');
+    if (parts.length < 2) return null;
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1]);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return (hours * 60) + minutes;
+};
+
+const mergeDateAndTime = (dateValue, timeValue) => {
+    const base = toSafeDate(dateValue);
+    if (!base) return null;
+    const result = new Date(base);
+    result.setHours(0, 0, 0, 0);
+    const minutes = parseTimeToMinutes(timeValue);
+    if (minutes === null) return result;
+    result.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+    return result;
+};
+
+const formatTimeRangeLabel = (timeValue, durationMinutes = null) => {
+    const startMinutes = parseTimeToMinutes(timeValue);
+    if (startMinutes === null) return 'All day';
+    const start = new Date();
+    start.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+    const duration = Number(durationMinutes);
+    if (!Number.isFinite(duration) || duration <= 0) {
+        return format(start, 'h:mm a');
+    }
+    const end = new Date(start.getTime() + (duration * 60 * 1000));
+    return `${format(start, 'h:mm a')} - ${format(end, 'h:mm a')}`;
+};
+
 const Overview = ({ user, onLogout }) => {
     const navigate = useNavigate();
     const toast = useToast();
@@ -78,6 +114,7 @@ const Overview = ({ user, onLogout }) => {
     const [fieldVisitDraftRows, setFieldVisitDraftRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [deptSectionCollapsed, setDeptSectionCollapsed] = useState(false);
+    const [deptSortMode, setDeptSortMode] = useState('recent_scheduled');
     const [timelineFilters, setTimelineFilters] = useState({
         tasks: true,
         reviews: true,
@@ -167,20 +204,37 @@ const Overview = ({ user, onLogout }) => {
 
     useEffect(() => { loadData(); }, []);
 
+    const plannerMeetingMetaById = useMemo(() => {
+        const map = new Map();
+        (plannerRows || []).forEach((event) => {
+            const meetingId = Number(event?.department_meeting_id);
+            if (!Number.isFinite(meetingId) || meetingId <= 0) return;
+            map.set(meetingId, event);
+        });
+        return map;
+    }, [plannerRows]);
+
     const allMeetings = useMemo(() => {
         const byDeptId = Object.fromEntries(departments.map(d => [d.id, d]));
         return Object.entries(deptMeetings).flatMap(([deptId, meetings]) => {
             const dept = byDeptId[Number(deptId)];
-            return (meetings || []).map(m => ({
-                ...m,
-                department_id: Number(deptId),
-                department_name: dept?.name || 'Department',
-                department_color: dept?.color || 'indigo',
-            }));
+            return (meetings || []).map((m) => {
+                const plannerMeta = plannerMeetingMetaById.get(Number(m.id));
+                const resolvedTime = m.scheduled_time || plannerMeta?.time_slot || null;
+                const resolvedDuration = Number(plannerMeta?.duration_minutes);
+                return {
+                    ...m,
+                    time_slot: resolvedTime,
+                    duration_minutes: Number.isFinite(resolvedDuration) && resolvedDuration > 0 ? resolvedDuration : 60,
+                    start_at: mergeDateAndTime(m.scheduled_date, resolvedTime),
+                    department_id: Number(deptId),
+                    department_name: dept?.name || 'Department',
+                    department_color: dept?.color || 'indigo',
+                };
+            });
         });
-    }, [deptMeetings, departments]);
+    }, [deptMeetings, departments, plannerMeetingMetaById]);
 
-    const now = new Date();
     const scheduledCount = allMeetings.filter(m => m.status === 'Scheduled').length;
     const doneCount = allMeetings.filter(m => m.status === 'Done').length;
     const cancelledCount = allMeetings.filter(m => m.status === 'Cancelled').length;
@@ -199,12 +253,14 @@ const Overview = ({ user, onLogout }) => {
             if (!task.is_today) return;
             let due = toSafeDate(task.deadline_date || task.allocated_date);
             if (!due || task.is_today) due = new Date(today);
+            due = startOfDay(due);
             if (due < weekStart) return;
             items.push({
                 id: `task-${task.id}`,
                 type: 'task',
                 date: due,
                 time_slot: null,
+                duration_minutes: null,
                 title: task.description || task.task_number || 'Task',
                 subtitle: task.assigned_agency || task.department_name || 'Task follow-up',
                 status: task.status || 'Pending',
@@ -213,14 +269,15 @@ const Overview = ({ user, onLogout }) => {
         });
 
         (allMeetings || []).forEach(review => {
-            const scheduled = toSafeDate(review.scheduled_date);
+            const scheduled = review.start_at || mergeDateAndTime(review.scheduled_date, review.time_slot || review.scheduled_time);
             if (!scheduled || scheduled < weekStart) return;
             if ((review.status || '').toLowerCase() === 'cancelled') return;
             items.push({
                 id: `review-${review.id}`,
                 type: 'review',
                 date: scheduled,
-                time_slot: review.time_slot,
+                time_slot: review.time_slot || review.scheduled_time || null,
+                duration_minutes: review.duration_minutes || 60,
                 title: review.program_name || review.department_name || 'Department Review',
                 subtitle: review.department_name || 'Department',
                 status: review.status || 'Scheduled',
@@ -229,7 +286,7 @@ const Overview = ({ user, onLogout }) => {
         });
 
         (plannerRows || []).forEach(event => {
-            const planned = toSafeDate(event.date);
+            const planned = mergeDateAndTime(event.date, event.time_slot);
             if (!planned || planned < weekStart) return;
             if ((event.event_type || '').toLowerCase() !== 'field-visit') return;
             if ((event.status || '').toLowerCase() === 'cancelled') return;
@@ -238,6 +295,7 @@ const Overview = ({ user, onLogout }) => {
                 type: 'visit',
                 date: planned,
                 time_slot: event.time_slot,
+                duration_minutes: event.duration_minutes || null,
                 title: event.title || 'Field Visit',
                 subtitle: event.department_name || event.venue || 'Field visit',
                 status: event.status || 'Planned',
@@ -247,7 +305,7 @@ const Overview = ({ user, onLogout }) => {
 
         if (!items.some(item => item.type === 'visit')) {
             (fieldVisitDraftRows || []).forEach(draft => {
-                const planned = toSafeDate(draft.planned_date);
+                const planned = mergeDateAndTime(draft.planned_date, draft.planned_time);
                 if (!planned || planned < weekStart) return;
                 if (!['planned', 'draft'].includes((draft.status || '').toLowerCase())) return;
                 items.push({
@@ -255,6 +313,7 @@ const Overview = ({ user, onLogout }) => {
                     type: 'visit',
                     date: planned,
                     time_slot: draft.planned_time,
+                    duration_minutes: draft.est_duration_minutes || null,
                     title: draft.title || 'Field Visit',
                     subtitle: draft.department_name || draft.location || 'Field visit draft',
                     status: draft.status || 'Planned',
@@ -263,22 +322,9 @@ const Overview = ({ user, onLogout }) => {
             });
         }
 
-        const toTimeRank = (timeSlot) => {
-            if (!timeSlot) return 24 * 60;
-            const text = String(timeSlot).trim();
-            const parts = text.split(':');
-            if (parts.length < 2) return 24 * 60;
-            const hours = Number(parts[0]);
-            const minutes = Number(parts[1]);
-            if (Number.isNaN(hours) || Number.isNaN(minutes)) return 24 * 60;
-            return (hours * 60) + minutes;
-        };
-
         return items.sort((a, b) => {
             const dateDiff = a.date - b.date;
             if (dateDiff !== 0) return dateDiff;
-            const timeDiff = toTimeRank(a.time_slot) - toTimeRank(b.time_slot);
-            if (timeDiff !== 0) return timeDiff;
             return a.title.localeCompare(b.title);
         });
     }, [taskRows, allMeetings, plannerRows, fieldVisitDraftRows, today]);
@@ -306,6 +352,86 @@ const Overview = ({ user, onLogout }) => {
     const scheduledTomorrowItems = useMemo(() => {
         return filteredUnifiedItems.filter(item => isSameDay(item.date, tomorrow)).slice(0, 8);
     }, [filteredUnifiedItems, tomorrow]);
+
+    const sortedDepartments = useMemo(() => {
+        const nowTs = Date.now();
+        const rows = (departments || []).map((dept, index) => {
+            const meetings = (deptMeetings[dept.id] || [])
+                .map((meeting) => {
+                    const dateTime = mergeDateAndTime(meeting.scheduled_date, meeting.scheduled_time);
+                    return { ...meeting, dateTime };
+                })
+                .filter((meeting) => meeting.dateTime);
+
+            const latestMeetingTs = meetings.length
+                ? Math.max(...meetings.map((meeting) => meeting.dateTime.getTime()))
+                : null;
+            const nextUpcomingTs = meetings
+                .filter((meeting) => String(meeting.status || '').toLowerCase() === 'scheduled' && meeting.dateTime.getTime() >= nowTs)
+                .sort((a, b) => a.dateTime - b.dateTime)[0]?.dateTime?.getTime() ?? null;
+            const daysSinceLastReview = Number.isFinite(Number(dept?.review_health?.days_since_last_review))
+                ? Number(dept.review_health.days_since_last_review)
+                : null;
+
+            return {
+                dept,
+                index,
+                latestMeetingTs,
+                nextUpcomingTs,
+                daysSinceLastReview,
+            };
+        });
+
+        rows.sort((a, b) => {
+            if (deptSortMode === 'name_az') {
+                return a.dept.name.localeCompare(b.dept.name, undefined, { sensitivity: 'base' });
+            }
+
+            if (deptSortMode === 'next_upcoming') {
+                if (a.nextUpcomingTs == null && b.nextUpcomingTs != null) return 1;
+                if (b.nextUpcomingTs == null && a.nextUpcomingTs != null) return -1;
+                if (a.nextUpcomingTs != null && b.nextUpcomingTs != null && a.nextUpcomingTs !== b.nextUpcomingTs) {
+                    return a.nextUpcomingTs - b.nextUpcomingTs;
+                }
+                if (a.latestMeetingTs == null && b.latestMeetingTs != null) return 1;
+                if (b.latestMeetingTs == null && a.latestMeetingTs != null) return -1;
+                if (a.latestMeetingTs != null && b.latestMeetingTs != null && a.latestMeetingTs !== b.latestMeetingTs) {
+                    return b.latestMeetingTs - a.latestMeetingTs;
+                }
+                return a.dept.name.localeCompare(b.dept.name, undefined, { sensitivity: 'base' });
+            }
+
+            if (deptSortMode === 'last_reviewed') {
+                if (a.daysSinceLastReview == null && b.daysSinceLastReview != null) return 1;
+                if (b.daysSinceLastReview == null && a.daysSinceLastReview != null) return -1;
+                if (a.daysSinceLastReview != null && b.daysSinceLastReview != null && a.daysSinceLastReview !== b.daysSinceLastReview) {
+                    return a.daysSinceLastReview - b.daysSinceLastReview;
+                }
+                if (a.latestMeetingTs == null && b.latestMeetingTs != null) return 1;
+                if (b.latestMeetingTs == null && a.latestMeetingTs != null) return -1;
+                if (a.latestMeetingTs != null && b.latestMeetingTs != null && a.latestMeetingTs !== b.latestMeetingTs) {
+                    return b.latestMeetingTs - a.latestMeetingTs;
+                }
+                return a.dept.name.localeCompare(b.dept.name, undefined, { sensitivity: 'base' });
+            }
+
+            // Default: recently scheduled / recently active first.
+            if (a.latestMeetingTs == null && b.latestMeetingTs != null) return 1;
+            if (b.latestMeetingTs == null && a.latestMeetingTs != null) return -1;
+            if (a.latestMeetingTs != null && b.latestMeetingTs != null && a.latestMeetingTs !== b.latestMeetingTs) {
+                return b.latestMeetingTs - a.latestMeetingTs;
+            }
+            if (a.nextUpcomingTs == null && b.nextUpcomingTs != null) return 1;
+            if (b.nextUpcomingTs == null && a.nextUpcomingTs != null) return -1;
+            if (a.nextUpcomingTs != null && b.nextUpcomingTs != null && a.nextUpcomingTs !== b.nextUpcomingTs) {
+                return a.nextUpcomingTs - b.nextUpcomingTs;
+            }
+            if (a.index !== b.index) return a.index - b.index;
+            return a.dept.name.localeCompare(b.dept.name, undefined, { sensitivity: 'base' });
+        });
+
+        return rows.map((row) => row.dept);
+    }, [departments, deptMeetings, deptSortMode]);
 
     return (
         <Layout user={user} onLogout={onLogout}>
@@ -349,6 +475,17 @@ const Overview = ({ user, onLogout }) => {
                     <div className="flex items-center justify-between mb-5">
                         <h2 className="text-xl font-black dark:text-white">Department Meetings</h2>
                         <div className="flex items-center gap-2">
+                            <select
+                                value={deptSortMode}
+                                onChange={(e) => setDeptSortMode(e.target.value)}
+                                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 bg-white"
+                                title="Sort departments"
+                            >
+                                <option value="recent_scheduled">Recently Scheduled</option>
+                                <option value="next_upcoming">Next Upcoming</option>
+                                <option value="last_reviewed">Last Reviewed</option>
+                                <option value="name_az">Name (A-Z)</option>
+                            </select>
                             <button
                                 onClick={() => setDeptSectionCollapsed(prev => !prev)}
                                 className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 inline-flex items-center gap-1"
@@ -384,13 +521,19 @@ const Overview = ({ user, onLogout }) => {
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {departments.map((dept, i) => {
+                            {sortedDepartments.map((dept, i) => {
                                 const deptMeetingList = deptMeetings[dept.id] || [];
                                 const upcoming = deptMeetingList
-                                    .filter(m => m.status === 'Scheduled' && new Date(m.scheduled_date) >= now)
-                                    .sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
+                                    .map((meeting) => ({ ...meeting, dateTime: mergeDateAndTime(meeting.scheduled_date, meeting.scheduled_time) }))
+                                    .filter((meeting) => String(meeting.status || '').toLowerCase() === 'scheduled' && meeting.dateTime && meeting.dateTime.getTime() >= Date.now())
+                                    .sort((a, b) => a.dateTime - b.dateTime);
                                 const recent = [...deptMeetingList]
-                                    .sort((a, b) => new Date(b.scheduled_date) - new Date(a.scheduled_date));
+                                    .sort((a, b) => {
+                                        const aTs = mergeDateAndTime(a.scheduled_date, a.scheduled_time)?.getTime() ?? -Infinity;
+                                        const bTs = mergeDateAndTime(b.scheduled_date, b.scheduled_time)?.getTime() ?? -Infinity;
+                                        if (aTs !== bTs) return bTs - aTs;
+                                        return String(b.status || '').localeCompare(String(a.status || ''));
+                                    });
 
                                 return (
                                     <motion.div
@@ -438,6 +581,9 @@ const Overview = ({ user, onLogout }) => {
                                                         <span className={`text-[9px] mt-0.5 font-bold uppercase tracking-wide ${meetingStatusText[m.status] || 'text-slate-400'}`}>
                                                             {m.status}
                                                         </span>
+                                                        <span className="text-[9px] mt-0.5 text-slate-400">
+                                                            {formatTimeLabel(m.scheduled_time)}
+                                                        </span>
                                                     </div>
                                                 ))}
                                                 {deptMeetingList.length === 0 && (
@@ -455,6 +601,11 @@ const Overview = ({ user, onLogout }) => {
                                                             ? format(new Date(upcoming[0].scheduled_date), 'dd/MM/yy')
                                                             : '—'}
                                                     </p>
+                                                    {upcoming[0] && (
+                                                        <p className="text-[9px] text-slate-400 mt-0.5">
+                                                            {formatTimeLabel(upcoming[0].scheduled_time)}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -524,24 +675,28 @@ const Overview = ({ user, onLogout }) => {
                         {thisWeekTimelineItems.length === 0 ? (
                             <p className="text-sm text-slate-400 text-center py-2 italic">No tasks, reviews, or field visits scheduled this week</p>
                         ) : (
-                            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                            <div className="space-y-2 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
                                 {thisWeekTimelineItems.map(item => (
                                     <button
                                         key={item.id}
                                         onClick={() => navigate(item.route)}
-                                        className="min-w-[176px] text-left rounded-xl border border-slate-200 bg-white/80 p-3 hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors"
+                                        className="w-full text-left rounded-xl border border-slate-200 bg-white/80 p-3 hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors"
                                     >
-                                        <div className="flex items-center justify-between gap-2 mb-2">
-                                            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${timelineTypeStyles[item.type] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                                {timelineTypeLabel[item.type] || 'Item'}
-                                            </span>
-                                            <span className="text-[10px] font-bold text-slate-500">
-                                                {format(item.date, 'EEE, d MMM')}
-                                            </span>
+                                        <div className="flex items-start gap-3">
+                                            <div className="shrink-0 min-w-[112px] rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 text-left">
+                                                <p className="text-[10px] font-black uppercase tracking-wide text-indigo-700">{format(item.date, 'EEE, d MMM')}</p>
+                                                <p className="text-[11px] font-bold text-indigo-700 mt-0.5">{formatTimeRangeLabel(item.time_slot, item.duration_minutes)}</p>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${timelineTypeStyles[item.type] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                        {timelineTypeLabel[item.type] || 'Item'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs font-bold text-slate-800 truncate mt-2">{item.title}</p>
+                                                <p className="text-[11px] text-slate-500 truncate mt-1">{item.subtitle}</p>
+                                            </div>
                                         </div>
-                                        <p className="text-xs font-bold text-slate-800 truncate">{item.title}</p>
-                                        <p className="text-[11px] text-slate-500 truncate mt-1">{item.subtitle}</p>
-                                        <p className="text-[10px] font-semibold text-indigo-600 mt-2">{formatTimeLabel(item.time_slot)}</p>
                                     </button>
                                 ))}
                             </div>
@@ -561,7 +716,7 @@ const Overview = ({ user, onLogout }) => {
                                                 className="w-full text-left rounded-lg bg-white/85 border border-indigo-100 px-2.5 py-2 hover:bg-white transition-colors"
                                             >
                                                 <p className="text-[11px] font-bold text-slate-800 truncate">{item.title}</p>
-                                                <p className="text-[10px] text-slate-500 truncate">{timelineTypeLabel[item.type]} · {formatTimeLabel(item.time_slot)}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{timelineTypeLabel[item.type]} · {formatTimeRangeLabel(item.time_slot, item.duration_minutes)}</p>
                                             </button>
                                         ))}
                                     </div>
@@ -580,7 +735,7 @@ const Overview = ({ user, onLogout }) => {
                                                 className="w-full text-left rounded-lg bg-white/85 border border-violet-100 px-2.5 py-2 hover:bg-white transition-colors"
                                             >
                                                 <p className="text-[11px] font-bold text-slate-800 truncate">{item.title}</p>
-                                                <p className="text-[10px] text-slate-500 truncate">{timelineTypeLabel[item.type]} · {formatTimeLabel(item.time_slot)}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{timelineTypeLabel[item.type]} · {formatTimeRangeLabel(item.time_slot, item.duration_minutes)}</p>
                                             </button>
                                         ))}
                                     </div>

@@ -506,7 +506,8 @@ def compute_review_health(dept: models.Department, today: date) -> dict:
 def get_departments(db: Session = Depends(get_db)):
     today = date.today()
     departments = db.query(models.Department).options(
-        joinedload(models.Department.review_programs).joinedload(models.ReviewProgram.review_sessions)
+        joinedload(models.Department.review_programs).joinedload(models.ReviewProgram.review_sessions),
+        joinedload(models.Department.meetings),
     ).filter(models.Department.is_active == True).order_by(
         models.Department.category_order.asc(),
         models.Department.display_order.asc(),
@@ -516,28 +517,32 @@ def get_departments(db: Session = Depends(get_db)):
     result = []
     for dept in departments:
         health = compute_review_health(dept, today)
-        # Compute days_since_last_review for overview display
+        # Compute days_since_last_review for overview/department cards display.
+        # Count both completed review sessions and department meetings marked done.
         all_completed = []
+        upcoming = []
         for prog in dept.review_programs:
             if prog.is_active:
                 for s in prog.review_sessions:
-                    if s.status == "Completed" and s.actual_date:
+                    status = (s.status or "").strip().lower()
+                    if status in {"completed", "done"} and s.actual_date:
                         all_completed.append(s.actual_date)
+                    if status == "scheduled" and s.scheduled_date and s.scheduled_date >= today:
+                        upcoming.append(s.scheduled_date)
+
+        for meeting in dept.meetings:
+            status = (meeting.status or "").strip().lower()
+            if status in {"done", "completed"} and meeting.scheduled_date:
+                all_completed.append(meeting.scheduled_date)
+            if status == "scheduled" and meeting.scheduled_date and meeting.scheduled_date >= today:
+                upcoming.append(meeting.scheduled_date)
+
         if all_completed:
             last_date = max(all_completed)
             health["days_since_last_review"] = (today - last_date).days
-            health["next_scheduled"] = None
-            # Find next scheduled session
-            upcoming = []
-            for prog in dept.review_programs:
-                for s in prog.review_sessions:
-                    if s.status == "Scheduled" and s.scheduled_date >= today:
-                        upcoming.append(s.scheduled_date)
-            if upcoming:
-                health["next_scheduled"] = str(min(upcoming))
         else:
             health["days_since_last_review"] = None
-            health["next_scheduled"] = None
+        health["next_scheduled"] = str(min(upcoming)) if upcoming else None
         # Count open tasks
         open_tasks = db.query(func.count(models.Task.id)).filter(
             models.Task.department_id == dept.id,
