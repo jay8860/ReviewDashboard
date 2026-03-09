@@ -41,12 +41,37 @@ const normalizeDepartment = (dept, idx) => ({
     priority_level: normalizePriority(dept.priority_level),
 });
 
-const reviewTickerText = (dept) => {
+const RECENT_REVIEW_DAYS = 14;
+
+const formatReviewDateLabel = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const dateOnly = raw.length >= 10 ? raw.slice(0, 10) : raw;
+    const parsed = new Date(`${dateOnly}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+};
+
+const reviewTickerMeta = (dept) => {
     const days = dept?.review_health?.days_since_last_review;
-    if (days === null || days === undefined) return 'Last review: Never reviewed';
-    if (days === 0) return 'Last review: Today';
-    if (days === 1) return 'Last review: 1 day ago';
-    return `Last review: ${days} days ago`;
+    if (days === null || days === undefined) {
+        return {
+            label: 'Last review: Never reviewed',
+            recent: false,
+        };
+    }
+
+    const formattedDate = formatReviewDateLabel(dept?.last_review);
+    const fallback = days === 0 ? 'Today' : (days === 1 ? '1 day ago' : `${days} days ago`);
+    return {
+        label: `Last review: ${formattedDate || fallback}`,
+        recent: Number(days) <= RECENT_REVIEW_DAYS,
+    };
 };
 
 const WAIcon = () => (
@@ -459,11 +484,20 @@ const DepartmentCard = ({
     onMove,
     onCategoryChange,
     onQuickSchedule,
+    dragEnabled,
+    onDepartmentDragStart,
+    onDepartmentDragEnd,
 }) => (
     <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`glass-card rounded-3xl overflow-hidden group transition-premium ${editMode ? 'hover:shadow-premium' : 'hover:shadow-premium cursor-pointer'}`}
+        draggable={!!dragEnabled}
+        onDragStart={(e) => {
+            if (!dragEnabled) return;
+            onDepartmentDragStart?.(e, dept);
+        }}
+        onDragEnd={() => onDepartmentDragEnd?.()}
+        className={`glass-card rounded-3xl overflow-hidden group transition-premium ${editMode ? 'hover:shadow-premium' : 'hover:shadow-premium cursor-pointer'} ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
         onClick={() => {
             if (!editMode) onOpen(dept.id);
         }}
@@ -509,7 +543,7 @@ const DepartmentCard = ({
             </div>
 
             <h3 className="font-black text-[1.1rem] text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
-            <p className="text-[11px] font-semibold text-violet-600 mb-2.5">{reviewTickerText(dept)}</p>
+            <p className={`text-[11px] font-semibold mb-2.5 ${reviewTickerMeta(dept).recent ? 'text-emerald-600' : 'text-violet-600'}`}>{reviewTickerMeta(dept).label}</p>
             {editMode && dept.head_name && (
                 <p className="text-xs text-slate-400 mb-2.5">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
             )}
@@ -566,8 +600,19 @@ const DepartmentListRow = ({
     onMove,
     onCategoryChange,
     onQuickSchedule,
+    dragEnabled,
+    onDepartmentDragStart,
+    onDepartmentDragEnd,
 }) => (
-    <div className="rounded-2xl border border-indigo-100/70 bg-white/80 dark:bg-white/5 dark:border-indigo-500/20 px-4 py-3">
+    <div
+        className={`rounded-2xl border border-indigo-100/70 bg-white/80 dark:bg-white/5 dark:border-indigo-500/20 px-4 py-3 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        draggable={!!dragEnabled}
+        onDragStart={(e) => {
+            if (!dragEnabled) return;
+            onDepartmentDragStart?.(e, dept);
+        }}
+        onDragEnd={() => onDepartmentDragEnd?.()}
+    >
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div
                 className={`min-w-0 flex-1 ${editMode ? '' : 'cursor-pointer'}`}
@@ -582,7 +627,7 @@ const DepartmentListRow = ({
                     <p className="font-black text-slate-800 dark:text-white truncate">{dept.name}</p>
                     {editMode && <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>}
                 </div>
-                <p className="text-[11px] font-semibold text-violet-600 mt-1">{reviewTickerText(dept)}</p>
+                <p className={`text-[11px] font-semibold mt-1 ${reviewTickerMeta(dept).recent ? 'text-emerald-600' : 'text-violet-600'}`}>{reviewTickerMeta(dept).label}</p>
                 {editMode && dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             </div>
 
@@ -658,6 +703,8 @@ const Departments = ({ user, onLogout }) => {
     const [quickDept, setQuickDept] = useState(null);
     const [quickMeetingOpen, setQuickMeetingOpen] = useState(false);
     const [quickAgenda, setQuickAgenda] = useState([]);
+    const [draggingDeptId, setDraggingDeptId] = useState(null);
+    const [dragOverCategory, setDragOverCategory] = useState(null);
 
     const groupedCategories = useMemo(() => buildCategoryBuckets(departments), [departments]);
     const categoryNames = useMemo(() => groupedCategories.map(c => c.name), [groupedCategories]);
@@ -846,6 +893,39 @@ const Departments = ({ user, onLogout }) => {
         await persistGroupedLayout(compact, 'Department moved to category');
     };
 
+    const handleDepartmentDragStart = (event, dept) => {
+        if (!editMode || busy || !dept) return;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(dept.id));
+        setDraggingDeptId(dept.id);
+    };
+
+    const handleDepartmentDragEnd = () => {
+        setDraggingDeptId(null);
+        setDragOverCategory(null);
+    };
+
+    const handleCategoryDragOver = (event, categoryName) => {
+        if (!editMode || busy || !draggingDeptId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        if (dragOverCategory !== categoryName) setDragOverCategory(categoryName);
+    };
+
+    const handleCategoryDrop = async (event, categoryName) => {
+        if (!editMode || busy || !draggingDeptId) return;
+        event.preventDefault();
+        const deptId = Number(draggingDeptId);
+        setDragOverCategory(null);
+        setDraggingDeptId(null);
+        if (!Number.isFinite(deptId)) return;
+        const dept = departments.find((row) => row.id === deptId);
+        if (!dept) return;
+        const currentCategory = dept.category_name || 'General';
+        if (currentCategory === categoryName) return;
+        await handleDepartmentCategoryChange(dept, categoryName);
+    };
+
     const handleCreateCategory = () => {
         const nextName = (window.prompt('New category name') || '').trim();
         if (!nextName) return;
@@ -908,12 +988,15 @@ const Departments = ({ user, onLogout }) => {
                             <Edit2 size={14} /> {editMode ? 'Done Editing' : 'Edit Mode'}
                         </button>
                         {editMode && (
-                            <button
-                                onClick={handleCreateCategory}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors"
-                            >
-                                <FolderPlus size={14} /> New Category
-                            </button>
+                            <>
+                                <button
+                                    onClick={handleCreateCategory}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-100 text-violet-700 text-xs font-bold hover:bg-violet-200 transition-colors"
+                                >
+                                    <FolderPlus size={14} /> New Category
+                                </button>
+                                <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-xl">Drag departments between categories</span>
+                            </>
                         )}
                         <button
                             onClick={() => { setEditDept(null); setModalOpen(true); }}
@@ -944,7 +1027,12 @@ const Departments = ({ user, onLogout }) => {
             ) : (
                 <div className="space-y-5">
                     {groupedCategories.map((bucket, categoryIdx) => (
-                        <div key={bucket.name} className="glass-card rounded-3xl p-5 border border-indigo-100/70 dark:border-indigo-500/20">
+                        <div
+                            key={bucket.name}
+                            onDragOver={(event) => handleCategoryDragOver(event, bucket.name)}
+                            onDrop={(event) => handleCategoryDrop(event, bucket.name)}
+                            className={`glass-card rounded-3xl p-5 border border-indigo-100/70 dark:border-indigo-500/20 transition-colors ${editMode && dragOverCategory === bucket.name ? 'ring-2 ring-emerald-300 bg-emerald-50/30' : ''}`}
+                        >
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
                                 <div className="flex items-center gap-2">
                                     <span className="inline-flex items-center px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-black">
@@ -1002,6 +1090,9 @@ const Departments = ({ user, onLogout }) => {
                                             onMove={handleMoveDepartment}
                                             onCategoryChange={handleDepartmentCategoryChange}
                                             onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
+                                            dragEnabled={editMode && !busy}
+                                            onDepartmentDragStart={handleDepartmentDragStart}
+                                            onDepartmentDragEnd={handleDepartmentDragEnd}
                                         />
                                     ))}
                                 </div>
@@ -1022,6 +1113,9 @@ const Departments = ({ user, onLogout }) => {
                                             onMove={handleMoveDepartment}
                                             onCategoryChange={handleDepartmentCategoryChange}
                                             onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
+                                            dragEnabled={editMode && !busy}
+                                            onDepartmentDragStart={handleDepartmentDragStart}
+                                            onDepartmentDragEnd={handleDepartmentDragEnd}
                                         />
                                     ))}
                                 </div>

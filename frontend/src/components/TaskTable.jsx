@@ -186,6 +186,24 @@ const getTaskAssignedText = (task) => {
     return String(task?.assigned_agency || '').trim();
 };
 
+const normalizeAssignmentText = (value) => String(value || '').trim().toLowerCase();
+
+const shouldShowDesignationLine = (task) => {
+    const employeeName = String(task?.assigned_employee_name || '').trim();
+    const designation = String(task?.assigned_employee_display_username || '').trim();
+    if (!designation) return false;
+    return normalizeAssignmentText(designation) !== normalizeAssignmentText(employeeName);
+};
+
+const shouldShowAgencyLine = (task) => {
+    const agency = String(task?.assigned_agency || '').trim();
+    if (!agency) return false;
+    const employeeName = String(task?.assigned_employee_name || '').trim();
+    const designation = String(task?.assigned_employee_display_username || '').trim();
+    const agencyKey = normalizeAssignmentText(agency);
+    return agencyKey !== normalizeAssignmentText(employeeName) && agencyKey !== normalizeAssignmentText(designation);
+};
+
 const sortEmployeesForSelect = (rows = []) => (
     [...rows].sort((a, b) => (
         getEmployeeSelectLabel(a).localeCompare(getEmployeeSelectLabel(b), undefined, { sensitivity: 'base' })
@@ -854,10 +872,10 @@ const TaskTable = ({
                                             ) : (
                                                 <p className="text-xs text-slate-500">—</p>
                                             )}
-                                            {task.assigned_employee_display_username && (
+                                            {shouldShowDesignationLine(task) && (
                                                 <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{task.assigned_employee_display_username}</p>
                                             )}
-                                            {task.assigned_agency && (
+                                            {shouldShowAgencyLine(task) && (
                                                 <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>
                                             )}
                                         </>
