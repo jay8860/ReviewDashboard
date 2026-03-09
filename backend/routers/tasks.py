@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, case
 from pydantic import BaseModel
 from typing import Optional, List
@@ -104,6 +104,22 @@ def _coerce_int_field(value):
         raise HTTPException(status_code=400, detail=f"Invalid numeric value: {value}")
 
 
+def _canonical_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = " ".join(str(value).strip().split())
+    return text or None
+
+
+def _effective_agency_expr():
+    return func.coalesce(
+        func.nullif(func.trim(models.Task.assigned_agency), ""),
+        func.nullif(func.trim(models.Employee.display_username), ""),
+        func.nullif(func.trim(models.Employee.name), ""),
+        "Unassigned",
+    )
+
+
 def generate_task_number(db: Session, assigned_agency: Optional[str], department_id: Optional[int]) -> str:
     prefix = "TSK"
     if assigned_agency:
@@ -204,11 +220,18 @@ def get_tasks(
 ):
     _sync_task_statuses(db)
 
-    q = db.query(models.Task)
+    agency_expr = _effective_agency_expr()
+    q = (
+        db.query(models.Task)
+        .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
+        .options(joinedload(models.Task.assigned_employee))
+    )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
     if agency:
-        q = q.filter(models.Task.assigned_agency == agency)
+        canonical_agency = _canonical_text(agency)
+        if canonical_agency:
+            q = q.filter(func.lower(agency_expr) == canonical_agency.lower())
     if status:
         raw_statuses = [s.strip() for s in status.split(',') if s.strip()]
         statuses = [_normalize_task_status(s) for s in raw_statuses]
@@ -222,11 +245,15 @@ def get_tasks(
     if is_pinned is not None:
         q = q.filter(models.Task.is_pinned == is_pinned)
     if search:
+        search_term = _canonical_text(search) or search
         q = q.filter(or_(
-            models.Task.task_number.ilike(f"%{search}%"),
-            models.Task.description.ilike(f"%{search}%"),
-            models.Task.assigned_agency.ilike(f"%{search}%"),
-            models.Task.steno_comment.ilike(f"%{search}%"),
+            models.Task.task_number.ilike(f"%{search_term}%"),
+            models.Task.description.ilike(f"%{search_term}%"),
+            models.Task.assigned_agency.ilike(f"%{search_term}%"),
+            models.Task.steno_comment.ilike(f"%{search_term}%"),
+            models.Employee.name.ilike(f"%{search_term}%"),
+            models.Employee.display_username.ilike(f"%{search_term}%"),
+            agency_expr.ilike(f"%{search_term}%"),
         ))
 
     direction = (sort_dir or "asc").strip().lower()
@@ -246,7 +273,7 @@ def get_tasks(
     elif sort_by == "description":
         q = q.order_by(models.Task.description.desc().nullslast() if is_desc else models.Task.description.asc().nullslast())
     elif sort_by == "assigned_agency":
-        q = q.order_by(models.Task.assigned_agency.desc().nullslast() if is_desc else models.Task.assigned_agency.asc().nullslast())
+        q = q.order_by(agency_expr.desc() if is_desc else agency_expr.asc())
     elif sort_by == "allocated_date":
         q = q.order_by(models.Task.allocated_date.desc().nullslast() if is_desc else models.Task.allocated_date.asc().nullslast())
     elif sort_by == "created_at":
@@ -260,6 +287,7 @@ def get_tasks(
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
     _sync_task_statuses(db)
+    agency_expr = _effective_agency_expr()
     total = db.query(func.count(models.Task.id)).scalar()
     completed = db.query(func.count(models.Task.id)).filter(
         or_(models.Task.status == "Completed", models.Task.completion_date != None)
@@ -274,18 +302,36 @@ def get_stats(db: Session = Depends(get_db)):
     important = db.query(func.count(models.Task.id)).filter(
         models.Task.priority.in_(["High", "Critical"]), models.Task.completion_date == None
     ).scalar()
-    by_agency = db.query(models.Task.assigned_agency, func.count(models.Task.id)).group_by(models.Task.assigned_agency).all()
+    by_agency = (
+        db.query(agency_expr.label("agency"), func.count(models.Task.id))
+        .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
+        .group_by(agency_expr)
+        .all()
+    )
     return {
         "total": total, "completed": completed, "pending": pending,
         "overdue": overdue, "important": important,
-        "by_agency": [{"agency": r[0] or "Unassigned", "count": r[1]} for r in by_agency],
+        "by_agency": [{"agency": (r[0] or "Unassigned"), "count": r[1]} for r in by_agency],
     }
 
 
 @router.get("/agencies")
 def get_agencies(db: Session = Depends(get_db)):
-    rows = db.query(models.Task.assigned_agency).filter(models.Task.assigned_agency != None).distinct().all()
-    return sorted([r[0] for r in rows if r[0]])
+    agency_expr = _effective_agency_expr()
+    rows = (
+        db.query(agency_expr)
+        .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
+        .all()
+    )
+    unique = {}
+    for (value,) in rows:
+        cleaned = _canonical_text(value)
+        if not cleaned:
+            continue
+        key = cleaned.casefold()
+        if key not in unique:
+            unique[key] = cleaned
+    return sorted(unique.values(), key=lambda v: v.casefold())
 
 
 @router.post("/")
