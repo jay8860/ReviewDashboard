@@ -14,6 +14,8 @@ import { useToast } from '../components/Toast';
 
 const EVENT_TYPES = ['meeting', 'review', 'task', 'field-visit', 'other'];
 const EVENT_COLORS = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'teal', 'orange'];
+const PLANNER_PIXELS_PER_MINUTE = 1.8;
+const MIN_PLANNER_ROW_HEIGHT_PX = 56;
 
 const statusStyles = {
     Draft: 'bg-indigo-50 border border-dashed border-indigo-200 text-indigo-700',
@@ -1727,7 +1729,11 @@ const Planner = ({ user, onLogout }) => {
                                         {rows.map((row) => {
                                             const rowKey = `${row.startMinutes}-${row.endMinutes}`;
                                             const eventsAtRow = eventStartsByRow.get(rowKey) || [];
+                                            const displayedEvents = eventsAtRow.length ? eventsAtRow : row.events;
                                             const hasEvents = row.type === 'event';
+                                            const rowDurationMinutes = Math.max(15, row.endMinutes - row.startMinutes);
+                                            const rowHeightPx = Math.max(MIN_PLANNER_ROW_HEIGHT_PX, Math.round(rowDurationMinutes * PLANNER_PIXELS_PER_MINUTE));
+                                            const singleEventRow = hasEvents && displayedEvents.length === 1;
                                             const blockedLabel = row.type === 'blocked'
                                                 ? row.blockedLabel
                                                 : row.type === 'break'
@@ -1739,6 +1745,7 @@ const Planner = ({ user, onLogout }) => {
                                                 <div key={`${dayStr}-${rowKey}`}>
                                                     <div
                                                         className={`rounded-xl border px-2 py-2 min-h-[56px] transition-colors ${row.type === 'blocked' || row.type === 'break' ? 'bg-slate-50 border-slate-200' : 'bg-white border-indigo-100 hover:border-indigo-300'}`}
+                                                        style={{ minHeight: `${rowHeightPx}px` }}
                                                         onClick={() => {
                                                             if (!isInteractive) return;
                                                             setEditEvent(null);
@@ -1768,8 +1775,8 @@ const Planner = ({ user, onLogout }) => {
                                                             <p className="text-[11px] font-semibold text-slate-500">{blockedLabel}</p>
                                                         )}
 
-                                                        <div className="space-y-1.5">
-                                                            {(eventsAtRow.length ? eventsAtRow : row.events).map((event) => (
+                                                        <div className={`space-y-1.5 ${singleEventRow ? 'h-full' : ''}`}>
+                                                            {displayedEvents.map((event) => (
                                                                 <motion.div
                                                                     key={event.id}
                                                                     layout
@@ -1780,6 +1787,7 @@ const Planner = ({ user, onLogout }) => {
                                                                         e.dataTransfer.setData('text/plain', String(event.id));
                                                                     }}
                                                                     className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold cursor-pointer ${event.is_locked ? externalStyle : statusStyles[normalizeStatus(event.status)] || statusStyles.Draft} ${dragEventId === event.id ? 'opacity-50' : ''}`}
+                                                                    style={singleEventRow ? { minHeight: `${Math.max(48, rowHeightPx - 30)}px` } : undefined}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         setEditEvent(event);
