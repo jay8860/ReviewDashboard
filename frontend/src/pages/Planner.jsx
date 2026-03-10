@@ -273,6 +273,28 @@ const normalizeDateForInput = (value, fallback = getTodayIso()) => {
     }
 };
 
+const toLowerText = (value) => String(value || '').toLowerCase();
+
+const normalizeStatus = (status) => {
+    const s = toLowerText(status).trim();
+    if (s === 'confirmed') return 'Confirmed';
+    if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
+    return 'Draft';
+};
+
+const normalizeTimeForSort = (value, fallback = '23:59') => normalizeTimeForInput(value, fallback);
+
+const comparePlannerEventsByTime = (a, b) => {
+    const timeA = normalizeTimeForSort(a?.time_slot);
+    const timeB = normalizeTimeForSort(b?.time_slot);
+    const byTime = timeA.localeCompare(timeB);
+    if (byTime !== 0) return byTime;
+    const idA = Number(a?.id);
+    const idB = Number(b?.id);
+    if (Number.isFinite(idA) && Number.isFinite(idB)) return idA - idB;
+    return String(a?.title || '').localeCompare(String(b?.title || ''));
+};
+
 const normalizeEventForUi = (rawEvent, defaultDayStart = '10:00', defaultDuration = 30) => {
     const fallbackDate = getTodayIso();
     const safeDate = normalizeDateForInput(rawEvent?.date, fallbackDate);
@@ -560,7 +582,7 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
                 if (!parsedDate) return false;
                 return isSameDay(parsedDate, parsedDay) && normalizeStatus(event?.status) !== 'Cancelled';
             })
-            .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+            .sort(comparePlannerEventsByTime);
     }, [events, day]);
 
     useEffect(() => {
@@ -582,12 +604,12 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
     if (!isOpen) return null;
 
     const visibleEmployees = sortedEmployees.filter((emp) => {
-        const q = searchTerm.trim().toLowerCase();
+        const q = toLowerText(searchTerm).trim();
         if (!q) return true;
         return (
-            (emp.name || '').toLowerCase().includes(q) ||
-            (emp.display_username || '').toLowerCase().includes(q) ||
-            (emp.mobile_number || '').toLowerCase().includes(q)
+            toLowerText(emp.name).includes(q) ||
+            toLowerText(emp.display_username).includes(q) ||
+            toLowerText(emp.mobile_number).includes(q)
         );
     });
     const selectedEmployees = selectedEmployeeIds
@@ -762,8 +784,11 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
 };
 
 const toMinutes = (timeStr) => {
-    const [h, m] = (timeStr || '00:00').split(':').map(Number);
-    return (h * 60) + m;
+    const normalized = normalizeTimeForInput(timeStr, '00:00');
+    const [h, m] = String(normalized || '00:00').split(':').map((part) => parseInt(part, 10));
+    const safeH = Number.isFinite(h) ? h : 0;
+    const safeM = Number.isFinite(m) ? m : 0;
+    return (safeH * 60) + safeM;
 };
 
 const toTime = (minutes) => {
@@ -771,13 +796,6 @@ const toTime = (minutes) => {
     const h = Math.floor(m / 60);
     const min = m % 60;
     return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-};
-
-const normalizeStatus = (status) => {
-    const s = (status || '').toLowerCase();
-    if (s === 'confirmed') return 'Confirmed';
-    if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
-    return 'Draft';
 };
 
 const normalizeModalStatus = (status) => {
@@ -929,6 +947,8 @@ const EventModal = ({
                                     duration_minutes: durationMinutes,
                                     department_id: departmentId,
                                 });
+                            } catch (err) {
+                                console.error('Planner event save failed in modal', err);
                             } finally {
                                 setIsSubmitting(false);
                             }
@@ -1369,7 +1389,7 @@ const Planner = ({ user, onLogout }) => {
                 const parsedDate = parseDateSafe(e?.date);
                 return parsedDate ? isSameDay(parsedDate, day) : false;
             })
-            .sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+            .sort(comparePlannerEventsByTime);
 
     const isLunchBlocked = (slot) => {
         if (!settings?.lunch_start || !settings?.lunch_end) return false;
@@ -1545,7 +1565,8 @@ const Planner = ({ user, onLogout }) => {
 
                     <div className="grid grid-cols-7 min-w-[980px]">
                         {weekDays.map((day, dayIdx) => {
-                            const dayEvents = getDayEvents(day);
+                            try {
+                                const dayEvents = getDayEvents(day);
                             const dayStartMinutes = slots.length > 0 ? slots[0].startMinutes : toMinutes(settings.day_start || '10:00');
                             const dayEndMinutes = slots.length > 0
                                 ? slots[slots.length - 1].endMinutes
@@ -1831,6 +1852,17 @@ const Planner = ({ user, onLogout }) => {
                                     )}
                                 </div>
                             );
+                            } catch (err) {
+                                console.error('Planner day render failed', err, { day: format(day, 'yyyy-MM-dd') });
+                                return (
+                                    <div key={dayIdx} className="border-r last:border-r-0 border-slate-100 p-2">
+                                        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3">
+                                            <p className="text-xs font-bold text-rose-700">Could not render this day.</p>
+                                            <p className="text-[11px] text-rose-600 mt-1">Use refresh and retry editing this event.</p>
+                                        </div>
+                                    </div>
+                                );
+                            }
                         })}
                     </div>
                 </div>
