@@ -599,11 +599,18 @@ const Tasks = ({ user, onLogout }) => {
     };
 
     const executeDelete = async (id) => {
+        const previousTasks = tasks;
+        const targetExists = previousTasks.some((task) => task.id === id);
+        if (!targetExists) return;
+        setTasks((prev) => prev.filter((task) => task.id !== id));
+        setSelectedIds((prev) => prev.filter((taskId) => taskId !== id));
         try {
             await api.deleteTask(id);
             toast.success('Task deleted');
-            load();
+            const refreshedStats = await api.getTaskStats();
+            setStats(refreshedStats);
         } catch {
+            setTasks(previousTasks);
             toast.error('Failed to delete task');
         }
     };
@@ -674,12 +681,28 @@ const Tasks = ({ user, onLogout }) => {
     };
 
     const executeBulkDelete = async () => {
+        const idsToDelete = [...selectedIds];
+        if (!idsToDelete.length) return;
+        const idSet = new Set(idsToDelete);
+        const previousTasks = tasks;
+        setTasks((prev) => prev.filter((task) => !idSet.has(task.id)));
+        setSelectedIds([]);
         try {
-            await Promise.all(selectedIds.map(id => api.deleteTask(id)));
-            toast.success(`${selectedIds.length} tasks deleted`);
-            setSelectedIds([]);
-            load();
-        } catch { toast.error('Bulk delete failed'); }
+            const results = await Promise.allSettled(idsToDelete.map((id) => api.deleteTask(id)));
+            const failed = results.filter((result) => result.status === 'rejected');
+            if (failed.length) {
+                setTasks(previousTasks);
+                toast.error(`Bulk delete partially failed (${failed.length} failed)`);
+                await load();
+                return;
+            }
+            toast.success(`${idsToDelete.length} tasks deleted`);
+            const refreshedStats = await api.getTaskStats();
+            setStats(refreshedStats);
+        } catch {
+            setTasks(previousTasks);
+            toast.error('Bulk delete failed');
+        }
     };
 
     const handleBulkExtendDeadline = async (daysRaw) => {
@@ -941,6 +964,22 @@ const Tasks = ({ user, onLogout }) => {
                         <option value="">All Departments</option>
                         {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSortBy('allocated_date');
+                            setSortDir('desc');
+                        }}
+                        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-colors ${
+                            sortBy === 'allocated_date' && sortDir === 'desc'
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Show latest allocated tasks first"
+                    >
+                        Latest
+                    </button>
 
                     <button onClick={load} className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors ml-1" title="Refresh">
                         <RefreshCw size={18} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
