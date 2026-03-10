@@ -791,6 +791,7 @@ const TaskTable = ({
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
                                             <div className="flex items-center gap-1 flex-wrap">
+                                                {isPinned && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">Important</span>}
                                                 {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
                                             </div>
                                         </div>
