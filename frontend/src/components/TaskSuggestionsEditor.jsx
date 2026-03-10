@@ -1,16 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { Brain, CheckSquare, Loader2, PlusCircle, Trash2, WandSparkles } from 'lucide-react';
 import { useToast } from './Toast';
+import EmployeeSearchSelect from './EmployeeSearchSelect';
 
 const defaultRow = (idx = 1) => ({
     _id: `row-${Date.now()}-${idx}`,
     selected: true,
     description: '',
     assigned_agency: '',
+    assigned_employee_id: '',
     priority: 'Normal',
     deadline_date: '',
     time_given: '',
     remarks: '',
+    is_pinned: false,
+    is_today: false,
     source_snippet: '',
     confidence: null,
     duplicate_of_task_id: null,
@@ -25,10 +29,13 @@ const normalizeRows = (items = []) =>
         selected: item.selected !== false,
         description: item.description || '',
         assigned_agency: item.assigned_agency || '',
+        assigned_employee_id: item.assigned_employee_id || '',
         priority: item.priority || 'Normal',
         deadline_date: item.deadline_date || '',
         time_given: item.time_given || '',
         remarks: item.remarks || '',
+        is_pinned: !!item.is_pinned,
+        is_today: !!item.is_today,
         source_snippet: item.source_snippet || '',
         confidence: typeof item.confidence === 'number' ? item.confidence : null,
     }));
@@ -39,6 +46,7 @@ const TaskSuggestionsEditor = ({
     onGenerate,
     onConfirmCreate,
     generateLabel = 'Generate Suggestions',
+    employees = [],
     className = '',
 }) => {
     const toast = useToast();
@@ -51,6 +59,17 @@ const TaskSuggestionsEditor = ({
         () => rows.filter(r => r.selected && (r.description || '').trim().length >= 6).length,
         [rows]
     );
+    const employeeOptions = useMemo(() => {
+        const normalized = (employees || [])
+            .filter((emp) => Number.isFinite(Number(emp?.id)))
+            .map((emp) => ({
+                id: Number(emp.id),
+                name: String(emp.name || '').trim() || `Employee ${emp.id}`,
+                display_username: String(emp.display_username || '').trim(),
+            }));
+        normalized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        return normalized;
+    }, [employees]);
 
     const updateRow = (rowId, key, value) => {
         setRows(prev => prev.map(r => (r._id === rowId ? { ...r, [key]: value } : r)));
@@ -94,10 +113,13 @@ const TaskSuggestionsEditor = ({
                 selected: true,
                 description: r.description.trim(),
                 assigned_agency: (r.assigned_agency || '').trim() || null,
+                assigned_employee_id: r.assigned_employee_id ? Number(r.assigned_employee_id) : null,
                 priority: r.priority || 'Normal',
                 deadline_date: r.deadline_date || null,
                 time_given: (r.time_given || '').trim() || null,
                 remarks: (r.remarks || '').trim() || null,
+                is_pinned: !!r.is_pinned,
+                is_today: !!r.is_today,
                 source_snippet: (r.source_snippet || '').trim() || null,
             }));
             const result = await onConfirmCreate(payload);
@@ -170,7 +192,7 @@ const TaskSuggestionsEditor = ({
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-2">
                                     <input
                                         value={row.description}
                                         onChange={(e) => updateRow(row._id, 'description', e.target.value)}
@@ -182,6 +204,14 @@ const TaskSuggestionsEditor = ({
                                         onChange={(e) => updateRow(row._id, 'assigned_agency', e.target.value)}
                                         placeholder="Assigned agency / owner"
                                         className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                                    />
+                                    <EmployeeSearchSelect
+                                        employees={employeeOptions}
+                                        value={row.assigned_employee_id || ''}
+                                        onChange={(nextId) => updateRow(row._id, 'assigned_employee_id', nextId)}
+                                        placeholder="Search name/designation"
+                                        noneLabel="Assign to employee"
+                                        inputClassName="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
                                     />
                                     <select
                                         value={row.priority}
@@ -195,7 +225,7 @@ const TaskSuggestionsEditor = ({
                                     </select>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-2">
                                     <input
                                         type="date"
                                         value={row.deadline_date || ''}
@@ -205,9 +235,27 @@ const TaskSuggestionsEditor = ({
                                     <input
                                         value={row.time_given}
                                         onChange={(e) => updateRow(row._id, 'time_given', e.target.value)}
-                                        placeholder="Time given (e.g. 15 days)"
+                                        placeholder="Time given (defaults to 7 days)"
                                         className="px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
                                     />
+                                    <label className="inline-flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-700 font-semibold">
+                                        Important
+                                        <input
+                                            type="checkbox"
+                                            checked={!!row.is_pinned}
+                                            onChange={(e) => updateRow(row._id, 'is_pinned', e.target.checked)}
+                                            className="rounded border-violet-300 text-violet-600 focus:ring-violet-400"
+                                        />
+                                    </label>
+                                    <label className="inline-flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border border-violet-200 bg-white text-xs text-slate-700 font-semibold">
+                                        Today
+                                        <input
+                                            type="checkbox"
+                                            checked={!!row.is_today}
+                                            onChange={(e) => updateRow(row._id, 'is_today', e.target.checked)}
+                                            className="rounded border-violet-300 text-violet-600 focus:ring-violet-400"
+                                        />
+                                    </label>
                                     <input
                                         value={row.remarks}
                                         onChange={(e) => updateRow(row._id, 'remarks', e.target.value)}

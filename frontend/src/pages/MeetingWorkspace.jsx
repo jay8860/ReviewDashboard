@@ -63,13 +63,13 @@ const MeetingWorkspace = ({ user, onLogout }) => {
             const [deptData, meetings, employeeRows] = await Promise.all([
                 api.getDepartment(deptIdInt),
                 api.getMeetings(deptIdInt),
-                api.getEmployees({ department_id: deptIdInt }),
+                api.getEmployees(),
             ]);
             const found = meetings.find(m => m.id === meetingIdInt) || null;
             setDept(deptData);
             setMeeting(found);
             setAllMeetings(meetings || []);
-            setEmployees(employeeRows || []);
+            setEmployees((employeeRows || []).filter((emp) => emp?.is_active !== false));
             if (found) {
                 setForm({
                     scheduled_date: found.scheduled_date || '',
@@ -428,6 +428,7 @@ const MeetingWorkspace = ({ user, onLogout }) => {
                             generateLabel="Suggest From Meeting"
                             onGenerate={generateMeetingTaskSuggestions}
                             onConfirmCreate={confirmTaskSuggestions}
+                            employees={employees}
                         />
                     </div>
 

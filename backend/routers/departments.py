@@ -1195,6 +1195,8 @@ class TaskSuggestionItem(BaseModel):
     priority: Optional[str] = "Normal"
     time_given: Optional[str] = None
     remarks: Optional[str] = None
+    is_pinned: Optional[bool] = False
+    is_today: Optional[bool] = False
     source_snippet: Optional[str] = None
     selected: Optional[bool] = True
 
@@ -1760,19 +1762,24 @@ def confirm_task_suggestions(
                 skipped.append({"index": idx, "reason": "Assigned employee not found"})
                 continue
 
+        resolved_time_given = (item.time_given or "").strip() or "7 days"
+        resolved_deadline = item.deadline_date or (date.today() + timedelta(days=7))
+
         task = models.Task(
             task_number=_generate_task_number(db, item.assigned_agency, dept_id),
             description=description,
             assigned_agency=(item.assigned_agency or None),
             allocated_date=date.today(),
-            time_given=(item.time_given or None),
-            deadline_date=item.deadline_date,
+            time_given=resolved_time_given,
+            deadline_date=resolved_deadline,
             status="Pending",
             priority=_normalize_priority(item.priority),
             remarks=(item.remarks or None),
             steno_comment=(item.source_snippet or None),
             department_id=dept_id,
             assigned_employee_id=assigned_employee_id,
+            is_pinned=bool(item.is_pinned),
+            is_today=bool(item.is_today),
             source="ai_suggestion",
         )
         db.add(task)

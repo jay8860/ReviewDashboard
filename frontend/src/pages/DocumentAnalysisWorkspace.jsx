@@ -93,12 +93,12 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                     ? api.getMeetingDocument(deptIdInt, meetingIdInt, docIdInt)
                     : api.getDepartmentDocument(deptIdInt, docIdInt),
                 fetchHistoryDocs(),
-                api.getEmployees({ department_id: deptIdInt }),
+                api.getEmployees(),
             ]);
             setDept(deptData);
             setDoc(docData);
             setHistoryDocs(history);
-            setEmployees(employeeRows || []);
+            setEmployees((employeeRows || []).filter((emp) => emp?.is_active !== false));
         } catch {
             toast.error('Failed to load analysis workspace');
         } finally {
@@ -333,6 +333,7 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
                     generateLabel="Suggest Tasks"
                     onGenerate={generateTaskSuggestions}
                     onConfirmCreate={confirmTaskSuggestions}
+                    employees={employees}
                 />
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
