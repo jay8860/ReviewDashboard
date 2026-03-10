@@ -1331,6 +1331,7 @@ const Planner = ({ user, onLogout }) => {
 
     const handleSaveEvent = async (payload) => {
         try {
+            const editingEventId = editEvent?.id;
             const normalizedType = String(payload.event_type || '').toLowerCase();
             if ((normalizedType === 'meeting' || normalizedType === 'review') && !payload.department_id) {
                 toast.error('Select a department for meeting/review events');
@@ -1343,17 +1344,39 @@ const Planner = ({ user, onLogout }) => {
                 duration_minutes: Math.max(15, parseInt(payload.duration_minutes, 10) || settings?.slot_minutes || 30),
                 status: payload.status === 'Cancelled' ? 'Cancelled' : 'Confirmed',
             };
+            let savedRaw = null;
             if (editEvent) {
-                await api.updatePlannerEvent(editEvent.id, normalizedPayload);
+                savedRaw = await api.updatePlannerEvent(editEvent.id, normalizedPayload);
             } else {
-                await api.createPlannerEvent(normalizedPayload);
+                savedRaw = await api.createPlannerEvent(normalizedPayload);
+            }
+
+            if (savedRaw && typeof savedRaw === 'object') {
+                const normalizedSaved = normalizeEventForUi(
+                    savedRaw,
+                    settings?.day_start || '10:00',
+                    settings?.slot_minutes || 30
+                );
+                setEvents((prev) => {
+                    if (editingEventId) {
+                        let matched = false;
+                        const next = prev.map((item) => {
+                            if (String(item.id) !== String(editingEventId)) return item;
+                            matched = true;
+                            return normalizedSaved;
+                        });
+                        if (matched) return next;
+                    }
+                    return [...prev, normalizedSaved];
+                });
             }
             setModalOpen(false);
             setEditEvent(null);
             setPrefillData(null);
             setClickedDate(null);
             setClickedTime(null);
-            await loadEvents();
+            // Refresh from server in background for full consistency without blocking UI.
+            loadEvents();
             toast.success('Event saved');
             return true;
         } catch (e) {
@@ -1777,9 +1800,8 @@ const Planner = ({ user, onLogout }) => {
 
                                                         <div className={`space-y-1.5 ${singleEventRow ? 'h-full' : ''}`}>
                                                             {displayedEvents.map((event) => (
-                                                                <motion.div
+                                                                <div
                                                                     key={event.id}
-                                                                    layout
                                                                     draggable={!event.is_locked}
                                                                     onDragStart={(e) => {
                                                                         if (event.is_locked) return;
@@ -1838,7 +1860,7 @@ const Planner = ({ user, onLogout }) => {
                                                                             </button>
                                                                         )}
                                                                     </div>
-                                                                </motion.div>
+                                                                </div>
                                                             ))}
                                                         </div>
                                                     </div>
