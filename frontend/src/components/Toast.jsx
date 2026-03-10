@@ -27,12 +27,48 @@ const ICON_COLORS = {
 
 let toastId = 0;
 
+const stringifyToastMessage = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (value instanceof Error) return value.message || 'Unexpected error';
+    if (Array.isArray(value)) {
+        const parts = value.map((item) => stringifyToastMessage(item)).filter(Boolean);
+        return parts.join(' | ');
+    }
+    if (typeof value === 'object') {
+        if (typeof value.detail === 'string') return value.detail;
+        if (Array.isArray(value.detail)) return stringifyToastMessage(value.detail);
+        if (typeof value.msg === 'string') {
+            const loc = Array.isArray(value.loc) ? value.loc.filter(Boolean).join(' > ') : '';
+            return loc ? `${value.msg} (${loc})` : value.msg;
+        }
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return 'Unexpected error';
+        }
+    }
+    return String(value);
+};
+
+const normalizeToastMessage = (message, fallback = 'Something went wrong') => {
+    const text = stringifyToastMessage(message).trim();
+    if (!text) return fallback;
+    return text.length > 300 ? `${text.slice(0, 297)}...` : text;
+};
+
 export const ToastProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
 
     const toast = useCallback((message, type = 'info', duration = 3500) => {
         const id = ++toastId;
-        setToasts(prev => [...prev, { id, message, type, duration }]);
+        setToasts(prev => [...prev, {
+            id,
+            message: normalizeToastMessage(message, type === 'error' ? 'Something went wrong' : 'Notification'),
+            type,
+            duration,
+        }]);
         return id;
     }, []);
 

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Set
-from datetime import date, datetime, timedelta, timezone
+from datetime import date as DateValue, datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse, urlunparse
@@ -46,7 +46,7 @@ class PlannerSettingsUpdate(BaseModel):
 
 class EventCreate(BaseModel):
     title: str
-    date: date
+    date: DateValue
     time_slot: Optional[str] = None
     duration_minutes: Optional[int] = 30
     event_type: Optional[str] = "meeting"
@@ -63,7 +63,7 @@ class EventCreate(BaseModel):
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[DateValue] = None
     time_slot: Optional[str] = None
     duration_minutes: Optional[int] = None
     event_type: Optional[str] = None
@@ -78,8 +78,8 @@ class EventUpdate(BaseModel):
 
 
 class IcsSyncRequest(BaseModel):
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: Optional[DateValue] = None
+    end_date: Optional[DateValue] = None
     ics_url: Optional[str] = None
 
 
@@ -440,8 +440,8 @@ def _parse_ics_byday(value: Optional[str]) -> List[int]:
     return sorted(set(days))
 
 
-def _parse_ics_exdates(values: List[str]) -> tuple[Set[date], Set[datetime]]:
-    out_dates: Set[date] = set()
+def _parse_ics_exdates(values: List[str]) -> tuple[Set[DateValue], Set[datetime]]:
+    out_dates: Set[DateValue] = set()
     out_datetimes: Set[datetime] = set()
     for row in values or []:
         for token in str(row or "").split(","):
@@ -454,8 +454,8 @@ def _parse_ics_exdates(values: List[str]) -> tuple[Set[date], Set[datetime]]:
 
 
 def _is_matching_ics_occurrence(
-    candidate_date: date,
-    base_date: date,
+    candidate_date: DateValue,
+    base_date: DateValue,
     freq: str,
     interval: int,
     byday: List[int],
@@ -507,8 +507,8 @@ def _expand_ics_occurrences(
     dt_end: datetime,
     rrule_text: Optional[str],
     exdate_values: List[str],
-    start_date: date,
-    end_date: date,
+    start_date: DateValue,
+    end_date: DateValue,
 ) -> List[tuple[datetime, datetime]]:
     duration = dt_end - dt_start
     if duration.total_seconds() <= 0:
@@ -609,7 +609,7 @@ def _normalize_ics_url(url: Optional[str]) -> str:
     return raw
 
 
-def _parse_ics_events(raw_text: str, start_date: date, end_date: date, default_day_start: str) -> List[dict]:
+def _parse_ics_events(raw_text: str, start_date: DateValue, end_date: DateValue, default_day_start: str) -> List[dict]:
     lines = _unfold_ics_lines(raw_text)
     in_event = False
     current: dict = {}
@@ -771,8 +771,8 @@ def _build_event_ics_lines(event: models.PlannerEvent, timezone_name: str, defau
 @router.get("/export.ics")
 def export_planner_ics(
     token: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
+    start_date: Optional[DateValue] = None,
+    end_date: Optional[DateValue] = None,
     db: Session = Depends(get_db)
 ):
     settings = _get_or_create_settings(db)
@@ -780,8 +780,8 @@ def export_planner_ics(
     if not expected_token or token != expected_token:
         raise HTTPException(status_code=403, detail="Invalid ICS token")
 
-    start = start_date or (date.today() - timedelta(days=30))
-    end = end_date or (date.today() + timedelta(days=365))
+    start = start_date or (DateValue.today() - timedelta(days=30))
+    end = end_date or (DateValue.today() + timedelta(days=365))
     if end < start:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
 
@@ -837,7 +837,7 @@ def sync_ics_events(data: IcsSyncRequest, db: Session = Depends(get_db)):
     if not ics_url:
         raise HTTPException(status_code=400, detail="Apple ICS URL is not configured")
 
-    start = data.start_date or date.today()
+    start = data.start_date or DateValue.today()
     end = data.end_date or (start + timedelta(days=21))
     if end < start:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
@@ -908,7 +908,7 @@ def sync_ics_events(data: IcsSyncRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-def get_events(start_date: Optional[date] = None, end_date: Optional[date] = None, db: Session = Depends(get_db)):
+def get_events(start_date: Optional[DateValue] = None, end_date: Optional[DateValue] = None, db: Session = Depends(get_db)):
     q = db.query(models.PlannerEvent)
     if start_date:
         q = q.filter(models.PlannerEvent.date >= start_date)
