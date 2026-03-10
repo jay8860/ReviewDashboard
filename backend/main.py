@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -47,6 +47,21 @@ app.include_router(field_visits.router, prefix="/api/field-visits", tags=["field
 app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
+
+
+@app.head("/healthz")
+def healthz_head():
+    return Response(status_code=200)
+
+
+@app.head("/")
+def root_head():
+    return Response(status_code=200)
 
 # Serve React frontend
 frontend_dist = os.path.join(os.path.dirname(__file__), "static")
