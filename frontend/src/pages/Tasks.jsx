@@ -67,6 +67,8 @@ const getTaskAssignedLabel = (task) => {
     return String(task?.assigned_agency || '').trim();
 };
 
+const hasTaskComment = (task) => String(task?.steno_comment || '').trim().length > 0;
+
 // ── Add / Edit Task Modal — minimal with expandable advanced ───────────────────
 const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], initial = null }) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -378,6 +380,7 @@ const Tasks = ({ user, onLogout }) => {
     const [filterAgency, setFilterAgency] = useState(searchParams.get('agency') || '');
     const [sortBy, setSortBy] = useState('deadline_date');
     const [sortDir, setSortDir] = useState('asc');
+    const [noCommentsOnly, setNoCommentsOnly] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
     // Tabs: all | today | important
@@ -443,7 +446,8 @@ const Tasks = ({ user, onLogout }) => {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search]);
+        setSelectedIds([]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -533,11 +537,15 @@ const Tasks = ({ user, onLogout }) => {
         }
     };
 
-    const totalPages = Math.max(1, Math.ceil((tasks.length || 0) / PAGE_SIZE));
+    const displayedTasks = useMemo(() => (
+        noCommentsOnly ? tasks.filter((task) => !hasTaskComment(task)) : tasks
+    ), [tasks, noCommentsOnly]);
+
+    const totalPages = Math.max(1, Math.ceil((displayedTasks.length || 0) / PAGE_SIZE));
     const pagedTasks = useMemo(() => {
         const start = (currentPage - 1) * PAGE_SIZE;
-        return tasks.slice(start, start + PAGE_SIZE);
-    }, [tasks, currentPage]);
+        return displayedTasks.slice(start, start + PAGE_SIZE);
+    }, [displayedTasks, currentPage]);
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -980,6 +988,18 @@ const Tasks = ({ user, onLogout }) => {
                     >
                         Latest
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setNoCommentsOnly((prev) => !prev)}
+                        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-colors ${
+                            noCommentsOnly
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Show tasks where comments are empty"
+                    >
+                        No Comments
+                    </button>
 
                     <button onClick={load} className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors ml-1" title="Refresh">
                         <RefreshCw size={18} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
@@ -1007,7 +1027,7 @@ const Tasks = ({ user, onLogout }) => {
                         <div key={i} className="glass-card rounded-2xl h-14 animate-pulse" />
                     ))}
                 </div>
-            ) : tasks.length === 0 ? (
+            ) : displayedTasks.length === 0 ? (
                 <div className="glass-card rounded-3xl p-20 text-center">
                     <ClipboardList size={52} className="text-slate-200 mx-auto mb-4" />
                     <p className="text-xl font-black text-slate-400 mb-2">No tasks found</p>
@@ -1023,9 +1043,10 @@ const Tasks = ({ user, onLogout }) => {
                 <div className="glass-card rounded-3xl overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
                         <span className="text-xs font-black uppercase tracking-widest text-slate-400">
-                            {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+                            {displayedTasks.length} task{displayedTasks.length !== 1 ? 's' : ''}
                             {filterStatus && ` · ${filterStatus}`}
                             {tab !== 'all' && ` · ${tab}`}
+                            {noCommentsOnly && ' · no comments'}
                         </span>
                         {bulkMode && selectedIds.length > 0 && (
                             <span className="text-xs text-indigo-600 font-bold">{selectedIds.length} selected</span>
@@ -1033,7 +1054,7 @@ const Tasks = ({ user, onLogout }) => {
                     </div>
                     <TaskTable
                         tasks={pagedTasks}
-                        allTasks={tasks}
+                        allTasks={displayedTasks}
                         departments={departments}
                         employees={employees}
                         onUpdate={handleUpdate}
@@ -1052,10 +1073,10 @@ const Tasks = ({ user, onLogout }) => {
                     />
                     <div className="px-4 py-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
                         <span className="text-xs font-semibold text-slate-500">
-                            Showing {tasks.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE) + 1}
+                            Showing {displayedTasks.length === 0 ? 0 : ((currentPage - 1) * PAGE_SIZE) + 1}
                             {' '}to{' '}
-                            {Math.min(currentPage * PAGE_SIZE, tasks.length)}
-                            {' '}of {tasks.length}
+                            {Math.min(currentPage * PAGE_SIZE, displayedTasks.length)}
+                            {' '}of {displayedTasks.length}
                         </span>
                         <div className="flex items-center gap-2">
                             <button
