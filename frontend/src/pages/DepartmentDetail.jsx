@@ -64,11 +64,32 @@ const isStenoEmployee = (emp) => {
 };
 
 // ── Schedule Meeting Modal ─────────────────────────────────────────────────────
-const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName = '', employees = [] }) => {
+const ScheduleMeetingModal = ({
+    isOpen,
+    onClose,
+    onSave,
+    agenda = [],
+    deptName = '',
+    employees = [],
+    initialMeeting = null,
+    submitLabel = 'Schedule',
+    modalTitle = 'Schedule Meeting',
+}) => {
     const today = new Date().toISOString().split('T')[0];
-    const [form, setForm] = useState({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '' });
+    const buildForm = (meeting = null) => ({
+        scheduled_date: meeting?.scheduled_date || today,
+        scheduled_time: meeting?.scheduled_time || '10:00',
+        venue: meeting?.venue || '',
+        attendees: meeting?.attendees || '',
+        officer_phone: meeting?.officer_phone || '',
+    });
+
+    const [form, setForm] = useState(buildForm(initialMeeting));
     const [officerSearch, setOfficerSearch] = useState('');
-    useEffect(() => { setForm({ scheduled_date: today, scheduled_time: '10:00', venue: '', attendees: '', officer_phone: '' }); }, [isOpen]);
+    useEffect(() => {
+        if (!isOpen) return;
+        setForm(buildForm(initialMeeting));
+    }, [isOpen, initialMeeting?.id, initialMeeting?.scheduled_date, initialMeeting?.scheduled_time, initialMeeting?.venue, initialMeeting?.attendees, initialMeeting?.officer_phone]);
     useEffect(() => { setOfficerSearch(''); }, [isOpen]);
 
     const openAgenda = agenda.filter(a => a.status === 'Open');
@@ -100,7 +121,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                                 <Calendar size={16} className="text-white" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-black dark:text-white">Schedule Meeting</h2>
+                                <h2 className="text-lg font-black dark:text-white">{modalTitle}</h2>
                                 <p className="text-xs text-slate-400">{deptName} — Department-wide meeting</p>
                             </div>
                         </div>
@@ -189,7 +210,7 @@ const ScheduleMeetingModal = ({ isOpen, onClose, onSave, agenda = [], deptName =
                             </a>
                             <button onClick={() => form.scheduled_date && onSave(form)}
                                 className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">
-                                Schedule
+                                {submitLabel}
                             </button>
                         </div>
                     </div>
@@ -394,7 +415,7 @@ const WhatsAppMeetingModal = ({ isOpen, onClose, meeting, deptName, employees = 
 };
 
 // ── Meeting Detail Modal (with action table editing) ──────────────────────────
-const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange, onSaveTable }) => {
+const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange, onSaveTable, onReschedule }) => {
     const [activeTab, setActiveTab] = useState('details');
     const [editMode, setEditMode] = useState(false);
     const [columns, setColumns] = useState(DEFAULT_MEETING_TABLE_COLUMNS);
@@ -529,6 +550,12 @@ const MeetingDetailModal = ({ meeting, onClose, onDelete, onStatusChange, onSave
                             )}
 
                             <div className="flex gap-2 pt-2 flex-wrap">
+                                <button
+                                    onClick={() => onReschedule?.(meeting)}
+                                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-colors flex items-center gap-1.5"
+                                >
+                                    <Calendar size={14} /> Reschedule
+                                </button>
                                 {meeting.status === 'Scheduled' && (
                                     <button onClick={() => onStatusChange(meeting.id, 'Done')}
                                         className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors flex items-center gap-1.5">
@@ -1414,6 +1441,7 @@ const DepartmentDetail = ({ user, onLogout }) => {
     const [meetingModal, setMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState(null);
     const [waMeeting, setWaMeeting] = useState(null);
+    const [meetingToReschedule, setMeetingToReschedule] = useState(null);
 
     const load = async () => {
         setLoading(true);
@@ -1481,6 +1509,28 @@ const DepartmentDetail = ({ user, onLogout }) => {
             toast.success(`Meeting marked as ${status}`);
         } catch {
             toast.error('Failed to update meeting');
+        }
+    };
+
+    const handleRescheduleMeeting = async (meetingId, form) => {
+        try {
+            await api.updateMeeting(deptIdInt, meetingId, {
+                scheduled_date: form.scheduled_date,
+                scheduled_time: String(form.scheduled_time || '').trim() || null,
+                venue: String(form.venue || '').trim() || null,
+                attendees: String(form.attendees || '').trim() || null,
+                officer_phone: String(form.officer_phone || '').trim() || null,
+                status: 'Scheduled',
+            });
+            const fresh = await refreshMeetingsOnly();
+            const updated = fresh.find((m) => m.id === meetingId) || null;
+            setMeetingToReschedule(null);
+            if (selectedMeeting?.id === meetingId) {
+                setSelectedMeeting(updated);
+            }
+            toast.success('Meeting rescheduled');
+        } catch {
+            toast.error('Failed to reschedule meeting');
         }
     };
 
@@ -1639,10 +1689,22 @@ const DepartmentDetail = ({ user, onLogout }) => {
                                                 </span>
                                             </td>
                                             <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
-                                                <button onClick={() => handleDeleteMeeting(m.id)}
-                                                    className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Trash2 size={12} />
-                                                </button>
+                                                <div className={`flex items-center justify-end gap-1 transition-opacity ${m.status === 'Cancelled' ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                                    <button
+                                                        onClick={() => setMeetingToReschedule(m)}
+                                                        className="p-1 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded"
+                                                        title="Reschedule meeting"
+                                                    >
+                                                        <Calendar size={12} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteMeeting(m.id)}
+                                                        className="p-1 text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded"
+                                                        title="Delete meeting"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -1668,6 +1730,17 @@ const DepartmentDetail = ({ user, onLogout }) => {
                 deptName={dept.name}
                 employees={employees}
             />
+            <ScheduleMeetingModal
+                isOpen={Boolean(meetingToReschedule)}
+                onClose={() => setMeetingToReschedule(null)}
+                onSave={(form) => meetingToReschedule && handleRescheduleMeeting(meetingToReschedule.id, form)}
+                agenda={agenda}
+                deptName={dept.name}
+                employees={employees}
+                initialMeeting={meetingToReschedule}
+                modalTitle="Reschedule Meeting"
+                submitLabel="Reschedule"
+            />
             <WhatsAppMeetingModal
                 isOpen={Boolean(waMeeting)}
                 onClose={() => setWaMeeting(null)}
@@ -1682,6 +1755,10 @@ const DepartmentDetail = ({ user, onLogout }) => {
                     onDelete={handleDeleteMeeting}
                     onStatusChange={handleMeetingStatusChange}
                     onSaveTable={handleMeetingTableSave}
+                    onReschedule={(meeting) => {
+                        setSelectedMeeting(null);
+                        setMeetingToReschedule(meeting);
+                    }}
                 />
             )}
         </Layout>

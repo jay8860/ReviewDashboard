@@ -59,10 +59,19 @@ const formatReviewDateLabel = (value) => {
 
 const reviewTickerMeta = (dept) => {
     const days = dept?.review_health?.days_since_last_review;
+    const nextScheduledLabel = formatReviewDateLabel(dept?.review_health?.next_scheduled);
     if (days === null || days === undefined) {
+        if (nextScheduledLabel) {
+            return {
+                label: `Scheduled: ${nextScheduledLabel}`,
+                recent: false,
+                scheduled: true,
+            };
+        }
         return {
             label: 'Last review: Never reviewed',
             recent: false,
+            scheduled: false,
         };
     }
 
@@ -71,6 +80,7 @@ const reviewTickerMeta = (dept) => {
     return {
         label: `Last review: ${formattedDate || fallback}`,
         recent: Number(days) <= RECENT_REVIEW_DAYS,
+        scheduled: false,
     };
 };
 
@@ -487,8 +497,16 @@ const DepartmentCard = ({
     dragEnabled,
     onDepartmentDragStart,
     onDepartmentDragEnd,
-}) => (
-    <motion.div
+}) => {
+    const reviewTicker = reviewTickerMeta(dept);
+    const reviewTickerColor = reviewTicker.recent
+        ? 'text-emerald-600'
+        : reviewTicker.scheduled
+            ? 'text-indigo-600'
+            : 'text-violet-600';
+
+    return (
+        <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         draggable={!!dragEnabled}
@@ -543,7 +561,7 @@ const DepartmentCard = ({
             </div>
 
             <h3 className="font-black text-[1.1rem] text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
-            <p className={`text-[11px] font-semibold mb-2.5 ${reviewTickerMeta(dept).recent ? 'text-emerald-600' : 'text-violet-600'}`}>{reviewTickerMeta(dept).label}</p>
+            <p className={`text-[11px] font-semibold mb-2.5 ${reviewTickerColor}`}>{reviewTicker.label}</p>
             {editMode && dept.head_name && (
                 <p className="text-xs text-slate-400 mb-2.5">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
             )}
@@ -584,8 +602,9 @@ const DepartmentCard = ({
                 </button>
             </div>
         </div>
-    </motion.div>
-);
+        </motion.div>
+    );
+};
 
 const DepartmentListRow = ({
     dept,
@@ -603,8 +622,16 @@ const DepartmentListRow = ({
     dragEnabled,
     onDepartmentDragStart,
     onDepartmentDragEnd,
-}) => (
-    <div
+}) => {
+    const reviewTicker = reviewTickerMeta(dept);
+    const reviewTickerColor = reviewTicker.recent
+        ? 'text-emerald-600'
+        : reviewTicker.scheduled
+            ? 'text-indigo-600'
+            : 'text-violet-600';
+
+    return (
+        <div
         className={`rounded-2xl border border-indigo-100/70 bg-white/80 dark:bg-white/5 dark:border-indigo-500/20 px-4 py-3 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
         draggable={!!dragEnabled}
         onDragStart={(e) => {
@@ -627,7 +654,7 @@ const DepartmentListRow = ({
                     <p className="font-black text-slate-800 dark:text-white truncate">{dept.name}</p>
                     {editMode && <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>}
                 </div>
-                <p className={`text-[11px] font-semibold mt-1 ${reviewTickerMeta(dept).recent ? 'text-emerald-600' : 'text-violet-600'}`}>{reviewTickerMeta(dept).label}</p>
+                <p className={`text-[11px] font-semibold mt-1 ${reviewTickerColor}`}>{reviewTicker.label}</p>
                 {editMode && dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             </div>
 
@@ -686,8 +713,9 @@ const DepartmentListRow = ({
                 </button>
             </div>
         </div>
-    </div>
-);
+        </div>
+    );
+};
 
 const Departments = ({ user, onLogout }) => {
     const navigate = useNavigate();
