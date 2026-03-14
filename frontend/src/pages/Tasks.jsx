@@ -14,6 +14,7 @@ import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { differenceInDays, format } from 'date-fns';
 import { canAccessModule } from '../utils/access';
+import { ensurePdfUnicodeFont } from '../utils/pdfFont';
 
 const StatPill = ({ icon: Icon, label, value, color, active = false, onClick }) => {
     const colorStyles = {
@@ -797,6 +798,13 @@ const Tasks = ({ user, onLogout }) => {
         ]);
 
         const doc = new jsPDF({ orientation: 'landscape' });
+        let tableFont = 'helvetica';
+        try {
+            tableFont = await ensurePdfUnicodeFont(doc);
+        } catch (error) {
+            console.error('Failed to load Unicode PDF font', error);
+            toast.error('PDF exported with fallback font. Hindi text may not render correctly.');
+        }
         doc.setFontSize(14);
         doc.text('Tasks Export', 14, 14);
         doc.setFontSize(9);
@@ -806,8 +814,8 @@ const Tasks = ({ user, onLogout }) => {
             startY: 24,
             head: [['S.No', 'Task #', 'Task / Description', 'Comments', 'Assigned', 'Due In', 'Deadline', 'Status']],
             body,
-            styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
-            headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+            styles: { font: tableFont, fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
+            headStyles: { font: tableFont, fillColor: [79, 70, 229], textColor: [255, 255, 255] },
             columnStyles: {
                 0: { cellWidth: 12 },
                 1: { cellWidth: 24 },
