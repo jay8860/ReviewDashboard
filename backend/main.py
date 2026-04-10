@@ -1,4 +1,5 @@
 import os
+import warnings
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,16 +12,37 @@ from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
 from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup
 
+# Startup environment validation
+_DEFAULT_SECRET_KEY = "governance-dashboard-secret-key-change-in-production"
+if os.getenv("SECRET_KEY", _DEFAULT_SECRET_KEY) == _DEFAULT_SECRET_KEY:
+    warnings.warn(
+        "SECRET_KEY is not set or is using the default value. "
+        "Set the SECRET_KEY environment variable to a strong random secret before deploying to production.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+
+if not os.getenv("GEMINI_API_KEY"):
+    warnings.warn(
+        "GEMINI_API_KEY is not set. Document AI analysis features will not be available.",
+        RuntimeWarning,
+        stacklevel=1,
+    )
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 apply_non_destructive_migrations()
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 
-# CORS
+# CORS – restrict to trusted origins via ALLOWED_ORIGINS env var.
+# In development, falls back to allow all origins when not set.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+_allowed_origins: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()] if _raw_origins else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import secrets
 import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError
@@ -91,7 +94,7 @@ def parse_module_access(raw_value: Optional[str], role: Optional[str]) -> List[s
 
     try:
         parsed = json.loads(raw_value)
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         parsed = [x.strip() for x in str(raw_value).split(",")]
 
     if not isinstance(parsed, list):
@@ -188,8 +191,8 @@ def create_user(
     username = request.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="Username is required")
-    if len(request.password.strip()) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    if len(request.password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
 
     existing = db.query(models.User).filter(models.User.username == username).first()
     if existing:
@@ -254,8 +257,8 @@ def update_user(
         new_role = role
 
     if request.password is not None and request.password.strip():
-        if len(request.password.strip()) < 4:
-            raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+        if len(request.password.strip()) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
         user.hashed_password = get_password_hash(request.password.strip())
 
     if request.module_access is not None or request.role is not None:
@@ -290,10 +293,13 @@ def delete_user(
 
 @router.get("/hint/{username}")
 def get_hint(username: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"hint": user.hint or "No hint set"}
+    # Always return the same structure regardless of whether the user exists
+    # to prevent username enumeration via differing status codes.
+    user = db.query(models.User).filter(
+        func.lower(models.User.username) == (username or "").strip().lower()
+    ).first()
+    hint = user.hint if user and user.hint else "No hint set"
+    return {"hint": hint}
 
 
 @router.post("/forgot-password")
@@ -319,8 +325,10 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
                 smtp.starttls()
                 smtp.login(os.getenv("SMTP_USERNAME", ""), os.getenv("SMTP_PASSWORD", ""))
                 smtp.send_message(msg)
-        except Exception:
-            pass
+        except smtplib.SMTPException as smtp_err:
+            logger.warning("Failed to send password reset email to %s: %s", request.email, smtp_err)
+        except Exception as exc:
+            logger.warning("Unexpected error sending password reset email: %s", exc)
     return {"message": "If this email exists, a reset link has been sent."}
 
 
@@ -329,6 +337,8 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     user = db.query(models.User).filter(models.User.reset_token == request.token).first()
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired token")
+    if not request.new_password or len(request.new_password.strip()) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     user.hashed_password = get_password_hash(request.new_password)
     user.reset_token = None
     user.reset_token_expiry = None

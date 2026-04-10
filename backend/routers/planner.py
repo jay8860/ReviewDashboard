@@ -89,7 +89,7 @@ def _safe_json_list(value: Optional[str], fallback: list) -> list:
     try:
         parsed = json.loads(value)
         return parsed if isinstance(parsed, list) else fallback
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         return fallback
 
 
