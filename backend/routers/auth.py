@@ -3,7 +3,7 @@ import logging
 import os
 import secrets
 import smtplib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import List, Optional
 
@@ -309,7 +309,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
         return {"message": "If this email exists, a reset link has been sent."}
     token = secrets.token_urlsafe(32)
     user.reset_token = token
-    user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+    user.reset_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
     db.commit()
 
     smtp_server = os.getenv("SMTP_SERVER")
@@ -335,7 +335,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
 @router.post("/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.reset_token == request.token).first()
-    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     if not request.new_password or len(request.new_password.strip()) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, case
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date, datetime
 import re
@@ -13,37 +13,37 @@ router = APIRouter()
 
 
 class TaskCreate(BaseModel):
-    task_number: Optional[str] = None
-    description: Optional[str] = None
-    assigned_agency: Optional[str] = None
+    task_number: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = Field(None, max_length=5000)
+    assigned_agency: Optional[str] = Field(None, max_length=255)
     allocated_date: Optional[date] = None
-    time_given: Optional[str] = None
+    time_given: Optional[str] = Field(None, max_length=100)
     deadline_date: Optional[date] = None
-    completion_date: Optional[str] = None
+    completion_date: Optional[str] = Field(None, max_length=255)
     status: Optional[str] = "Pending"
     priority: Optional[str] = "Normal"
     is_pinned: Optional[bool] = False
     is_today: Optional[bool] = False
-    steno_comment: Optional[str] = None
-    remarks: Optional[str] = None
+    steno_comment: Optional[str] = Field(None, max_length=10000)
+    remarks: Optional[str] = Field(None, max_length=5000)
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
-    task_number: Optional[str] = None
-    description: Optional[str] = None
-    assigned_agency: Optional[str] = None
+    task_number: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = Field(None, max_length=5000)
+    assigned_agency: Optional[str] = Field(None, max_length=255)
     allocated_date: Optional[date] = None
-    time_given: Optional[str] = None
+    time_given: Optional[str] = Field(None, max_length=100)
     deadline_date: Optional[date] = None
-    completion_date: Optional[str] = None
+    completion_date: Optional[str] = Field(None, max_length=255)
     status: Optional[str] = None
     priority: Optional[str] = None
     is_pinned: Optional[bool] = None
     is_today: Optional[bool] = None
-    steno_comment: Optional[str] = None
-    remarks: Optional[str] = None
+    steno_comment: Optional[str] = Field(None, max_length=10000)
+    remarks: Optional[str] = Field(None, max_length=5000)
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
 
@@ -200,16 +200,17 @@ def generate_task_number(db: Session, assigned_agency: Optional[str], department
             if len(letters) >= 3:
                 prefix = letters[:3].upper()
 
-    existing = db.query(models.Task).filter(
+    # Fetch only task_number column (not full rows) to find the next available sequence.
+    rows = db.query(models.Task.task_number).filter(
         models.Task.task_number.like(f"{prefix}-%")
     ).all()
     used_nums = set()
-    for t in existing:
-        m = re.match(rf'^{re.escape(prefix)}-(\d+)$', t.task_number or '')
+    for (tn,) in rows:
+        m = re.match(rf'^{re.escape(prefix)}-(\d+)$', tn or '')
         if m:
             used_nums.add(int(m.group(1)))
     seq = 1
-    while seq in used_nums and seq <= 999:
+    while seq in used_nums and seq <= 9999:
         seq += 1
     return f"{prefix}-{str(seq).zfill(3)}"
 

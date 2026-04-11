@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean, Float, Enum
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean, Float, Enum, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -44,8 +44,8 @@ class User(Base):
     module_access = Column(Text, nullable=True, default="[]")  # JSON array of module keys
     hint = Column(String, nullable=True)
     reset_token = Column(String, nullable=True)
-    reset_token_expiry = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
+    reset_token_expiry = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # ─── Department ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ class Department(Base):
     color = Column(String, default="indigo")           # For UI theming: indigo/emerald/amber/rose/sky
     icon = Column(String, default="Building2")         # Lucide icon name
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     review_programs = relationship("ReviewProgram", back_populates="department", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="department")
@@ -88,8 +88,8 @@ class Employee(Base):
     display_username = Column(String, nullable=False, unique=True, index=True)
     is_active = Column(Boolean, default=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True) # Optional link to department
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="employees")
     tasks = relationship("Task", back_populates="assigned_employee")
@@ -107,7 +107,7 @@ class ReviewProgram(Base):
     target_value = Column(String, nullable=True)          # E.g. "100%", "50 Lakhs"
     achieved_value = Column(String, nullable=True)        # E.g. "45%", "20 Lakhs"
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     department = relationship("Department", back_populates="review_programs")
     review_sessions = relationship("ReviewSession", back_populates="program", cascade="all, delete-orphan")
@@ -120,15 +120,15 @@ class ReviewSession(Base):
     __tablename__ = "review_sessions"
     id = Column(Integer, primary_key=True, index=True)
     program_id = Column(Integer, ForeignKey("review_programs.id"), nullable=False)
-    scheduled_date = Column(Date, nullable=False)
+    scheduled_date = Column(Date, nullable=False, index=True)
     actual_date = Column(Date, nullable=True)
     status = Column(String, default=ReviewSessionStatus.scheduled)
     venue = Column(String, nullable=True)
     attendees = Column(Text, nullable=True)            # Comma-separated names
     notes = Column(Text, nullable=True)                # Meeting notes / minutes
     summary = Column(Text, nullable=True)              # Pre-meeting brief or post summary
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     program = relationship("ReviewProgram", back_populates="review_sessions")
     action_points = relationship("ActionPoint", back_populates="session", cascade="all, delete-orphan")
@@ -146,10 +146,10 @@ class ActionPoint(Base):
     due_date = Column(Date, nullable=True)
     status = Column(String, default=ActionPointStatus.open)
     priority = Column(String, default=TaskPriority.normal)
-    linked_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)  # One-click → Task
+    linked_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)  # One-click → Task
     remarks = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     session = relationship("ReviewSession", back_populates="action_points")
     linked_task = relationship("Task", back_populates="action_points")
@@ -165,7 +165,7 @@ class ChecklistTemplate(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     order_index = Column(Integer, default=0)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     program = relationship("ReviewProgram", back_populates="checklist_templates")
     responses = relationship("ChecklistResponse", back_populates="template_item")
@@ -180,7 +180,7 @@ class ChecklistResponse(Base):
     template_id = Column(Integer, ForeignKey("checklist_templates.id"), nullable=False)
     is_checked = Column(Boolean, default=False)
     remarks = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     session = relationship("ReviewSession", back_populates="checklist_responses")
     template_item = relationship("ChecklistTemplate", back_populates="responses")
@@ -196,9 +196,9 @@ class Task(Base):
     assigned_agency = Column(String, nullable=True)
     allocated_date = Column(Date, nullable=True)       # Date task was assigned
     time_given = Column(String, nullable=True)         # e.g. "7 days", "30 days"
-    deadline_date = Column(Date, nullable=True)
+    deadline_date = Column(Date, nullable=True, index=True)
     completion_date = Column(String, nullable=True)    # Completion notes / date string
-    status = Column(String, default=TaskStatus.pending)
+    status = Column(String, default=TaskStatus.pending, index=True)
     priority = Column(String, default=TaskPriority.normal)
     is_pinned = Column(Boolean, default=False)         # Pinned to today
     is_today = Column(Boolean, default=False)          # Flagged as today's task
@@ -208,8 +208,8 @@ class Task(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     # Source tracking
     source = Column(String, default="manual")          # manual | action_point | review
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Employee linking
     assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
@@ -228,16 +228,16 @@ class TodoItem(Base):
     title = Column(String, nullable=False)
     details = Column(Text, nullable=True)
     due_date = Column(Date, nullable=True)
-    reminder_at = Column(DateTime, nullable=True)
+    reminder_at = Column(DateTime(timezone=True), nullable=True)
     status = Column(String, default="Open")            # Open | Done
     priority = Column(String, default="Normal")        # Critical | High | Normal | Low
     order_index = Column(Integer, default=0)
     source = Column(String, default="manual")          # manual | imported_notes | converted_to_task
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
-    linked_task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    linked_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="todo_items")
     assigned_employee = relationship("Employee")
@@ -255,8 +255,8 @@ class AgendaPoint(Base):
     details = Column(Text, nullable=True)              # Optional notes/details
     status = Column(String, default="Open")            # Open | Done | Deferred
     order_index = Column(Integer, default=0)           # For manual ordering
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="agenda_points")
 
@@ -280,8 +280,8 @@ class DepartmentMeeting(Base):
     action_table_rows = Column(Text, nullable=False, default='[]')
     status = Column(String, default="Scheduled")        # Scheduled | Done | Cancelled
     officer_phone = Column(String, nullable=True)       # WhatsApp number of concerned officer
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="meetings")
     document_attachments = relationship("DocumentAttachment", back_populates="meeting", cascade="all, delete-orphan")
@@ -298,8 +298,8 @@ class DeptDataGrid(Base):
     columns = Column(Text, nullable=False, default='["Item","Target","Achieved","Remarks"]')
     # Store rows as JSON array of arrays e.g. [["PDLD", "100%", "45%", "On track"], ...]
     rows = Column(Text, nullable=False, default='[]')
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="data_grid")
 
@@ -312,7 +312,7 @@ class DocumentAttachment(Base):
     id = Column(Integer, primary_key=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
     meeting_id = Column(Integer, ForeignKey("department_meetings.id"), nullable=True, index=True)
-    scope = Column(String, nullable=False, default="department")   # department | meeting
+    scope = Column(String, nullable=False, default="department", index=True)   # department | meeting
     original_filename = Column(String, nullable=False)
     stored_filename = Column(String, nullable=False)
     file_path = Column(Text, nullable=False)
@@ -326,8 +326,8 @@ class DocumentAttachment(Base):
     analysis_output = Column(Text, nullable=True)
     analysis_status = Column(String, nullable=False, default="Not Analyzed")
     analysis_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="document_attachments")
     meeting = relationship("DepartmentMeeting", back_populates="document_attachments")
@@ -355,8 +355,8 @@ class FieldVisitDraft(Base):
     status = Column(String, default="Draft")           # Draft | Planned | Done
     planner_event_id = Column(Integer, ForeignKey("planner_events.id"), nullable=True, index=True)
     order_index = Column(Integer, default=0)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="field_visit_drafts")
 
@@ -369,8 +369,8 @@ class FieldVisitPlanningNote(Base):
     id = Column(Integer, primary_key=True, index=True)
     note_text = Column(Text, nullable=True)
     home_base = Column(String, default="Collectorate, Dantewada")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────
@@ -396,8 +396,8 @@ class PlannerEvent(Base):
     is_locked = Column(Boolean, default=False)         # True for synced external events
     # Link to review session if this is a scheduled review
     review_session_id = Column(Integer, ForeignKey("review_sessions.id"), nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 # ─── Planner Settings ────────────────────────────────────────────────────────
@@ -415,6 +415,6 @@ class PlannerSettings(Base):
     apple_ics_url = Column(Text, nullable=True)
     outbound_ics_token = Column(String, nullable=True)
     recurring_blocks = Column(Text, default='[{"name":"Filework Time","days":[1,2,3,4,5],"start":"17:00","end":"18:00","color":"violet"}]')
-    last_ics_sync_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    last_ics_sync_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from database import get_db
 import models
@@ -272,7 +272,7 @@ def create_task_from_action_point(ap_id: int, db: Session = Depends(get_db)):
 
     dept_id = ap.session.program.department_id if ap.session and ap.session.program else None
     task = models.Task(
-        task_number=f"AP-{ap_id}-{int(datetime.utcnow().timestamp())}",
+        task_number=f"AP-{ap_id}-{int(datetime.now(timezone.utc).timestamp())}",
         description=ap.description,
         assigned_agency=ap.assigned_to,
         deadline_date=ap.due_date,

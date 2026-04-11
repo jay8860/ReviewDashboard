@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import re
@@ -1422,7 +1422,7 @@ def suggest_tasks_from_department_document(
             "source_type": "document",
             "source_name": doc.original_filename,
             "suggestions": suggestions,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
@@ -1475,7 +1475,7 @@ def compare_document_analyses(
         "comparison_output": comparison_output,
         "compare_engine": compare_engine,
         "compare_error": compare_error,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -1694,7 +1694,7 @@ def suggest_tasks_from_meeting_document(
             "source_type": "meeting_document",
             "source_name": doc.original_filename,
             "suggestions": suggestions,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")
@@ -1726,7 +1726,7 @@ def suggest_tasks_from_meeting_workspace(
             "source_type": "meeting",
             "source_name": f"{dept.name} meeting on {meeting.scheduled_date}",
             "suggestions": suggestions,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Task suggestion generation failed: {exc}")

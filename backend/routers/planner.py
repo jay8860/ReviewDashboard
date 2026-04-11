@@ -741,7 +741,7 @@ def _build_event_ics_lines(event: models.PlannerEvent, timezone_name: str, defau
     duration = max(15, int(event.duration_minutes or 30))
     end_dt = start_dt + timedelta(minutes=duration)
 
-    stamp_src = event.updated_at or event.created_at or datetime.utcnow()
+    stamp_src = event.updated_at or event.created_at or datetime.now(timezone.utc)
     if stamp_src.tzinfo is None:
         stamp_src = stamp_src.replace(tzinfo=timezone.utc)
     dtstamp = stamp_src.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -894,7 +894,7 @@ def sync_ics_events(data: IcsSyncRequest, db: Session = Depends(get_db)):
     if data.ics_url is not None:
         normalized_input = _normalize_ics_url(data.ics_url)
         settings.apple_ics_url = normalized_input or None
-    settings.last_ics_sync_at = datetime.utcnow()
+    settings.last_ics_sync_at = datetime.now(timezone.utc)
 
     db.commit()
     return {

@@ -370,6 +370,7 @@ const buildPlannerEventWhatsAppMessage = (event) => {
 };
 
 const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) => {
+    const toast = useToast();
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
@@ -420,12 +421,12 @@ const PlannerEventWhatsAppModal = ({ isOpen, onClose, event, employees = [] }) =
     const handleSend = () => {
         const finalMessage = (message || '').trim();
         if (!finalMessage) {
-            window.alert('Message draft cannot be empty');
+            toast.error('Message draft cannot be empty');
             return;
         }
         const recipients = buildRecipientNumbers();
         if (!recipients.length) {
-            window.alert('Select at least one recipient');
+            toast.error('Select at least one recipient');
             return;
         }
 
@@ -568,6 +569,7 @@ const buildDayScheduleMessage = (dateValue, items) => {
 };
 
 const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [], defaultDate }) => {
+    const toast = useToast();
     const [day, setDay] = useState(defaultDate || getTodayIso());
     const [message, setMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -639,12 +641,12 @@ const PlannerDayWhatsAppModal = ({ isOpen, onClose, events = [], employees = [],
     const handleSend = () => {
         const draft = (message || '').trim();
         if (!draft) {
-            window.alert('Message draft cannot be empty');
+            toast.error('Message draft cannot be empty');
             return;
         }
         const recipients = buildRecipientNumbers();
         if (!recipients.length) {
-            window.alert('Select at least one recipient');
+            toast.error('Select at least one recipient');
             return;
         }
         recipients.forEach((number, idx) => {

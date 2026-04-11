@@ -181,11 +181,16 @@ const DocumentAnalysisWorkspace = ({ user, onLogout }) => {
         try {
             await navigator.clipboard.writeText(doc.analysis_output);
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
         } catch {
             toast.error('Failed to copy analysis');
         }
     };
+
+    useEffect(() => {
+        if (!copied) return;
+        const timer = setTimeout(() => setCopied(false), 1500);
+        return () => clearTimeout(timer);
+    }, [copied]);
 
     const generateTaskSuggestions = async () => {
         if (!doc) return { suggestions: [] };

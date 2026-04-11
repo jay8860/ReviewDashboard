@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Type
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -120,14 +120,14 @@ def export_dashboard_backup(
 
     payload = {
         'version': 'reviewdashboard-backup-v2',
-        'exported_at': datetime.utcnow().isoformat() + 'Z',
+        'exported_at': datetime.now(timezone.utc).isoformat(),
         'include_document_text': include_document_text,
         'counts': counts,
         'tables': tables,
         'errors': errors,
     }
 
-    filename = f"reviewdashboard_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = f"reviewdashboard_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
     return Response(
         content=json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":")),
         media_type='application/json',

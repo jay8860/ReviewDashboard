@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 import re
 
@@ -237,5 +237,5 @@ def get_task_analytics(db: Session = Depends(get_db)):
         "highest_workload": highest_workload,
         "oldest_pending": oldest_pending,
         "agency_performance": agency_performance,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
