@@ -502,8 +502,9 @@ export const api = {
         const res = await axios.post(`${FIELD_VISIT_URL}/suggestions`, data);
         return res.data;
     },
-    getFieldVisitCoverage: async () => {
-        const res = await axios.get(`${FIELD_VISIT_URL}/coverage`);
+    getFieldVisitCoverage: async (district = '') => {
+        const params = district ? `?district=${encodeURIComponent(district)}` : '';
+        const res = await axios.get(`${FIELD_VISIT_URL}/coverage${params}`);
         return res.data;
     },
     markFieldVisitCoverage: async (data) => {

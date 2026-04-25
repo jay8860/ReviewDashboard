@@ -203,19 +203,27 @@ def _serialize_planning_note(row: models.FieldVisitPlanningNote) -> dict:
 
 
 def _split_sample_villages(value: Optional[str]) -> List[str]:
-    return [_normalize_text(item) for item in (value or "").split(",") if _normalize_text(item)]
+    return [_normalize_text(item) for item in re.split(r"[,;]", value or "") if _normalize_text(item)]
 
 
 def _ensure_default_gp_master(db: Session) -> None:
-    has_any = db.query(models.GramPanchayat.id).filter(
-        models.GramPanchayat.is_active == True
+    # Older deployments created the GP table before district support existed.
+    db.query(models.GramPanchayat).filter(
+        models.GramPanchayat.district == None
+    ).update({"district": "Dantewada"}, synchronize_session=False)
+    db.commit()
+
+    has_dantewada = db.query(models.GramPanchayat.id).filter(
+        models.GramPanchayat.is_active == True,
+        models.GramPanchayat.district == "Dantewada",
     ).first()
-    if has_any:
+    if has_dantewada:
         return
 
     for item in DEFAULT_GP_MASTER:
         villages = _split_sample_villages(item.get("villages"))
         db.add(models.GramPanchayat(
+            district="Dantewada",
             block=_normalize_text(item.get("block")) or "Unassigned",
             name=_normalize_text(item.get("name")),
             sample_villages=", ".join(villages),
@@ -225,8 +233,10 @@ def _ensure_default_gp_master(db: Session) -> None:
     db.commit()
 
 
-def _gp_status(last_visit: Optional[date]) -> str:
+def _gp_status(last_visit: Optional[date], has_legacy_visit: bool = False) -> str:
     if not last_visit:
+        if has_legacy_visit:
+            return "legacy"
         return "never"
     days = (date.today() - last_visit).days
     if days <= 30:
@@ -241,14 +251,33 @@ def _status_label(status: str) -> str:
         "recent": "Visited in last 30 days",
         "visited": "Visited in last 90 days",
         "stale": "Not visited in 90+ days",
+        "legacy": "Visited before tracking",
         "never": "Never visited",
     }.get(status, "Unknown")
 
 
-def _build_coverage_payload(db: Session) -> dict:
+def _available_gp_districts(db: Session) -> List[str]:
     _ensure_default_gp_master(db)
-    gp_rows = db.query(models.GramPanchayat).filter(
+    rows = db.query(models.GramPanchayat.district).filter(
         models.GramPanchayat.is_active == True
+    ).group_by(
+        models.GramPanchayat.district
+    ).order_by(
+        models.GramPanchayat.district.asc()
+    ).all()
+    return [row[0] or "Dantewada" for row in rows]
+
+
+def _build_coverage_payload(db: Session, district: Optional[str] = None) -> dict:
+    districts = _available_gp_districts(db)
+    requested_district = _normalize_text(district)
+    selected_district = requested_district if requested_district in districts else None
+    if not selected_district:
+        selected_district = "Dantewada" if "Dantewada" in districts else (districts[0] if districts else "Dantewada")
+
+    gp_rows = db.query(models.GramPanchayat).filter(
+        models.GramPanchayat.is_active == True,
+        models.GramPanchayat.district == selected_district,
     ).order_by(
         models.GramPanchayat.block.asc(),
         models.GramPanchayat.name.asc(),
@@ -257,19 +286,22 @@ def _build_coverage_payload(db: Session) -> dict:
     gp_ids = [row.id for row in gp_rows]
     stats = {}
     if gp_ids:
-        stat_rows = db.query(
-            models.FieldVisitGPVisit.gp_id,
-            func.count(models.FieldVisitGPVisit.id),
-            func.max(models.FieldVisitGPVisit.visited_on),
-        ).filter(
+        visit_rows = db.query(models.FieldVisitGPVisit).filter(
             models.FieldVisitGPVisit.gp_id.in_(gp_ids)
-        ).group_by(
-            models.FieldVisitGPVisit.gp_id
         ).all()
-        stats = {
-            gp_id: {"visit_count": int(count or 0), "last_visit_date": last_visit}
-            for gp_id, count, last_visit in stat_rows
-        }
+        for visit in visit_rows:
+            entry = stats.setdefault(visit.gp_id, {
+                "visit_count": 0,
+                "legacy_count": 0,
+                "last_visit_date": None,
+            })
+            entry["visit_count"] += 1
+            visit_type = (visit.visit_type or visit.source or "exact").lower()
+            if visit_type == "legacy" or (visit.source or "").lower() == "legacy":
+                entry["legacy_count"] += 1
+                continue
+            if visit.visited_on and (entry["last_visit_date"] is None or visit.visited_on > entry["last_visit_date"]):
+                entry["last_visit_date"] = visit.visited_on
 
     items = []
     block_summary = defaultdict(lambda: {
@@ -279,14 +311,16 @@ def _build_coverage_payload(db: Session) -> dict:
         "never": 0,
         "recent": 0,
         "stale": 0,
+        "legacy": 0,
         "coverage_pct": 0,
     })
 
     for row in gp_rows:
         row_stats = stats.get(row.id, {})
         visit_count = int(row_stats.get("visit_count") or 0)
+        legacy_count = int(row_stats.get("legacy_count") or 0)
         last_visit = row_stats.get("last_visit_date")
-        status = _gp_status(last_visit)
+        status = _gp_status(last_visit, legacy_count > 0)
         days_since = (date.today() - last_visit).days if last_visit else None
         block = row.block or "Unassigned"
         summary = block_summary[block]
@@ -300,16 +334,22 @@ def _build_coverage_payload(db: Session) -> dict:
             summary["recent"] += 1
         if status == "stale":
             summary["stale"] += 1
+        if status == "legacy":
+            summary["legacy"] += 1
 
         items.append({
             "id": row.id,
+            "district": row.district or selected_district,
             "block": block,
             "name": row.name,
             "sample_villages": row.sample_villages or "",
             "village_count": row.village_count or 0,
             "latitude": row.latitude,
             "longitude": row.longitude,
+            "map_x": row.map_x,
+            "map_y": row.map_y,
             "visit_count": visit_count,
+            "legacy_visit_count": legacy_count,
             "last_visit_date": str(last_visit) if last_visit else None,
             "days_since_last_visit": days_since,
             "status": status,
@@ -325,15 +365,19 @@ def _build_coverage_payload(db: Session) -> dict:
     visited_gps = sum(1 for item in items if item["visit_count"] > 0)
     recent_gps = sum(1 for item in items if item["status"] == "recent")
     stale_gps = sum(1 for item in items if item["status"] == "stale")
+    legacy_gps = sum(1 for item in items if item["status"] == "legacy")
     never_gps = total_gps - visited_gps
 
     return {
+        "district": selected_district,
+        "districts": districts,
         "summary": {
             "total_gps": total_gps,
             "visited_gps": visited_gps,
             "never_visited_gps": never_gps,
             "recent_gps": recent_gps,
             "stale_gps": stale_gps,
+            "legacy_gps": legacy_gps,
             "coverage_pct": round((visited_gps / total_gps) * 100, 1) if total_gps else 0,
         },
         "blocks": sorted(block_summary.values(), key=lambda item: item["block"]),
@@ -649,14 +693,18 @@ class GPVisitMarkPayload(BaseModel):
     gp_ids: List[int]
     visited_on: Optional[date] = None
     notes: Optional[str] = None
+    visit_type: Optional[str] = "exact"
 
 
 class GramPanchayatUpsertItem(BaseModel):
     name: str
+    district: Optional[str] = "Dantewada"
     block: Optional[str] = "Unassigned"
     sample_villages: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    map_x: Optional[float] = None
+    map_y: Optional[float] = None
 
 
 class GramPanchayatBulkUpsertPayload(BaseModel):
@@ -664,8 +712,8 @@ class GramPanchayatBulkUpsertPayload(BaseModel):
 
 
 @router.get("/coverage")
-def get_gp_visit_coverage(db: Session = Depends(get_db)):
-    return _build_coverage_payload(db)
+def get_gp_visit_coverage(district: Optional[str] = None, db: Session = Depends(get_db)):
+    return _build_coverage_payload(db, district=district)
 
 
 @router.post("/coverage/mark-visited")
@@ -686,17 +734,24 @@ def mark_gp_visits(data: GPVisitMarkPayload, db: Session = Depends(get_db)):
     if missing:
         raise HTTPException(status_code=404, detail=f"Gram Panchayat not found: {missing[0]}")
 
-    visited_on = data.visited_on or date.today()
+    visit_type = (data.visit_type or "exact").strip().lower()
+    if visit_type not in {"exact", "legacy"}:
+        visit_type = "exact"
+    # Legacy marks deliberately avoid stamping "today" when the exact historical
+    # date is unknown. A stable placeholder keeps older DBs with NOT NULL dates happy.
+    visited_on = data.visited_on or (date(2000, 1, 1) if visit_type == "legacy" else date.today())
     notes = _normalize_text(data.notes)
     for gp_id in gp_ids:
         db.add(models.FieldVisitGPVisit(
             gp_id=gp_id,
             visited_on=visited_on,
+            visit_type=visit_type,
             notes=notes or None,
-            source="manual",
+            source="legacy" if visit_type == "legacy" else "manual",
         ))
     db.commit()
-    return _build_coverage_payload(db)
+    district = rows[0].district if rows else None
+    return _build_coverage_payload(db, district=district)
 
 
 @router.post("/gram-panchayats/bulk-upsert")
@@ -709,36 +764,52 @@ def bulk_upsert_gram_panchayats(data: GramPanchayatBulkUpsertPayload, db: Sessio
 
     existing = db.query(models.GramPanchayat).all()
     by_key = {
-        (_normalize_text(row.block).lower(), _normalize_text(row.name).lower()): row
+        (
+            _normalize_text(row.district or "Dantewada").lower(),
+            _normalize_text(row.block).lower(),
+            _normalize_text(row.name).lower(),
+        ): row
         for row in existing
     }
 
     updated = 0
     created = 0
+    first_district = None
     for item in incoming:
         name = _normalize_text(item.name)
+        district = _normalize_text(item.district) or "Dantewada"
         block = _normalize_text(item.block) or "Unassigned"
         if not name:
             continue
-        key = (block.lower(), name.lower())
+        if first_district is None:
+            first_district = district
+        key = (district.lower(), block.lower(), name.lower())
         sample_villages = _normalize_text(item.sample_villages)
         village_count = len(_split_sample_villages(sample_villages))
         row = by_key.get(key)
         if row:
+            row.district = district
+            row.block = block
+            row.name = name
             row.sample_villages = sample_villages or row.sample_villages
             row.village_count = village_count or row.village_count or 0
             row.latitude = item.latitude
             row.longitude = item.longitude
+            row.map_x = item.map_x
+            row.map_y = item.map_y
             row.is_active = True
             updated += 1
         else:
             row = models.GramPanchayat(
+                district=district,
                 block=block,
                 name=name,
                 sample_villages=sample_villages or None,
                 village_count=village_count,
                 latitude=item.latitude,
                 longitude=item.longitude,
+                map_x=item.map_x,
+                map_y=item.map_y,
                 is_active=True,
             )
             db.add(row)
@@ -746,7 +817,7 @@ def bulk_upsert_gram_panchayats(data: GramPanchayatBulkUpsertPayload, db: Sessio
             created += 1
 
     db.commit()
-    payload = _build_coverage_payload(db)
+    payload = _build_coverage_payload(db, district=first_district)
     payload["import_result"] = {"created": created, "updated": updated}
     return payload
 

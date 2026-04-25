@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Calendar, ExternalLink, MapPin, Plus, Trash2, ArrowUp, ArrowDown,
     Save, Sparkles, Route, FileText, Users, Search, Clock, ClipboardCheck,
-    CheckCircle2, Circle, Filter, RotateCcw
+    CheckCircle2, Circle, Filter, RotateCcw, Upload, Download, History, MapPinned
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Layout from '../components/Layout';
@@ -395,12 +395,15 @@ const ScheduleVisitModal = ({
 };
 
 const EMPTY_COVERAGE = {
+    district: '',
+    districts: [],
     summary: {
         total_gps: 0,
         visited_gps: 0,
         never_visited_gps: 0,
         recent_gps: 0,
         stale_gps: 0,
+        legacy_gps: 0,
         coverage_pct: 0,
     },
     blocks: [],
@@ -412,66 +415,194 @@ const COVERAGE_STATUS_META = {
         label: 'Recent',
         fill: '#059669',
         dot: 'bg-emerald-600',
+        labelBg: '#ecfdf5',
+        labelText: '#065f46',
         chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     },
     visited: {
         label: 'Visited',
         fill: '#2563eb',
         dot: 'bg-blue-600',
+        labelBg: '#eff6ff',
+        labelText: '#1e40af',
         chip: 'bg-blue-50 text-blue-700 border-blue-200',
     },
     stale: {
         label: 'Old visit',
         fill: '#f97316',
         dot: 'bg-orange-500',
+        labelBg: '#fff7ed',
+        labelText: '#9a3412',
         chip: 'bg-orange-50 text-orange-700 border-orange-200',
+    },
+    legacy: {
+        label: 'Legacy',
+        fill: '#0f766e',
+        dot: 'bg-teal-600',
+        labelBg: '#f0fdfa',
+        labelText: '#115e59',
+        chip: 'bg-teal-50 text-teal-700 border-teal-200',
     },
     never: {
         label: 'Pending',
         fill: '#e11d48',
         dot: 'bg-rose-600',
+        labelBg: '#fff1f2',
+        labelText: '#9f1239',
         chip: 'bg-rose-50 text-rose-700 border-rose-200',
     },
 };
 
-const COVERAGE_BLOCK_LAYOUTS = {
-    Dantewada: { x: 8, y: 8, w: 38, h: 26 },
-    Geedam: { x: 50, y: 8, w: 42, h: 30 },
-    Katekalyan: { x: 8, y: 39, w: 38, h: 27 },
-    Kuakonda: { x: 50, y: 43, w: 42, h: 23 },
+const DANTEWADA_BLOCK_SHAPES = {
+    Dantewada: { x: 7, y: 9, w: 39, h: 27, labelX: 16, labelY: 14, path: 'M16 9 L43 8 L49 22 L43 36 L17 34 L7 22 Z' },
+    Geedam: { x: 47, y: 8, w: 43, h: 30, labelX: 58, labelY: 13, path: 'M49 10 L78 7 L92 20 L86 37 L58 38 L48 25 Z' },
+    Katekalyan: { x: 8, y: 38, w: 40, h: 29, labelX: 16, labelY: 44, path: 'M13 39 L41 38 L49 55 L38 67 L14 65 L6 52 Z' },
+    Kuakonda: { x: 48, y: 39, w: 43, h: 29, labelX: 59, labelY: 45, path: 'M51 41 L83 39 L94 52 L85 66 L57 69 L46 56 Z' },
 };
 
-const fallbackBlockLayout = { x: 8, y: 8, w: 84, h: 58 };
+const fallbackBlockLayout = { x: 8, y: 10, w: 84, h: 55, labelX: 12, labelY: 15, path: 'M12 10 L84 9 L94 31 L84 62 L20 67 L6 38 Z' };
 
 const getCoverageStatusMeta = (status) => COVERAGE_STATUS_META[status] || COVERAGE_STATUS_META.never;
 
-const buildCoverageMapPoints = (rows) => {
+const clampMapPercent = (value, fallback) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(4, Math.min(96, number));
+};
+
+const truncateMapLabel = (value, max = 12) => {
+    const text = cleanText(value);
+    if (text.length <= max) return text;
+    return `${text.slice(0, max - 3)}...`;
+};
+
+const toNullableNumber = (value) => {
+    const number = Number(String(value ?? '').trim());
+    return Number.isFinite(number) ? number : null;
+};
+
+const normalizeCsvKey = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const parseCsvRows = (text) => {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const input = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for (let i = 0; i < input.length; i += 1) {
+        const char = input[i];
+        if (quoted) {
+            if (char === '"' && input[i + 1] === '"') {
+                cell += '"';
+                i += 1;
+            } else if (char === '"') {
+                quoted = false;
+            } else {
+                cell += char;
+            }
+        } else if (char === '"') {
+            quoted = true;
+        } else if (char === ',') {
+            row.push(cell.trim());
+            cell = '';
+        } else if (char === '\n') {
+            row.push(cell.trim());
+            if (row.some(value => value)) rows.push(row);
+            row = [];
+            cell = '';
+        } else {
+            cell += char;
+        }
+    }
+    row.push(cell.trim());
+    if (row.some(value => value)) rows.push(row);
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(normalizeCsvKey);
+    return rows.slice(1).map(values => {
+        const item = {};
+        headers.forEach((key, idx) => {
+            if (!key) return;
+            item[key] = values[idx] ?? '';
+        });
+        return item;
+    });
+};
+
+const buildGenericBlockShapes = (blocks) => {
+    const columns = blocks.length <= 2 ? blocks.length || 1 : 2;
+    const rows = Math.ceil(Math.max(blocks.length, 1) / columns);
+    return blocks.reduce((acc, block, idx) => {
+        const col = idx % columns;
+        const row = Math.floor(idx / columns);
+        const w = 82 / columns;
+        const h = 58 / rows;
+        const x = 8 + col * (w + 3);
+        const y = 9 + row * (h + 4);
+        acc[block] = {
+            x,
+            y,
+            w: Math.max(20, w - 2),
+            h: Math.max(18, h - 2),
+            labelX: x + 3,
+            labelY: y + 5,
+            path: `M${x + 3} ${y} L${x + w - 2} ${y + 1} L${x + w} ${y + h - 4} L${x + w - 6} ${y + h} L${x + 2} ${y + h - 2} L${x} ${y + 7} Z`,
+        };
+        return acc;
+    }, {});
+};
+
+const buildCoverageMapPoints = (rows, district) => {
+    const geoRows = rows
+        .map(row => ({ lat: Number(row.latitude), lon: Number(row.longitude) }))
+        .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    const hasGeo = geoRows.length >= 2;
+    const minLat = hasGeo ? Math.min(...geoRows.map(point => point.lat)) : null;
+    const maxLat = hasGeo ? Math.max(...geoRows.map(point => point.lat)) : null;
+    const minLon = hasGeo ? Math.min(...geoRows.map(point => point.lon)) : null;
+    const maxLon = hasGeo ? Math.max(...geoRows.map(point => point.lon)) : null;
+    const latRange = hasGeo ? Math.max(maxLat - minLat, 0.000001) : null;
+    const lonRange = hasGeo ? Math.max(maxLon - minLon, 0.000001) : null;
     const groups = rows.reduce((acc, row) => {
         const block = row.block || 'Unassigned';
         if (!acc[block]) acc[block] = [];
         acc[block].push(row);
         return acc;
     }, {});
+    const blocks = Object.keys(groups);
+    const shapeMap = district === 'Dantewada' ? DANTEWADA_BLOCK_SHAPES : buildGenericBlockShapes(blocks);
 
     const points = [];
     Object.entries(groups).forEach(([block, items]) => {
-        const layout = COVERAGE_BLOCK_LAYOUTS[block] || fallbackBlockLayout;
-        const columns = Math.max(4, Math.ceil(Math.sqrt(items.length * (layout.w / Math.max(layout.h, 1)))));
+        const layout = shapeMap[block] || fallbackBlockLayout;
+        const columns = Math.max(2, Math.ceil(Math.sqrt(items.length * (layout.w / Math.max(layout.h, 1)))));
         const rowsCount = Math.max(1, Math.ceil(items.length / columns));
         items.forEach((item, idx) => {
             const col = idx % columns;
             const row = Math.floor(idx / columns);
+            const autoX = layout.x + ((col + 0.5) * layout.w) / columns;
+            const autoY = layout.y + 7 + ((row + 0.45) * Math.max(layout.h - 8, 5)) / rowsCount;
+            const lat = Number(item.latitude);
+            const lon = Number(item.longitude);
+            const geoX = hasGeo && Number.isFinite(lon) ? 7 + ((lon - minLon) / lonRange) * 86 : null;
+            const geoY = hasGeo && Number.isFinite(lat) ? 68 - ((lat - minLat) / latRange) * 58 : null;
             points.push({
                 ...item,
-                map_x: layout.x + ((col + 0.5) * layout.w) / columns,
-                map_y: layout.y + ((row + 0.72) * layout.h) / rowsCount,
+                map_x: clampMapPercent(item.map_x, geoX ?? autoX),
+                map_y: clampMapPercent(item.map_y, geoY ?? autoY),
+                label_w: Math.max(7.5, Math.min(16, (layout.w / columns) - 0.8)),
             });
         });
     });
-    return points;
+    return { points, shapes: shapeMap };
 };
 
 const formatLastVisit = (row) => {
+    if (row?.status === 'legacy') return 'Visited before tracking';
     if (!row?.last_visit_date) return 'Never visited';
     const dateText = toDisplayDate(row.last_visit_date);
     if (row.days_since_last_visit === 0) return `${dateText} - today`;
@@ -481,6 +612,8 @@ const formatLastVisit = (row) => {
 
 const FieldVisitCoveragePanel = ({
     coverage,
+    selectedDistrict,
+    onDistrictChange,
     selectedGpIds,
     setSelectedGpIds,
     filters,
@@ -490,10 +623,13 @@ const FieldVisitCoveragePanel = ({
     visitNotes,
     setVisitNotes,
     marking,
+    importing,
     onMarkVisited,
+    onImportCsv,
 }) => {
     const data = coverage || EMPTY_COVERAGE;
     const allRows = data.gram_panchayats || [];
+    const district = selectedDistrict || data.district || 'Dantewada';
     const selectedSet = useMemo(() => new Set(selectedGpIds), [selectedGpIds]);
     const visibleRows = useMemo(() => {
         const q = (filters.search || '').trim().toLowerCase();
@@ -504,7 +640,7 @@ const FieldVisitCoveragePanel = ({
             return blockMatch && statusMatch && searchMatch;
         });
     }, [allRows, filters]);
-    const mapPoints = useMemo(() => buildCoverageMapPoints(allRows), [allRows]);
+    const { points: mapPoints, shapes: mapShapes } = useMemo(() => buildCoverageMapPoints(visibleRows, district), [visibleRows, district]);
     const pendingRows = useMemo(() => (
         allRows
             .filter(row => row.status === 'never' || row.status === 'stale')
@@ -532,19 +668,64 @@ const FieldVisitCoveragePanel = ({
 
     const clearSelection = () => setSelectedGpIds([]);
 
+    const downloadTemplate = () => {
+        const templateRows = [
+            ['district', 'block', 'gram_panchayat', 'sample_villages', 'map_x', 'map_y', 'latitude', 'longitude'],
+            [district || 'Dantewada', 'Dantewada', 'Example GP', 'Village 1; Village 2', '42', '28', '', ''],
+            [district || 'Dantewada', 'Geedam', 'Another GP', 'Village 3', '66', '34', '', ''],
+        ];
+        const csv = templateRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `gp-master-format-${(district || 'district').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="glass-card rounded-3xl p-5 border border-emerald-100 order-1">
             <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-5">
                 <div>
                     <div className="flex items-center gap-2">
-                        <MapPin size={17} className="text-emerald-600" />
+                        <MapPinned size={17} className="text-emerald-600" />
                         <h2 className="font-black text-slate-800 dark:text-white">GP Visit Coverage</h2>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                        {data.summary.total_gps || 0} Gram Panchayats across {(data.blocks || []).length} blocks.
+                        {district} | {data.summary.total_gps || 0} Gram Panchayats across {(data.blocks || []).length} blocks.
                     </p>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 min-w-0 xl:min-w-[520px]">
+                <div className="flex flex-col md:flex-row flex-wrap gap-2 xl:justify-end">
+                    <select
+                        value={district}
+                        onChange={e => onDistrictChange(e.target.value)}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700"
+                    >
+                        {(data.districts?.length ? data.districts : [district]).map(item => (
+                            <option key={item} value={item}>{item}</option>
+                        ))}
+                    </select>
+                    <button
+                        onClick={downloadTemplate}
+                        className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 inline-flex items-center justify-center gap-1.5"
+                    >
+                        <Download size={14} /> Download format
+                    </button>
+                    <label className={`px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-sm font-bold text-emerald-700 inline-flex items-center justify-center gap-1.5 cursor-pointer ${importing ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <Upload size={14} /> {importing ? 'Importing...' : 'Upload GP CSV'}
+                        <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            className="hidden"
+                            onChange={onImportCsv}
+                            disabled={importing}
+                        />
+                    </label>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 min-w-0 xl:min-w-[650px]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-[11px] uppercase tracking-widest font-black text-slate-400">Coverage</p>
                         <p className="text-2xl font-black text-slate-800">{data.summary.coverage_pct || 0}%</p>
@@ -556,6 +737,10 @@ const FieldVisitCoveragePanel = ({
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
                         <p className="text-[11px] uppercase tracking-widest font-black text-rose-600">Pending</p>
                         <p className="text-2xl font-black text-rose-700">{data.summary.never_visited_gps || 0}</p>
+                    </div>
+                    <div className="rounded-2xl border border-teal-200 bg-teal-50 p-3">
+                        <p className="text-[11px] uppercase tracking-widest font-black text-teal-600">Legacy</p>
+                        <p className="text-2xl font-black text-teal-700">{data.summary.legacy_gps || 0}</p>
                     </div>
                     <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3">
                         <p className="text-[11px] uppercase tracking-widest font-black text-orange-600">90+ days</p>
@@ -578,31 +763,43 @@ const FieldVisitCoveragePanel = ({
                         </div>
                     </div>
 
-                    <svg viewBox="0 0 100 72" role="img" aria-label="Gram Panchayat visit coverage map" className="w-full aspect-[1.55] rounded-2xl bg-slate-50 border border-slate-100">
-                        <rect x="2" y="2" width="96" height="68" rx="4" fill="#f8fafc" stroke="#e2e8f0" />
-                        {Object.entries(COVERAGE_BLOCK_LAYOUTS).map(([block, layout]) => (
+                    <svg viewBox="0 0 100 76" role="img" aria-label="Gram Panchayat visit coverage map" className="w-full aspect-[1.45] rounded-2xl bg-slate-50 border border-slate-100">
+                        <rect x="2" y="2" width="96" height="72" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
+                        <path d="M8 15 L26 6 L52 7 L83 9 L96 25 L90 58 L66 70 L33 69 L9 59 L4 36 Z" fill="#eefdf6" stroke="#bbf7d0" strokeWidth="0.5" />
+                        {Object.entries(mapShapes).map(([block, layout]) => (
                             <g key={block}>
-                                <rect x={layout.x} y={layout.y} width={layout.w} height={layout.h} rx="2.5" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.35" />
-                                <text x={layout.x + 2} y={layout.y + 4.2} fill="#64748b" fontSize="2.4" fontWeight="700">{block}</text>
+                                <path d={layout.path} fill="#ffffff" stroke="#94a3b8" strokeWidth="0.45" />
+                                <text x={layout.labelX} y={layout.labelY} fill="#334155" fontSize="2.6" fontWeight="800">{block}</text>
                             </g>
                         ))}
                         {mapPoints.map(point => {
                             const meta = getCoverageStatusMeta(point.status);
                             const selected = selectedSet.has(point.id);
+                            const label = truncateMapLabel(point.name);
+                            const labelX = Math.max(3, Math.min(97 - point.label_w, point.map_x - point.label_w / 2));
+                            const labelY = Math.max(4, Math.min(73, point.map_y));
                             return (
-                                <circle
+                                <g
                                     key={point.id}
-                                    cx={point.map_x}
-                                    cy={point.map_y}
-                                    r={selected ? 1.35 : 0.95}
-                                    fill={meta.fill}
-                                    stroke={selected ? '#111827' : '#ffffff'}
-                                    strokeWidth={selected ? 0.42 : 0.28}
                                     className="cursor-pointer"
                                     onClick={() => toggleGp(point.id)}
                                 >
+                                    <rect
+                                        x={labelX}
+                                        y={labelY - 2.7}
+                                        width={point.label_w}
+                                        height="3.6"
+                                        rx="1.2"
+                                        fill={meta.labelBg}
+                                        stroke={selected ? '#111827' : meta.fill}
+                                        strokeWidth={selected ? 0.42 : 0.22}
+                                    />
+                                    <circle cx={labelX + 1.25} cy={labelY - 0.95} r="0.55" fill={meta.fill} />
+                                    <text x={labelX + 2.2} y={labelY - 0.15} fill={meta.labelText} fontSize="1.45" fontWeight="800">
+                                        {label}
+                                    </text>
                                     <title>{`${point.name}, ${point.block} - ${point.status_label}`}</title>
-                                </circle>
+                                </g>
                             );
                         })}
                     </svg>
@@ -652,6 +849,7 @@ const FieldVisitCoveragePanel = ({
                             <option value="all">All status</option>
                             <option value="never">Pending</option>
                             <option value="stale">90+ days</option>
+                            <option value="legacy">Legacy</option>
                             <option value="visited">Visited</option>
                             <option value="recent">Recent</option>
                         </select>
@@ -717,17 +915,26 @@ const FieldVisitCoveragePanel = ({
                         <input
                             value={visitNotes}
                             onChange={e => setVisitNotes(e.target.value)}
-                            placeholder="Notes"
+                            placeholder="Visit notes"
                             className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800"
                         />
                     </div>
-                    <button
-                        onClick={onMarkVisited}
-                        disabled={marking || selectedGpIds.length === 0}
-                        className="mt-2 w-full px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                    >
-                        <ClipboardCheck size={15} /> {marking ? 'Saving...' : `Mark ${selectedGpIds.length || ''} Visited`}
-                    </button>
+                    <div className="grid md:grid-cols-2 gap-2 mt-2">
+                        <button
+                            onClick={() => onMarkVisited('exact')}
+                            disabled={marking || selectedGpIds.length === 0}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                        >
+                            <ClipboardCheck size={15} /> {marking ? 'Saving...' : `Mark ${selectedGpIds.length || ''} Visited`}
+                        </button>
+                        <button
+                            onClick={() => onMarkVisited('legacy')}
+                            disabled={marking || selectedGpIds.length === 0}
+                            className="px-4 py-2.5 rounded-xl bg-teal-700 text-white text-sm font-black hover:bg-teal-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                        >
+                            <History size={15} /> {marking ? 'Saving...' : 'Legacy Visited'}
+                        </button>
+                    </div>
 
                     <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-3">
                         <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Next Attention</p>
@@ -771,11 +978,13 @@ const FieldVisits = ({ user, onLogout }) => {
     const [scheduleContext, setScheduleContext] = useState(null);
     const [scheduling, setScheduling] = useState(false);
     const [coverage, setCoverage] = useState(EMPTY_COVERAGE);
+    const [selectedDistrict, setSelectedDistrict] = useState('Dantewada');
     const [selectedGpIds, setSelectedGpIds] = useState([]);
     const [coverageFilters, setCoverageFilters] = useState({ search: '', block: 'all', status: 'all' });
     const [coverageVisitDate, setCoverageVisitDate] = useState(getTodayInputValue());
     const [coverageVisitNotes, setCoverageVisitNotes] = useState('');
     const [markingCoverage, setMarkingCoverage] = useState(false);
+    const [importingCoverage, setImportingCoverage] = useState(false);
     const localNotepadKey = 'field_visit_planning_notepad_v1';
 
     const [form, setForm] = useState({
@@ -799,7 +1008,7 @@ const FieldVisits = ({ user, onLogout }) => {
                 api.getFieldVisitPlanningNotes(),
                 api.getFieldVisitPlanningNoteItems(),
                 api.getEmployees(),
-                api.getFieldVisitCoverage(),
+                api.getFieldVisitCoverage(selectedDistrict),
             ]);
             const rows = rowsRes.status === 'fulfilled' ? (rowsRes.value || []) : [];
             const deptRows = deptRes.status === 'fulfilled' ? (deptRes.value || []) : [];
@@ -815,6 +1024,9 @@ const FieldVisits = ({ user, onLogout }) => {
             setPlanningNoteItems(noteItems?.length ? noteItems : parseNotepadLines(notesData?.note_text || ''));
             setEmployees(employeeRows.filter(emp => emp.is_active !== false));
             setCoverage(coverageData);
+            if (coverageData?.district) {
+                setSelectedDistrict(coverageData.district);
+            }
 
             if (notesRes.status !== 'fulfilled' || itemsRes.status !== 'fulfilled') {
                 const cached = window.localStorage.getItem(localNotepadKey);
@@ -1146,7 +1358,64 @@ const FieldVisits = ({ user, onLogout }) => {
         }
     };
 
-    const handleMarkCoverageVisited = async () => {
+    const handleCoverageDistrictChange = async (district) => {
+        setSelectedDistrict(district);
+        setSelectedGpIds([]);
+        setCoverageFilters({ search: '', block: 'all', status: 'all' });
+        try {
+            const updated = await api.getFieldVisitCoverage(district);
+            setCoverage(updated || EMPTY_COVERAGE);
+            if (updated?.district) setSelectedDistrict(updated.district);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to load district coverage');
+        }
+    };
+
+    const handleCoverageCsvImport = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setImportingCoverage(true);
+        try {
+            const text = await file.text();
+            const rows = parseCsvRows(text);
+            const items = rows.map(row => {
+                const name = cleanText(row.gram_panchayat || row.gp || row.gp_name || row.name);
+                const district = cleanText(row.district || row.district_name || selectedDistrict || 'Dantewada');
+                const block = cleanText(row.block || row.block_name || row.janpad || row.janpad_panchayat || 'Unassigned');
+                const sampleVillages = cleanText(row.sample_villages || row.villages || row.village || '');
+                return {
+                    district,
+                    block,
+                    name,
+                    sample_villages: sampleVillages.replace(/\s*;\s*/g, ', '),
+                    map_x: toNullableNumber(row.map_x || row.x),
+                    map_y: toNullableNumber(row.map_y || row.y),
+                    latitude: toNullableNumber(row.latitude || row.lat),
+                    longitude: toNullableNumber(row.longitude || row.lng || row.lon),
+                };
+            }).filter(item => item.name);
+
+            if (!items.length) {
+                toast.error('CSV must include a gram_panchayat or gp_name column');
+                return;
+            }
+
+            const updated = await api.bulkUpsertGramPanchayats(items);
+            setCoverage(updated || EMPTY_COVERAGE);
+            if (updated?.district) setSelectedDistrict(updated.district);
+            setSelectedGpIds([]);
+            setCoverageFilters({ search: '', block: 'all', status: 'all' });
+            const result = updated?.import_result || {};
+            toast.success(`Imported ${result.created || 0} new and updated ${result.updated || 0} GP rows`);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to import GP CSV');
+        } finally {
+            setImportingCoverage(false);
+        }
+    };
+
+    const handleMarkCoverageVisited = async (visitType = 'exact') => {
         if (!selectedGpIds.length) {
             toast.error('Select at least one Gram Panchayat');
             return;
@@ -1155,11 +1424,15 @@ const FieldVisits = ({ user, onLogout }) => {
         try {
             const updated = await api.markFieldVisitCoverage({
                 gp_ids: selectedGpIds,
-                visited_on: coverageVisitDate || todayDate,
-                notes: coverageVisitNotes,
+                visited_on: visitType === 'legacy' ? null : (coverageVisitDate || todayDate),
+                notes: visitType === 'legacy'
+                    ? (coverageVisitNotes || 'Legacy mark: visited before coverage tracking')
+                    : coverageVisitNotes,
+                visit_type: visitType,
             });
             setCoverage(updated || EMPTY_COVERAGE);
-            toast.success(`${selectedGpIds.length} Gram Panchayat${selectedGpIds.length === 1 ? '' : 's'} marked visited`);
+            if (updated?.district) setSelectedDistrict(updated.district);
+            toast.success(`${selectedGpIds.length} Gram Panchayat${selectedGpIds.length === 1 ? '' : 's'} marked ${visitType === 'legacy' ? 'legacy visited' : 'visited'}`);
             setSelectedGpIds([]);
             setCoverageVisitNotes('');
         } catch (e) {
@@ -1189,6 +1462,8 @@ const FieldVisits = ({ user, onLogout }) => {
 
                 <FieldVisitCoveragePanel
                     coverage={coverage}
+                    selectedDistrict={selectedDistrict}
+                    onDistrictChange={handleCoverageDistrictChange}
                     selectedGpIds={selectedGpIds}
                     setSelectedGpIds={setSelectedGpIds}
                     filters={coverageFilters}
@@ -1198,7 +1473,9 @@ const FieldVisits = ({ user, onLogout }) => {
                     visitNotes={coverageVisitNotes}
                     setVisitNotes={setCoverageVisitNotes}
                     marking={markingCoverage}
+                    importing={importingCoverage}
                     onMarkVisited={handleMarkCoverageVisited}
+                    onImportCsv={handleCoverageCsvImport}
                 />
 
                 <form onSubmit={handleCreateDraft} className="glass-card rounded-3xl p-5 border border-indigo-100 order-3">

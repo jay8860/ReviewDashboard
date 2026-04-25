@@ -200,12 +200,15 @@ def apply_non_destructive_migrations():
             ("planner_event_id", "INTEGER"),
         ],
         "gram_panchayats": [
+            ("district", "VARCHAR DEFAULT 'Dantewada'"),
             ("block", "VARCHAR"),
             ("name", "VARCHAR"),
             ("sample_villages", "TEXT"),
             ("village_count", "INTEGER DEFAULT 0"),
             ("latitude", "REAL"),
             ("longitude", "REAL"),
+            ("map_x", "REAL"),
+            ("map_y", "REAL"),
             ("is_active", "BOOLEAN DEFAULT TRUE"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
@@ -213,6 +216,7 @@ def apply_non_destructive_migrations():
         "field_visit_gp_visits": [
             ("gp_id", "INTEGER"),
             ("visited_on", "DATE"),
+            ("visit_type", "VARCHAR DEFAULT 'exact'"),
             ("notes", "TEXT"),
             ("source", "VARCHAR DEFAULT 'manual'"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
@@ -314,6 +318,100 @@ def apply_non_destructive_migrations():
                     con_name = row[0]
                     conn.execute(text(f'ALTER TABLE employees DROP CONSTRAINT IF EXISTS "{con_name}"'))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_employees_mobile_number ON employees (mobile_number)"))
+
+        # Earlier GP coverage builds constrained (block, name), which blocks
+        # adapting the master to multiple districts. Relax it to
+        # (district, block, name) while preserving IDs used by visit records.
+        if "gram_panchayats" in existing_tables:
+            if is_sqlite:
+                idx_rows = conn.execute(text("PRAGMA index_list('gram_panchayats')")).fetchall()
+                has_old_unique_gp = False
+                for idx_row in idx_rows:
+                    idx_name = idx_row[1]
+                    is_unique = bool(idx_row[2])
+                    if not is_unique:
+                        continue
+                    idx_cols = conn.execute(text(f"PRAGMA index_info('{idx_name}')")).fetchall()
+                    col_names = [c[2] for c in idx_cols]
+                    if col_names == ["block", "name"]:
+                        has_old_unique_gp = True
+                        break
+
+                if has_old_unique_gp:
+                    conn.execute(text("PRAGMA foreign_keys=OFF"))
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS gram_panchayats_new (
+                            id INTEGER PRIMARY KEY,
+                            district VARCHAR NOT NULL DEFAULT 'Dantewada',
+                            block VARCHAR NOT NULL,
+                            name VARCHAR NOT NULL,
+                            sample_villages TEXT,
+                            village_count INTEGER DEFAULT 0,
+                            latitude REAL,
+                            longitude REAL,
+                            map_x REAL,
+                            map_y REAL,
+                            is_active BOOLEAN DEFAULT TRUE,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE (district, block, name)
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO gram_panchayats_new (
+                            id, district, block, name, sample_villages, village_count,
+                            latitude, longitude, map_x, map_y, is_active, created_at, updated_at
+                        )
+                        SELECT
+                            id,
+                            COALESCE(district, 'Dantewada'),
+                            COALESCE(block, 'Unassigned'),
+                            name,
+                            sample_villages,
+                            COALESCE(village_count, 0),
+                            latitude,
+                            longitude,
+                            map_x,
+                            map_y,
+                            COALESCE(is_active, TRUE),
+                            COALESCE(created_at, CURRENT_TIMESTAMP),
+                            COALESCE(updated_at, CURRENT_TIMESTAMP)
+                        FROM gram_panchayats
+                    """))
+                    conn.execute(text("DROP TABLE gram_panchayats"))
+                    conn.execute(text("ALTER TABLE gram_panchayats_new RENAME TO gram_panchayats"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_gram_panchayats_id ON gram_panchayats (id)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_gram_panchayats_district ON gram_panchayats (district)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_gram_panchayats_block ON gram_panchayats (block)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_gram_panchayats_name ON gram_panchayats (name)"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_gram_panchayats_is_active ON gram_panchayats (is_active)"))
+                    conn.execute(text("PRAGMA foreign_keys=ON"))
+                    print("ℹ️  Updated GP master uniqueness to district + block + name.")
+            elif engine.dialect.name == "postgresql":
+                old_constraints = conn.execute(text("""
+                    SELECT c.conname
+                    FROM pg_constraint c
+                    JOIN pg_class t ON c.conrelid = t.oid
+                    WHERE t.relname = 'gram_panchayats'
+                      AND c.contype = 'u'
+                      AND pg_get_constraintdef(c.oid) ILIKE '%(block, name)%'
+                """)).fetchall()
+                for row in old_constraints:
+                    con_name = row[0]
+                    conn.execute(text(f'ALTER TABLE gram_panchayats DROP CONSTRAINT IF EXISTS "{con_name}"'))
+                conn.execute(text("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = 'uq_gram_panchayats_district_block_name'
+                        ) THEN
+                            ALTER TABLE gram_panchayats
+                            ADD CONSTRAINT uq_gram_panchayats_district_block_name
+                            UNIQUE (district, block, name);
+                        END IF;
+                    END $$;
+                """))
 
 
 def get_db():

@@ -379,16 +379,19 @@ class FieldVisitPlanningNote(Base):
 class GramPanchayat(Base):
     __tablename__ = "gram_panchayats"
     __table_args__ = (
-        UniqueConstraint("block", "name", name="uq_gram_panchayats_block_name"),
+        UniqueConstraint("district", "block", "name", name="uq_gram_panchayats_district_block_name"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    district = Column(String, nullable=False, default="Dantewada", index=True)
     block = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
     sample_villages = Column(Text, nullable=True)
     village_count = Column(Integer, default=0)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    map_x = Column(Float, nullable=True)
+    map_y = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -402,6 +405,7 @@ class FieldVisitGPVisit(Base):
     id = Column(Integer, primary_key=True, index=True)
     gp_id = Column(Integer, ForeignKey("gram_panchayats.id"), nullable=False, index=True)
     visited_on = Column(Date, nullable=False, index=True)
+    visit_type = Column(String, default="exact")       # exact | legacy
     notes = Column(Text, nullable=True)
     source = Column(String, default="manual")
     created_at = Column(DateTime, server_default=func.now())
