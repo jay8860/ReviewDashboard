@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Building2, Plus, Trash2, Edit2, ArrowRight, X,
     LayoutGrid,
-    List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus, Calendar
+    List, ArrowUp, ArrowDown, FolderPlus, CalendarPlus, Calendar, Briefcase, Ban, RotateCw
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
@@ -82,6 +82,13 @@ const reviewTickerMeta = (dept) => {
         recent: Number(days) <= RECENT_REVIEW_DAYS,
         scheduled: false,
     };
+};
+
+const formatMeetingActionLabel = (meeting) => {
+    if (!meeting?.scheduled_date) return null;
+    const datePart = formatReviewDateLabel(meeting.scheduled_date);
+    const timePart = String(meeting.scheduled_time || '').trim();
+    return [datePart, timePart].filter(Boolean).join(' · ');
 };
 
 const WAIcon = () => (
@@ -310,7 +317,7 @@ const DeptModal = ({ isOpen, onClose, onSave, initial = null, categoryOptions = 
     );
 };
 
-const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, onClose, onConfirm }) => {
+const QuickScheduleModal = ({ department, agenda = [], employees = [], meeting = null, isOpen, onClose, onConfirm, onCancelMeeting = null }) => {
     const today = new Date().toISOString().split('T')[0];
     const [form, setForm] = useState({
         scheduled_date: today,
@@ -324,14 +331,14 @@ const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, o
     useEffect(() => {
         if (!isOpen) return;
         setForm({
-            scheduled_date: today,
-            scheduled_time: '10:00',
-            venue: '',
-            attendees: '',
-            officer_phone: '',
+            scheduled_date: meeting?.scheduled_date || today,
+            scheduled_time: meeting?.scheduled_time || '10:00',
+            venue: meeting?.venue || '',
+            attendees: meeting?.attendees || '',
+            officer_phone: meeting?.officer_phone || '',
         });
-        setOfficerSearch('');
-    }, [isOpen, department?.id, today]);
+        setOfficerSearch(meeting ? '' : '');
+    }, [isOpen, department?.id, meeting?.id, meeting?.scheduled_date, meeting?.scheduled_time, meeting?.venue, meeting?.attendees, meeting?.officer_phone, today]);
 
     const openAgenda = agenda.filter(item => item.status === 'Open');
     const matchedEmployees = (() => {
@@ -349,6 +356,8 @@ const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, o
         agendaSnapshot: openAgenda,
     });
     const waLink = buildWhatsAppSendUrl(form.officer_phone, waMsg);
+    const isReschedule = Boolean(meeting?.id);
+    const canCancel = Boolean(isReschedule && (meeting?.status || '').toLowerCase() === 'scheduled' && onCancelMeeting);
 
     return (
         <AnimatePresence>
@@ -365,7 +374,7 @@ const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, o
                                 <Calendar size={16} className="text-white" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-black dark:text-white">Schedule Meeting</h2>
+                                <h2 className="text-lg font-black dark:text-white">{isReschedule ? 'Reschedule Meeting' : 'Schedule Meeting'}</h2>
                                 <p className="text-xs text-slate-400">{department.name} — Department-wide meeting</p>
                             </div>
                         </div>
@@ -459,19 +468,29 @@ const QuickScheduleModal = ({ department, agenda = [], employees = [], isOpen, o
 
                         <div className="rounded-2xl bg-teal-50 dark:bg-teal-500/10 border border-teal-100 dark:border-teal-500/20 p-3">
                             <p className="text-xs text-teal-700 dark:text-teal-300 font-semibold">
-                                A meeting Action Table will be created automatically. Open the meeting row later to enter live action points.
+                                {isReschedule
+                                    ? 'This updates the same meeting record, so the existing workspace, notes, documents, and action table stay preserved.'
+                                    : 'A meeting Action Table will be created automatically. Open the meeting row later to enter live action points.'}
                             </p>
                         </div>
 
                         <div className="flex gap-3 pt-2">
                             <button onClick={onClose} className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">Cancel</button>
+                            {canCancel && (
+                                <button
+                                    onClick={() => onCancelMeeting?.(meeting)}
+                                    className="px-4 py-3 rounded-2xl bg-rose-100 text-rose-700 font-bold hover:bg-rose-200 transition-colors flex items-center gap-2"
+                                >
+                                    <Ban size={15} /> Cancel Meeting
+                                </button>
+                            )}
                             <a href={waLink} target="_blank" rel="noreferrer"
                                 className="px-4 py-3 rounded-2xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 transition-colors flex items-center gap-2">
                                 <WAIcon /> WA
                             </a>
                             <button onClick={() => form.scheduled_date && onConfirm(form)}
                                 className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors">
-                                Schedule
+                                {isReschedule ? 'Save Changes' : 'Schedule'}
                             </button>
                         </div>
                     </div>
@@ -494,6 +513,9 @@ const DepartmentCard = ({
     onMove,
     onCategoryChange,
     onQuickSchedule,
+    onOpenMeetingWorkspace,
+    onRescheduleMeeting,
+    onCancelMeeting,
     dragEnabled,
     onDepartmentDragStart,
     onDepartmentDragEnd,
@@ -504,6 +526,10 @@ const DepartmentCard = ({
         : reviewTicker.scheduled
             ? 'text-indigo-600'
             : 'text-violet-600';
+    const nextMeeting = dept?.meeting_summary?.next_meeting || null;
+    const workspaceTarget = dept?.meeting_summary?.workspace_target || null;
+    const workspaceLabel = formatMeetingActionLabel(workspaceTarget);
+    const nextMeetingLabel = formatMeetingActionLabel(nextMeeting);
 
     return (
         <motion.div
@@ -562,6 +588,11 @@ const DepartmentCard = ({
 
             <h3 className="font-black text-[1.1rem] text-slate-800 dark:text-white mb-1 leading-tight">{dept.name}</h3>
             <p className={`text-[11px] font-semibold mb-2.5 ${reviewTickerColor}`}>{reviewTicker.label}</p>
+            {workspaceLabel && (
+                <p className="text-[11px] text-slate-500 mb-2.5">
+                    {nextMeeting ? `Next meeting: ${nextMeetingLabel}` : `Latest workspace: ${workspaceLabel}`}
+                </p>
+            )}
             {editMode && dept.head_name && (
                 <p className="text-xs text-slate-400 mb-2.5">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>
             )}
@@ -588,6 +619,36 @@ const DepartmentCard = ({
                     className="w-full inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-violet-100 text-violet-700 font-bold text-xs hover:bg-violet-200 transition-colors"
                 >
                     <CalendarPlus size={13} /> Schedule
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenMeetingWorkspace(dept);
+                    }}
+                    disabled={!workspaceTarget}
+                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-emerald-100 text-emerald-700 font-bold text-xs hover:bg-emerald-200 transition-colors disabled:opacity-40 disabled:hover:bg-emerald-100"
+                >
+                    <Briefcase size={13} /> Workspace
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRescheduleMeeting(dept);
+                    }}
+                    disabled={!workspaceTarget}
+                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-amber-100 text-amber-700 font-bold text-xs hover:bg-amber-200 transition-colors disabled:opacity-40 disabled:hover:bg-amber-100"
+                >
+                    <RotateCw size={13} /> Reschedule
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onCancelMeeting(dept);
+                    }}
+                    disabled={!nextMeeting}
+                    className="w-full inline-flex items-center justify-center gap-1 px-2 py-2 rounded-xl bg-rose-100 text-rose-700 font-bold text-xs hover:bg-rose-200 transition-colors disabled:opacity-40 disabled:hover:bg-rose-100"
+                >
+                    <Ban size={13} /> Cancel
                 </button>
                 <button
                     onClick={(e) => {
@@ -619,6 +680,9 @@ const DepartmentListRow = ({
     onMove,
     onCategoryChange,
     onQuickSchedule,
+    onOpenMeetingWorkspace,
+    onRescheduleMeeting,
+    onCancelMeeting,
     dragEnabled,
     onDepartmentDragStart,
     onDepartmentDragEnd,
@@ -629,6 +693,10 @@ const DepartmentListRow = ({
         : reviewTicker.scheduled
             ? 'text-indigo-600'
             : 'text-violet-600';
+    const nextMeeting = dept?.meeting_summary?.next_meeting || null;
+    const workspaceTarget = dept?.meeting_summary?.workspace_target || null;
+    const workspaceLabel = formatMeetingActionLabel(workspaceTarget);
+    const nextMeetingLabel = formatMeetingActionLabel(nextMeeting);
 
     return (
         <div
@@ -655,6 +723,11 @@ const DepartmentListRow = ({
                     {editMode && <span className="text-[11px] text-slate-400">{dept.program_count} programs</span>}
                 </div>
                 <p className={`text-[11px] font-semibold mt-1 ${reviewTickerColor}`}>{reviewTicker.label}</p>
+                {workspaceLabel && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                        {nextMeeting ? `Next meeting: ${nextMeetingLabel}` : `Latest workspace: ${workspaceLabel}`}
+                    </p>
+                )}
                 {editMode && dept.head_name && <p className="text-xs text-slate-500 mt-1 truncate">{dept.head_name}{dept.head_designation ? ` · ${dept.head_designation}` : ''}</p>}
             </div>
 
@@ -705,6 +778,36 @@ const DepartmentListRow = ({
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
+                        onOpenMeetingWorkspace(dept);
+                    }}
+                    disabled={!workspaceTarget}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-bold hover:bg-emerald-200 transition-colors inline-flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-emerald-100"
+                >
+                    <Briefcase size={12} /> Workspace
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRescheduleMeeting(dept);
+                    }}
+                    disabled={!workspaceTarget}
+                    className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-bold hover:bg-amber-200 transition-colors inline-flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-amber-100"
+                >
+                    <RotateCw size={12} /> Reschedule
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onCancelMeeting(dept);
+                    }}
+                    disabled={!nextMeeting}
+                    className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold hover:bg-rose-200 transition-colors inline-flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-rose-100"
+                >
+                    <Ban size={12} /> Cancel
+                </button>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
                         onOpen(dept.id);
                     }}
                     className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-1"
@@ -730,6 +833,7 @@ const Departments = ({ user, onLogout }) => {
     const [busy, setBusy] = useState(false);
     const [quickDept, setQuickDept] = useState(null);
     const [quickMeetingOpen, setQuickMeetingOpen] = useState(false);
+    const [quickMeetingTarget, setQuickMeetingTarget] = useState(null);
     const [quickAgenda, setQuickAgenda] = useState([]);
     const [draggingDeptId, setDraggingDeptId] = useState(null);
     const [dragOverCategory, setDragOverCategory] = useState(null);
@@ -965,22 +1069,82 @@ const Departments = ({ user, onLogout }) => {
         toast.info(`Category "${nextName}" created. Assign any department to it using the Category dropdown on a card.`);
     };
 
+    const getWorkspaceMeeting = (dept) => dept?.meeting_summary?.workspace_target || null;
+    const getNextScheduledMeeting = (dept) => dept?.meeting_summary?.next_meeting || null;
+
+    const resetQuickMeetingState = () => {
+        setQuickMeetingOpen(false);
+        setQuickDept(null);
+        setQuickMeetingTarget(null);
+        setQuickAgenda([]);
+    };
+
+    const openQuickScheduleForDepartment = (dept) => {
+        setQuickDept(dept);
+        setQuickMeetingTarget(null);
+        setQuickMeetingOpen(true);
+    };
+
+    const handleOpenMeetingWorkspace = (dept) => {
+        const meeting = getWorkspaceMeeting(dept);
+        if (!meeting?.id) {
+            toast.info('No meeting workspace available for this department yet');
+            return;
+        }
+        navigate(`/departments/${dept.id}/meetings/${meeting.id}`);
+    };
+
+    const handleRescheduleMeeting = (dept) => {
+        const meeting = getWorkspaceMeeting(dept);
+        if (!meeting?.id) {
+            toast.info('No meeting available to reschedule yet');
+            return;
+        }
+        setQuickDept(dept);
+        setQuickMeetingTarget(meeting);
+        setQuickMeetingOpen(true);
+    };
+
+    const handleCancelMeeting = async (deptOrMeeting) => {
+        const dept = deptOrMeeting?.meeting_summary ? deptOrMeeting : departments.find((row) => row.id === deptOrMeeting?.department_id);
+        const meeting = deptOrMeeting?.meeting_summary ? getNextScheduledMeeting(deptOrMeeting) : deptOrMeeting;
+        if (!dept?.id || !meeting?.id) {
+            toast.info('No scheduled meeting available to cancel');
+            return;
+        }
+        if (!window.confirm(`Cancel the scheduled meeting for ${dept.name}?`)) return;
+        try {
+            await api.updateMeeting(dept.id, meeting.id, { status: 'Cancelled' });
+            toast.success('Meeting cancelled');
+            if (quickMeetingTarget?.id === meeting.id) resetQuickMeetingState();
+            await load();
+        } catch {
+            toast.error('Failed to cancel meeting');
+        }
+    };
+
     const handleQuickSchedule = async (form) => {
         if (!quickDept) return;
         try {
-            await api.createMeeting(quickDept.id, {
+            const payload = {
                 scheduled_date: form.scheduled_date,
                 scheduled_time: form.scheduled_time || null,
                 venue: form.venue || null,
                 attendees: form.attendees || null,
                 officer_phone: form.officer_phone || null,
-            });
-            toast.success('Meeting scheduled');
-            setQuickMeetingOpen(false);
-            setQuickDept(null);
-            setQuickAgenda([]);
+                status: 'Scheduled',
+            };
+            if (quickMeetingTarget?.id) {
+                await api.updateMeeting(quickDept.id, quickMeetingTarget.id, payload);
+                toast.success('Meeting rescheduled');
+            } else {
+                await api.createMeeting(quickDept.id, payload);
+                toast.success('Meeting scheduled');
+            }
+            resetQuickMeetingState();
+            await load();
         } catch {
-            toast.error('Failed to schedule meeting');
+            toast.error(quickMeetingTarget?.id ? 'Failed to reschedule meeting' : 'Failed to schedule meeting');
         }
     };
 
@@ -1117,7 +1281,10 @@ const Departments = ({ user, onLogout }) => {
                                             onOpen={(id) => navigate(`/departments/${id}`)}
                                             onMove={handleMoveDepartment}
                                             onCategoryChange={handleDepartmentCategoryChange}
-                                            onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
+                                            onQuickSchedule={openQuickScheduleForDepartment}
+                                            onOpenMeetingWorkspace={handleOpenMeetingWorkspace}
+                                            onRescheduleMeeting={handleRescheduleMeeting}
+                                            onCancelMeeting={handleCancelMeeting}
                                             dragEnabled={editMode && !busy}
                                             onDepartmentDragStart={handleDepartmentDragStart}
                                             onDepartmentDragEnd={handleDepartmentDragEnd}
@@ -1140,7 +1307,10 @@ const Departments = ({ user, onLogout }) => {
                                             onOpen={(id) => navigate(`/departments/${id}`)}
                                             onMove={handleMoveDepartment}
                                             onCategoryChange={handleDepartmentCategoryChange}
-                                            onQuickSchedule={(dept) => { setQuickDept(dept); setQuickMeetingOpen(true); }}
+                                            onQuickSchedule={openQuickScheduleForDepartment}
+                                            onOpenMeetingWorkspace={handleOpenMeetingWorkspace}
+                                            onRescheduleMeeting={handleRescheduleMeeting}
+                                            onCancelMeeting={handleCancelMeeting}
                                             dragEnabled={editMode && !busy}
                                             onDepartmentDragStart={handleDepartmentDragStart}
                                             onDepartmentDragEnd={handleDepartmentDragEnd}
@@ -1164,9 +1334,11 @@ const Departments = ({ user, onLogout }) => {
                 department={quickDept}
                 agenda={quickAgenda}
                 employees={employees}
+                meeting={quickMeetingTarget}
                 isOpen={quickMeetingOpen}
-                onClose={() => { setQuickMeetingOpen(false); setQuickDept(null); setQuickAgenda([]); }}
+                onClose={resetQuickMeetingState}
                 onConfirm={handleQuickSchedule}
+                onCancelMeeting={handleCancelMeeting}
             />
         </Layout>
     );

@@ -159,6 +159,28 @@ def _normalize_meeting_status(value: Optional[str]) -> str:
     return "Scheduled"
 
 
+def _meeting_sort_key(meeting: models.DepartmentMeeting) -> tuple:
+    meeting_time = _normalize_optional_meeting_time(meeting.scheduled_time) or "00:00"
+    return (meeting.scheduled_date, meeting_time, meeting.id or 0)
+
+
+def _serialize_meeting_summary(meeting: Optional[models.DepartmentMeeting]) -> Optional[dict]:
+    if not meeting:
+        return None
+    return {
+        "id": meeting.id,
+        "department_id": meeting.department_id,
+        "scheduled_date": str(meeting.scheduled_date) if meeting.scheduled_date else None,
+        "scheduled_time": meeting.scheduled_time,
+        "venue": meeting.venue,
+        "attendees": meeting.attendees,
+        "status": meeting.status,
+        "officer_phone": meeting.officer_phone,
+        "created_at": str(meeting.created_at) if meeting.created_at else None,
+        "updated_at": str(meeting.updated_at) if meeting.updated_at else None,
+    }
+
+
 def _planner_status_from_meeting_status(status: Optional[str]) -> str:
     val = (status or "").strip().lower()
     if val in {"cancelled", "canceled"}:
@@ -521,6 +543,7 @@ def get_departments(db: Session = Depends(get_db)):
         # Count both completed review sessions and department meetings marked done.
         all_completed = []
         upcoming = []
+        scheduled_meetings = []
         for prog in dept.review_programs:
             if prog.is_active:
                 for s in prog.review_sessions:
@@ -536,6 +559,7 @@ def get_departments(db: Session = Depends(get_db)):
                 all_completed.append(meeting.scheduled_date)
             if status == "scheduled" and meeting.scheduled_date and meeting.scheduled_date >= today:
                 upcoming.append(meeting.scheduled_date)
+                scheduled_meetings.append(meeting)
 
         if all_completed:
             last_date = max(all_completed)
@@ -543,6 +567,10 @@ def get_departments(db: Session = Depends(get_db)):
         else:
             health["days_since_last_review"] = None
         health["next_scheduled"] = str(min(upcoming)) if upcoming else None
+
+        latest_meeting = max(dept.meetings, key=_meeting_sort_key) if dept.meetings else None
+        next_meeting = min(scheduled_meetings, key=_meeting_sort_key) if scheduled_meetings else None
+        workspace_target = next_meeting or latest_meeting
         # Count open tasks
         open_tasks = db.query(func.count(models.Task.id)).filter(
             models.Task.department_id == dept.id,
@@ -564,6 +592,13 @@ def get_departments(db: Session = Depends(get_db)):
             "is_active": dept.is_active,
             "created_at": dept.created_at,
             "review_health": health,
+            "meeting_summary": {
+                "scheduled_count": len(scheduled_meetings),
+                "total_count": len(dept.meetings),
+                "next_meeting": _serialize_meeting_summary(next_meeting),
+                "latest_meeting": _serialize_meeting_summary(latest_meeting),
+                "workspace_target": _serialize_meeting_summary(workspace_target),
+            },
             "open_tasks": open_tasks,
             "program_count": len([p for p in dept.review_programs if p.is_active])
         })
