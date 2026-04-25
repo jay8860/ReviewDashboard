@@ -30,6 +30,143 @@ GENERIC_ROUTE_WORDS = {
     "priority", "high", "worst", "item", "project", "projects", "general",
 }
 
+DEFAULT_GP_MASTER = [
+    {"block": "Dantewada", "name": "Bade Bacheli", "villages": "Bade Bacheli"},
+    {"block": "Dantewada", "name": "Badekameli", "villages": "Badekameli"},
+    {"block": "Dantewada", "name": "Balpet", "villages": "Balpet, Bhairamband"},
+    {"block": "Dantewada", "name": "Balud", "villages": "Balud"},
+    {"block": "Dantewada", "name": "Bhaisi", "villages": "Porokamel"},
+    {"block": "Dantewada", "name": "Bhansi", "villages": "Bhansi"},
+    {"block": "Dantewada", "name": "Bhogam", "villages": "Bhogam, Purantarai"},
+    {"block": "Dantewada", "name": "Chandenar", "villages": "Chandenar"},
+    {"block": "Dantewada", "name": "Chitalank", "villages": "Chitalank"},
+    {"block": "Dantewada", "name": "Chitaloor", "villages": "Chitaloor"},
+    {"block": "Dantewada", "name": "Degalras", "villages": "Markanar"},
+    {"block": "Dantewada", "name": "Dhurli", "villages": "Dhurli"},
+    {"block": "Dantewada", "name": "Dugeli", "villages": "Dugeli"},
+    {"block": "Dantewada", "name": "Fulnar", "villages": "Fulnar, Muskel"},
+    {"block": "Dantewada", "name": "Gadapal", "villages": "Gadapal"},
+    {"block": "Dantewada", "name": "Gamawada", "villages": "Gamawada"},
+    {"block": "Dantewada", "name": "Ganjenar", "villages": "Ganjenar"},
+    {"block": "Dantewada", "name": "Jaram", "villages": "Jaram, Mendoli"},
+    {"block": "Dantewada", "name": "Kamaloor", "villages": "Basanpur, Kamaloor, Kundeli"},
+    {"block": "Dantewada", "name": "Kawadgaon", "villages": "Dadpal, Dumam, Kawadgaon"},
+    {"block": "Dantewada", "name": "Kawalnar", "villages": "Kawalnar"},
+    {"block": "Dantewada", "name": "Keshpur", "villages": "Keshpur, Midkulnar"},
+    {"block": "Dantewada", "name": "Kumharras", "villages": "Karnjener, Kumharras"},
+    {"block": "Dantewada", "name": "Mangnar", "villages": "Kuper, Mangnar"},
+    {"block": "Dantewada", "name": "Masenar", "villages": "Masenar"},
+    {"block": "Dantewada", "name": "Matenar", "villages": "Matenar, Murkee"},
+    {"block": "Dantewada", "name": "Metapal", "villages": "Metapal, Metapal-2"},
+    {"block": "Dantewada", "name": "Molasnar", "villages": "Kuhchepal, Molasnar, Udela"},
+    {"block": "Dantewada", "name": "Nareli", "villages": "Behnar"},
+    {"block": "Dantewada", "name": "Nerli", "villages": "Nerli"},
+    {"block": "Dantewada", "name": "Netapur", "villages": "Badegodre, Chhotegodre, Netapur"},
+    {"block": "Dantewada", "name": "Padhapur", "villages": "Bainpal, Padhapur, Pinabacheli"},
+    {"block": "Dantewada", "name": "Pandewar", "villages": "Gadapal, Jhirka, Pandewar"},
+    {"block": "Dantewada", "name": "Pondum", "villages": "Pondum"},
+    {"block": "Dantewada", "name": "Pondum-2", "villages": "Pondum-2"},
+    {"block": "Dantewada", "name": "Teknar", "villages": "Teknar"},
+    {"block": "Dantewada", "name": "Toylanka", "villages": "Toylanka"},
+    {"block": "Dantewada", "name": "Tudparas", "villages": "Degalras, Tudparas"},
+    {"block": "Geedam", "name": "Aalnar", "villages": "Alnar, Kurenar, Masodi"},
+    {"block": "Geedam", "name": "Badekarli", "villages": "Badekarli"},
+    {"block": "Geedam", "name": "Badepaneda", "villages": "Badepaneda"},
+    {"block": "Geedam", "name": "Badesurokhi", "villages": "Badesurokhi, Siyanar"},
+    {"block": "Geedam", "name": "Badetumnar", "villages": "Badetumnar"},
+    {"block": "Geedam", "name": "Bangapaal", "villages": "Muhander"},
+    {"block": "Geedam", "name": "Bangapal", "villages": "Bangapal"},
+    {"block": "Geedam", "name": "Bhatpal", "villages": "Bhatpal, Neurnar, Udenar"},
+    {"block": "Geedam", "name": "Binjam", "villages": "Binjam"},
+    {"block": "Geedam", "name": "Bodali", "villages": "Farasmadur, Fundari, Paraspal"},
+    {"block": "Geedam", "name": "Cherpal", "villages": "Cherpal, Chhote Karka, Padmeta"},
+    {"block": "Geedam", "name": "Chhindnar", "villages": "Chhindnar"},
+    {"block": "Geedam", "name": "Chotetumnar", "villages": "Chhotetumar, Kandakarka"},
+    {"block": "Geedam", "name": "Faraspal", "villages": "Faraspal"},
+    {"block": "Geedam", "name": "Ghotpal", "villages": "Ghotpal"},
+    {"block": "Geedam", "name": "Gumalnar", "villages": "Gumalnar, Nelgoda"},
+    {"block": "Geedam", "name": "Gumda", "villages": "Gumda"},
+    {"block": "Geedam", "name": "Gutoli", "villages": "Gutoli, Tarlapal"},
+    {"block": "Geedam", "name": "Haram", "villages": "Haram"},
+    {"block": "Geedam", "name": "Haurnar", "villages": "Haurnar"},
+    {"block": "Geedam", "name": "Hidhpal", "villages": "Balengpal"},
+    {"block": "Geedam", "name": "Hidpal", "villages": "Bhalunala, Hidpal, Norli, Tondama"},
+    {"block": "Geedam", "name": "Hiranar", "villages": "Hiranar"},
+    {"block": "Geedam", "name": "Hitameta", "villages": "Hitameta"},
+    {"block": "Geedam", "name": "Javanga", "villages": "Jaunga"},
+    {"block": "Geedam", "name": "Jhodiyawadam", "villages": "Jhodiyawadam, Kutulnar"},
+    {"block": "Geedam", "name": "Jodatarai", "villages": "Harla, Jodatarai"},
+    {"block": "Geedam", "name": "Karli 2", "villages": "Karli 2"},
+    {"block": "Geedam", "name": "Karli-1", "villages": "Karli-1"},
+    {"block": "Geedam", "name": "Kasoli", "villages": "Budhpadar, Japodi, Kasoli"},
+    {"block": "Geedam", "name": "Katulnar", "villages": "Katulnar, Madhpal"},
+    {"block": "Geedam", "name": "Kaurgaon", "villages": "Kaurgaon"},
+    {"block": "Geedam", "name": "Korkoti", "villages": "Korkoti, Reka"},
+    {"block": "Geedam", "name": "Korlapal", "villages": "Korlapal, Nagphani"},
+    {"block": "Geedam", "name": "Madase", "villages": "Madase"},
+    {"block": "Geedam", "name": "Mofalnar", "villages": "Mofalnar"},
+    {"block": "Geedam", "name": "Muchnar", "villages": "Malemunda, Muchnar"},
+    {"block": "Geedam", "name": "Mustalnar", "villages": "Mustalnar, Salnar"},
+    {"block": "Geedam", "name": "Nagul", "villages": "Hiroli, Nagul"},
+    {"block": "Geedam", "name": "Pahurnar", "villages": "Badekarka, Pahurnar"},
+    {"block": "Geedam", "name": "Ronje", "villages": "Ronje"},
+    {"block": "Geedam", "name": "Samlur", "villages": "Samlur"},
+    {"block": "Geedam", "name": "Tumirgunda", "villages": "Tumirgunda"},
+    {"block": "Geedam", "name": "Upet", "villages": "Purantarai, Upet"},
+    {"block": "Katekalyan", "name": "Badebedma", "villages": "Bade Bedma"},
+    {"block": "Katekalyan", "name": "Badegadam", "villages": "Badegadam, Kidariras, Pratapgir"},
+    {"block": "Katekalyan", "name": "Badegudra", "villages": "Badegudra"},
+    {"block": "Katekalyan", "name": "Badelekhapal", "villages": "Badelekhapal"},
+    {"block": "Katekalyan", "name": "Bengalur", "villages": "Bengalur"},
+    {"block": "Katekalyan", "name": "Bhusaras", "villages": "Bhusaras"},
+    {"block": "Katekalyan", "name": "Chhotegudra", "villages": "Atepal, Chhotegudra, Jihakodata"},
+    {"block": "Katekalyan", "name": "Chikpal", "villages": "Chikpal, Munaga"},
+    {"block": "Katekalyan", "name": "Darva", "villages": "Chhote Gatam"},
+    {"block": "Katekalyan", "name": "Dhanikarka", "villages": "Burdikarka, Dhanikarka, Duvalikarka"},
+    {"block": "Katekalyan", "name": "Edpal", "villages": "Dodpal, Dudhiras, Edpal"},
+    {"block": "Katekalyan", "name": "Gatam", "villages": "Gatam, Mathadi"},
+    {"block": "Katekalyan", "name": "Gudse", "villages": "Gudase"},
+    {"block": "Katekalyan", "name": "Jangampal", "villages": "Chhote Lakhapaal, Jangampal, Tongpal"},
+    {"block": "Katekalyan", "name": "Katekalyan", "villages": "Katekalyan, Lakharas"},
+    {"block": "Katekalyan", "name": "Koriras", "villages": "Chhote Gatam, Koriras"},
+    {"block": "Katekalyan", "name": "Maharakarka", "villages": "Chhotehadma Munda, Mahrakarka"},
+    {"block": "Katekalyan", "name": "Marjum", "villages": "Marjum"},
+    {"block": "Katekalyan", "name": "Mokhpal", "villages": "Mokhpal"},
+    {"block": "Katekalyan", "name": "Parcheli", "villages": "Nadenar, Parcheli"},
+    {"block": "Katekalyan", "name": "Surnar", "villages": "Surnar"},
+    {"block": "Katekalyan", "name": "Tetam", "villages": "Kodripal, Nayanar, Tetam"},
+    {"block": "Katekalyan", "name": "Tumakpal", "villages": "Tumakpal"},
+    {"block": "Kuakonda", "name": "Aranpur", "villages": "Acheli, Aranpur, Mendpal"},
+    {"block": "Kuakonda", "name": "Burgum", "villages": "Burgum, Pujaripal"},
+    {"block": "Kuakonda", "name": "Gadhmiri", "villages": "Gadhmiri"},
+    {"block": "Kuakonda", "name": "Garhmiri", "villages": "Reganar"},
+    {"block": "Kuakonda", "name": "Gongpal", "villages": "Bade Hadhmamunda, Gongpal"},
+    {"block": "Kuakonda", "name": "Gumiyapal", "villages": "Aalnar, Gumiyapal"},
+    {"block": "Kuakonda", "name": "Hiroli", "villages": "Hiroli, Pirnar"},
+    {"block": "Kuakonda", "name": "Hitawar", "villages": "Hitawar"},
+    {"block": "Kuakonda", "name": "Jabeli", "villages": "Jabeli"},
+    {"block": "Kuakonda", "name": "Kadampal", "villages": "Kadampal"},
+    {"block": "Kuakonda", "name": "Kalepal", "villages": "Cholnar, Kalepal"},
+    {"block": "Kuakonda", "name": "Kodenar", "villages": "Kodenar"},
+    {"block": "Kuakonda", "name": "Kuakonda", "villages": "Halbaras, Kuakonda"},
+    {"block": "Kuakonda", "name": "Kutrem", "villages": "Kutrem, Pedka, Taneli"},
+    {"block": "Kuakonda", "name": "Madadi", "villages": "Madadi, Perpa"},
+    {"block": "Kuakonda", "name": "Mahrahaunraar", "villages": "Doriras, Lendra, Mahrahaurnar, Penta"},
+    {"block": "Kuakonda", "name": "Mailawada", "villages": "Mailawada"},
+    {"block": "Kuakonda", "name": "Nahadi", "villages": "Kakdi, Muler, Nahadi"},
+    {"block": "Kuakonda", "name": "Nakulnar", "villages": "Nakulnar"},
+    {"block": "Kuakonda", "name": "Neelavaya", "villages": "Arbe"},
+    {"block": "Kuakonda", "name": "Nilawaya", "villages": "Nilawaya"},
+    {"block": "Kuakonda", "name": "Palnar", "villages": "Palnar"},
+    {"block": "Kuakonda", "name": "Phulpad", "villages": "Pulpad"},
+    {"block": "Kuakonda", "name": "Potli", "villages": "Potli"},
+    {"block": "Kuakonda", "name": "Rewali", "villages": "Barrem, Rewali"},
+    {"block": "Kuakonda", "name": "Samalwar", "villages": "Madkamiras, Samalwar"},
+    {"block": "Kuakonda", "name": "Sameli", "villages": "Madenda, Sameli"},
+    {"block": "Kuakonda", "name": "Shyamgiri", "villages": "Khutepal, Samgiri"},
+    {"block": "Kuakonda", "name": "Tikanpal", "villages": "Tikanpal"},
+]
+
 
 def _normalize_text(value: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
@@ -62,6 +199,145 @@ def _serialize_planning_note(row: models.FieldVisitPlanningNote) -> dict:
         "home_base": row.home_base or "Collectorate, Dantewada",
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+    }
+
+
+def _split_sample_villages(value: Optional[str]) -> List[str]:
+    return [_normalize_text(item) for item in (value or "").split(",") if _normalize_text(item)]
+
+
+def _ensure_default_gp_master(db: Session) -> None:
+    has_any = db.query(models.GramPanchayat.id).filter(
+        models.GramPanchayat.is_active == True
+    ).first()
+    if has_any:
+        return
+
+    for item in DEFAULT_GP_MASTER:
+        villages = _split_sample_villages(item.get("villages"))
+        db.add(models.GramPanchayat(
+            block=_normalize_text(item.get("block")) or "Unassigned",
+            name=_normalize_text(item.get("name")),
+            sample_villages=", ".join(villages),
+            village_count=len(villages),
+            is_active=True,
+        ))
+    db.commit()
+
+
+def _gp_status(last_visit: Optional[date]) -> str:
+    if not last_visit:
+        return "never"
+    days = (date.today() - last_visit).days
+    if days <= 30:
+        return "recent"
+    if days <= 90:
+        return "visited"
+    return "stale"
+
+
+def _status_label(status: str) -> str:
+    return {
+        "recent": "Visited in last 30 days",
+        "visited": "Visited in last 90 days",
+        "stale": "Not visited in 90+ days",
+        "never": "Never visited",
+    }.get(status, "Unknown")
+
+
+def _build_coverage_payload(db: Session) -> dict:
+    _ensure_default_gp_master(db)
+    gp_rows = db.query(models.GramPanchayat).filter(
+        models.GramPanchayat.is_active == True
+    ).order_by(
+        models.GramPanchayat.block.asc(),
+        models.GramPanchayat.name.asc(),
+    ).all()
+
+    gp_ids = [row.id for row in gp_rows]
+    stats = {}
+    if gp_ids:
+        stat_rows = db.query(
+            models.FieldVisitGPVisit.gp_id,
+            func.count(models.FieldVisitGPVisit.id),
+            func.max(models.FieldVisitGPVisit.visited_on),
+        ).filter(
+            models.FieldVisitGPVisit.gp_id.in_(gp_ids)
+        ).group_by(
+            models.FieldVisitGPVisit.gp_id
+        ).all()
+        stats = {
+            gp_id: {"visit_count": int(count or 0), "last_visit_date": last_visit}
+            for gp_id, count, last_visit in stat_rows
+        }
+
+    items = []
+    block_summary = defaultdict(lambda: {
+        "block": "",
+        "total": 0,
+        "visited": 0,
+        "never": 0,
+        "recent": 0,
+        "stale": 0,
+        "coverage_pct": 0,
+    })
+
+    for row in gp_rows:
+        row_stats = stats.get(row.id, {})
+        visit_count = int(row_stats.get("visit_count") or 0)
+        last_visit = row_stats.get("last_visit_date")
+        status = _gp_status(last_visit)
+        days_since = (date.today() - last_visit).days if last_visit else None
+        block = row.block or "Unassigned"
+        summary = block_summary[block]
+        summary["block"] = block
+        summary["total"] += 1
+        if visit_count:
+            summary["visited"] += 1
+        else:
+            summary["never"] += 1
+        if status == "recent":
+            summary["recent"] += 1
+        if status == "stale":
+            summary["stale"] += 1
+
+        items.append({
+            "id": row.id,
+            "block": block,
+            "name": row.name,
+            "sample_villages": row.sample_villages or "",
+            "village_count": row.village_count or 0,
+            "latitude": row.latitude,
+            "longitude": row.longitude,
+            "visit_count": visit_count,
+            "last_visit_date": str(last_visit) if last_visit else None,
+            "days_since_last_visit": days_since,
+            "status": status,
+            "status_label": _status_label(status),
+        })
+
+    for summary in block_summary.values():
+        total = summary["total"] or 0
+        visited = summary["visited"] or 0
+        summary["coverage_pct"] = round((visited / total) * 100, 1) if total else 0
+
+    total_gps = len(items)
+    visited_gps = sum(1 for item in items if item["visit_count"] > 0)
+    recent_gps = sum(1 for item in items if item["status"] == "recent")
+    stale_gps = sum(1 for item in items if item["status"] == "stale")
+    never_gps = total_gps - visited_gps
+
+    return {
+        "summary": {
+            "total_gps": total_gps,
+            "visited_gps": visited_gps,
+            "never_visited_gps": never_gps,
+            "recent_gps": recent_gps,
+            "stale_gps": stale_gps,
+            "coverage_pct": round((visited_gps / total_gps) * 100, 1) if total_gps else 0,
+        },
+        "blocks": sorted(block_summary.values(), key=lambda item: item["block"]),
+        "gram_panchayats": items,
     }
 
 
@@ -367,6 +643,112 @@ class PlanningNotesUpdate(BaseModel):
 class SuggestionRequest(BaseModel):
     visit_date: Optional[date] = None
     max_stops: Optional[int] = 4
+
+
+class GPVisitMarkPayload(BaseModel):
+    gp_ids: List[int]
+    visited_on: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class GramPanchayatUpsertItem(BaseModel):
+    name: str
+    block: Optional[str] = "Unassigned"
+    sample_villages: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class GramPanchayatBulkUpsertPayload(BaseModel):
+    items: List[GramPanchayatUpsertItem]
+
+
+@router.get("/coverage")
+def get_gp_visit_coverage(db: Session = Depends(get_db)):
+    return _build_coverage_payload(db)
+
+
+@router.post("/coverage/mark-visited")
+def mark_gp_visits(data: GPVisitMarkPayload, db: Session = Depends(get_db)):
+    _ensure_default_gp_master(db)
+    gp_ids = sorted({int(gp_id) for gp_id in (data.gp_ids or []) if gp_id})
+    if not gp_ids:
+        raise HTTPException(status_code=400, detail="Select at least one Gram Panchayat")
+    if len(gp_ids) > 500:
+        raise HTTPException(status_code=400, detail="Too many Gram Panchayats selected at once")
+
+    rows = db.query(models.GramPanchayat).filter(
+        models.GramPanchayat.id.in_(gp_ids),
+        models.GramPanchayat.is_active == True,
+    ).all()
+    found_ids = {row.id for row in rows}
+    missing = [gp_id for gp_id in gp_ids if gp_id not in found_ids]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Gram Panchayat not found: {missing[0]}")
+
+    visited_on = data.visited_on or date.today()
+    notes = _normalize_text(data.notes)
+    for gp_id in gp_ids:
+        db.add(models.FieldVisitGPVisit(
+            gp_id=gp_id,
+            visited_on=visited_on,
+            notes=notes or None,
+            source="manual",
+        ))
+    db.commit()
+    return _build_coverage_payload(db)
+
+
+@router.post("/gram-panchayats/bulk-upsert")
+def bulk_upsert_gram_panchayats(data: GramPanchayatBulkUpsertPayload, db: Session = Depends(get_db)):
+    incoming = data.items or []
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No Gram Panchayat rows provided")
+    if len(incoming) > 500:
+        raise HTTPException(status_code=400, detail="Too many rows. Please import up to 500 at a time.")
+
+    existing = db.query(models.GramPanchayat).all()
+    by_key = {
+        (_normalize_text(row.block).lower(), _normalize_text(row.name).lower()): row
+        for row in existing
+    }
+
+    updated = 0
+    created = 0
+    for item in incoming:
+        name = _normalize_text(item.name)
+        block = _normalize_text(item.block) or "Unassigned"
+        if not name:
+            continue
+        key = (block.lower(), name.lower())
+        sample_villages = _normalize_text(item.sample_villages)
+        village_count = len(_split_sample_villages(sample_villages))
+        row = by_key.get(key)
+        if row:
+            row.sample_villages = sample_villages or row.sample_villages
+            row.village_count = village_count or row.village_count or 0
+            row.latitude = item.latitude
+            row.longitude = item.longitude
+            row.is_active = True
+            updated += 1
+        else:
+            row = models.GramPanchayat(
+                block=block,
+                name=name,
+                sample_villages=sample_villages or None,
+                village_count=village_count,
+                latitude=item.latitude,
+                longitude=item.longitude,
+                is_active=True,
+            )
+            db.add(row)
+            by_key[key] = row
+            created += 1
+
+    db.commit()
+    payload = _build_coverage_payload(db)
+    payload["import_result"] = {"created": created, "updated": updated}
+    return payload
 
 
 @router.get("/drafts")

@@ -502,6 +502,18 @@ export const api = {
         const res = await axios.post(`${FIELD_VISIT_URL}/suggestions`, data);
         return res.data;
     },
+    getFieldVisitCoverage: async () => {
+        const res = await axios.get(`${FIELD_VISIT_URL}/coverage`);
+        return res.data;
+    },
+    markFieldVisitCoverage: async (data) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/coverage/mark-visited`, data);
+        return res.data;
+    },
+    bulkUpsertGramPanchayats: async (items = []) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/gram-panchayats/bulk-upsert`, { items });
+        return res.data;
+    },
 
     // ── To Do List ───────────────────────────────────────────────────────────
     getTodos: async (filters = {}) => {

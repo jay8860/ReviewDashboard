@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Calendar, ExternalLink, MapPin, Plus, Trash2, ArrowUp, ArrowDown,
-    Save, Sparkles, Route, FileText, Users, Search, Clock
+    Save, Sparkles, Route, FileText, Users, Search, Clock, ClipboardCheck,
+    CheckCircle2, Circle, Filter, RotateCcw
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Layout from '../components/Layout';
@@ -393,6 +394,362 @@ const ScheduleVisitModal = ({
     );
 };
 
+const EMPTY_COVERAGE = {
+    summary: {
+        total_gps: 0,
+        visited_gps: 0,
+        never_visited_gps: 0,
+        recent_gps: 0,
+        stale_gps: 0,
+        coverage_pct: 0,
+    },
+    blocks: [],
+    gram_panchayats: [],
+};
+
+const COVERAGE_STATUS_META = {
+    recent: {
+        label: 'Recent',
+        fill: '#059669',
+        dot: 'bg-emerald-600',
+        chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    },
+    visited: {
+        label: 'Visited',
+        fill: '#2563eb',
+        dot: 'bg-blue-600',
+        chip: 'bg-blue-50 text-blue-700 border-blue-200',
+    },
+    stale: {
+        label: 'Old visit',
+        fill: '#f97316',
+        dot: 'bg-orange-500',
+        chip: 'bg-orange-50 text-orange-700 border-orange-200',
+    },
+    never: {
+        label: 'Pending',
+        fill: '#e11d48',
+        dot: 'bg-rose-600',
+        chip: 'bg-rose-50 text-rose-700 border-rose-200',
+    },
+};
+
+const COVERAGE_BLOCK_LAYOUTS = {
+    Dantewada: { x: 8, y: 8, w: 38, h: 26 },
+    Geedam: { x: 50, y: 8, w: 42, h: 30 },
+    Katekalyan: { x: 8, y: 39, w: 38, h: 27 },
+    Kuakonda: { x: 50, y: 43, w: 42, h: 23 },
+};
+
+const fallbackBlockLayout = { x: 8, y: 8, w: 84, h: 58 };
+
+const getCoverageStatusMeta = (status) => COVERAGE_STATUS_META[status] || COVERAGE_STATUS_META.never;
+
+const buildCoverageMapPoints = (rows) => {
+    const groups = rows.reduce((acc, row) => {
+        const block = row.block || 'Unassigned';
+        if (!acc[block]) acc[block] = [];
+        acc[block].push(row);
+        return acc;
+    }, {});
+
+    const points = [];
+    Object.entries(groups).forEach(([block, items]) => {
+        const layout = COVERAGE_BLOCK_LAYOUTS[block] || fallbackBlockLayout;
+        const columns = Math.max(4, Math.ceil(Math.sqrt(items.length * (layout.w / Math.max(layout.h, 1)))));
+        const rowsCount = Math.max(1, Math.ceil(items.length / columns));
+        items.forEach((item, idx) => {
+            const col = idx % columns;
+            const row = Math.floor(idx / columns);
+            points.push({
+                ...item,
+                map_x: layout.x + ((col + 0.5) * layout.w) / columns,
+                map_y: layout.y + ((row + 0.72) * layout.h) / rowsCount,
+            });
+        });
+    });
+    return points;
+};
+
+const formatLastVisit = (row) => {
+    if (!row?.last_visit_date) return 'Never visited';
+    const dateText = toDisplayDate(row.last_visit_date);
+    if (row.days_since_last_visit === 0) return `${dateText} - today`;
+    if (row.days_since_last_visit === 1) return `${dateText} - 1 day ago`;
+    return `${dateText} - ${row.days_since_last_visit} days ago`;
+};
+
+const FieldVisitCoveragePanel = ({
+    coverage,
+    selectedGpIds,
+    setSelectedGpIds,
+    filters,
+    setFilters,
+    visitDate,
+    setVisitDate,
+    visitNotes,
+    setVisitNotes,
+    marking,
+    onMarkVisited,
+}) => {
+    const data = coverage || EMPTY_COVERAGE;
+    const allRows = data.gram_panchayats || [];
+    const selectedSet = useMemo(() => new Set(selectedGpIds), [selectedGpIds]);
+    const visibleRows = useMemo(() => {
+        const q = (filters.search || '').trim().toLowerCase();
+        return allRows.filter(row => {
+            const blockMatch = filters.block === 'all' || row.block === filters.block;
+            const statusMatch = filters.status === 'all' || row.status === filters.status;
+            const searchMatch = !q || `${row.name} ${row.block} ${row.sample_villages || ''}`.toLowerCase().includes(q);
+            return blockMatch && statusMatch && searchMatch;
+        });
+    }, [allRows, filters]);
+    const mapPoints = useMemo(() => buildCoverageMapPoints(allRows), [allRows]);
+    const pendingRows = useMemo(() => (
+        allRows
+            .filter(row => row.status === 'never' || row.status === 'stale')
+            .sort((a, b) => {
+                if (a.status !== b.status) return a.status === 'never' ? -1 : 1;
+                return (b.days_since_last_visit || 99999) - (a.days_since_last_visit || 99999);
+            })
+            .slice(0, 8)
+    ), [allRows]);
+
+    const toggleGp = (id) => {
+        setSelectedGpIds(prev => (
+            prev.includes(id)
+                ? prev.filter(item => item !== id)
+                : [...prev, id]
+        ));
+    };
+
+    const selectVisible = (mode = 'all') => {
+        const ids = visibleRows
+            .filter(row => mode === 'all' || row.status === 'never' || row.status === 'stale')
+            .map(row => row.id);
+        setSelectedGpIds(prev => [...new Set([...prev, ...ids])]);
+    };
+
+    const clearSelection = () => setSelectedGpIds([]);
+
+    return (
+        <div className="glass-card rounded-3xl p-5 border border-emerald-100 order-1">
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 mb-5">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <MapPin size={17} className="text-emerald-600" />
+                        <h2 className="font-black text-slate-800 dark:text-white">GP Visit Coverage</h2>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                        {data.summary.total_gps || 0} Gram Panchayats across {(data.blocks || []).length} blocks.
+                    </p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 min-w-0 xl:min-w-[520px]">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] uppercase tracking-widest font-black text-slate-400">Coverage</p>
+                        <p className="text-2xl font-black text-slate-800">{data.summary.coverage_pct || 0}%</p>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                        <p className="text-[11px] uppercase tracking-widest font-black text-emerald-600">Visited</p>
+                        <p className="text-2xl font-black text-emerald-700">{data.summary.visited_gps || 0}</p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                        <p className="text-[11px] uppercase tracking-widest font-black text-rose-600">Pending</p>
+                        <p className="text-2xl font-black text-rose-700">{data.summary.never_visited_gps || 0}</p>
+                    </div>
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3">
+                        <p className="text-[11px] uppercase tracking-widest font-black text-orange-600">90+ days</p>
+                        <p className="text-2xl font-black text-orange-700">{data.summary.stale_gps || 0}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid xl:grid-cols-[1.08fr_0.92fr] gap-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                        <h3 className="text-sm font-black text-slate-800">Coverage Map</h3>
+                        <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
+                            {Object.entries(COVERAGE_STATUS_META).map(([key, meta]) => (
+                                <span key={key} className="inline-flex items-center gap-1">
+                                    <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
+                                    {meta.label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    <svg viewBox="0 0 100 72" role="img" aria-label="Gram Panchayat visit coverage map" className="w-full aspect-[1.55] rounded-2xl bg-slate-50 border border-slate-100">
+                        <rect x="2" y="2" width="96" height="68" rx="4" fill="#f8fafc" stroke="#e2e8f0" />
+                        {Object.entries(COVERAGE_BLOCK_LAYOUTS).map(([block, layout]) => (
+                            <g key={block}>
+                                <rect x={layout.x} y={layout.y} width={layout.w} height={layout.h} rx="2.5" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.35" />
+                                <text x={layout.x + 2} y={layout.y + 4.2} fill="#64748b" fontSize="2.4" fontWeight="700">{block}</text>
+                            </g>
+                        ))}
+                        {mapPoints.map(point => {
+                            const meta = getCoverageStatusMeta(point.status);
+                            const selected = selectedSet.has(point.id);
+                            return (
+                                <circle
+                                    key={point.id}
+                                    cx={point.map_x}
+                                    cy={point.map_y}
+                                    r={selected ? 1.35 : 0.95}
+                                    fill={meta.fill}
+                                    stroke={selected ? '#111827' : '#ffffff'}
+                                    strokeWidth={selected ? 0.42 : 0.28}
+                                    className="cursor-pointer"
+                                    onClick={() => toggleGp(point.id)}
+                                >
+                                    <title>{`${point.name}, ${point.block} - ${point.status_label}`}</title>
+                                </circle>
+                            );
+                        })}
+                    </svg>
+
+                    <div className="grid md:grid-cols-4 gap-2 mt-3">
+                        {(data.blocks || []).map(block => (
+                            <div key={block.block} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                                <p className="text-xs font-black text-slate-700 truncate">{block.block}</p>
+                                <p className="text-[11px] text-slate-500">{block.visited}/{block.total} visited</p>
+                                <div className="mt-1 h-1.5 rounded-full bg-white overflow-hidden">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${block.coverage_pct || 0}%` }} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                        <h3 className="text-sm font-black text-slate-800">Mark Visits</h3>
+                        <span className="text-xs font-bold text-slate-500">{selectedGpIds.length} selected</span>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-2 mb-3">
+                        <div className="rounded-xl border border-slate-200 px-3 py-2 flex items-center gap-2 md:col-span-1">
+                            <Search size={14} className="text-slate-400" />
+                            <input
+                                value={filters.search}
+                                onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                                placeholder="Search GP"
+                                className="w-full text-sm bg-transparent text-slate-700 focus:outline-none"
+                            />
+                        </div>
+                        <select
+                            value={filters.block}
+                            onChange={e => setFilters(prev => ({ ...prev, block: e.target.value }))}
+                            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700"
+                        >
+                            <option value="all">All blocks</option>
+                            {(data.blocks || []).map(block => <option key={block.block} value={block.block}>{block.block}</option>)}
+                        </select>
+                        <select
+                            value={filters.status}
+                            onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700"
+                        >
+                            <option value="all">All status</option>
+                            <option value="never">Pending</option>
+                            <option value="stale">90+ days</option>
+                            <option value="visited">Visited</option>
+                            <option value="recent">Recent</option>
+                        </select>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-3">
+                        <button
+                            onClick={() => selectVisible('pending')}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 bg-rose-50 text-xs font-bold inline-flex items-center gap-1"
+                        >
+                            <Filter size={12} /> Select pending visible
+                        </button>
+                        <button
+                            onClick={() => selectVisible('all')}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 bg-white text-xs font-bold inline-flex items-center gap-1"
+                        >
+                            <CheckCircle2 size={12} /> Select visible
+                        </button>
+                        <button
+                            onClick={clearSelection}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white text-xs font-bold inline-flex items-center gap-1"
+                        >
+                            <RotateCcw size={12} /> Clear
+                        </button>
+                    </div>
+
+                    <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 divide-y divide-slate-100 custom-scrollbar">
+                        {visibleRows.length === 0 ? (
+                            <p className="px-3 py-4 text-sm text-slate-400 italic">No Gram Panchayat matches this filter.</p>
+                        ) : visibleRows.map(row => {
+                            const meta = getCoverageStatusMeta(row.status);
+                            const selected = selectedSet.has(row.id);
+                            return (
+                                <label key={row.id} className="px-3 py-2.5 flex items-start gap-2 hover:bg-slate-50 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() => toggleGp(row.id)}
+                                        className="mt-1 w-4 h-4 accent-emerald-600"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <p className="text-sm font-black text-slate-800 truncate">{row.name}</p>
+                                            <span className={`px-2 py-0.5 rounded-full border text-[10px] font-black whitespace-nowrap ${meta.chip}`}>
+                                                {meta.label}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 truncate">{row.block} | {formatLastVisit(row)}</p>
+                                        {row.sample_villages && <p className="text-[11px] text-slate-400 truncate">Villages: {row.sample_villages}</p>}
+                                    </div>
+                                </label>
+                            );
+                        })}
+                    </div>
+
+                    <div className="grid md:grid-cols-[150px_1fr] gap-2 mt-3">
+                        <input
+                            type="date"
+                            value={visitDate}
+                            onChange={e => setVisitDate(e.target.value)}
+                            className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800"
+                        />
+                        <input
+                            value={visitNotes}
+                            onChange={e => setVisitNotes(e.target.value)}
+                            placeholder="Notes"
+                            className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800"
+                        />
+                    </div>
+                    <button
+                        onClick={onMarkVisited}
+                        disabled={marking || selectedGpIds.length === 0}
+                        className="mt-2 w-full px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                    >
+                        <ClipboardCheck size={15} /> {marking ? 'Saving...' : `Mark ${selectedGpIds.length || ''} Visited`}
+                    </button>
+
+                    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-3">
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Next Attention</p>
+                        <div className="grid gap-1.5">
+                            {pendingRows.map(row => (
+                                <button
+                                    key={row.id}
+                                    onClick={() => toggleGp(row.id)}
+                                    className="text-left text-xs font-semibold text-slate-700 hover:text-emerald-700 flex items-center gap-2"
+                                >
+                                    {selectedSet.has(row.id) ? <CheckCircle2 size={13} className="text-emerald-600" /> : <Circle size={13} className="text-slate-300" />}
+                                    <span className="truncate">{row.name} - {row.block}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const FieldVisits = ({ user, onLogout }) => {
     const navigate = useNavigate();
     const toast = useToast();
@@ -413,6 +770,12 @@ const FieldVisits = ({ user, onLogout }) => {
     const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
     const [scheduleContext, setScheduleContext] = useState(null);
     const [scheduling, setScheduling] = useState(false);
+    const [coverage, setCoverage] = useState(EMPTY_COVERAGE);
+    const [selectedGpIds, setSelectedGpIds] = useState([]);
+    const [coverageFilters, setCoverageFilters] = useState({ search: '', block: 'all', status: 'all' });
+    const [coverageVisitDate, setCoverageVisitDate] = useState(getTodayInputValue());
+    const [coverageVisitNotes, setCoverageVisitNotes] = useState('');
+    const [markingCoverage, setMarkingCoverage] = useState(false);
     const localNotepadKey = 'field_visit_planning_notepad_v1';
 
     const [form, setForm] = useState({
@@ -430,18 +793,20 @@ const FieldVisits = ({ user, onLogout }) => {
     const loadAll = async () => {
         setLoading(true);
         try {
-            const [rowsRes, deptRes, notesRes, itemsRes, empRes] = await Promise.allSettled([
+            const [rowsRes, deptRes, notesRes, itemsRes, empRes, coverageRes] = await Promise.allSettled([
                 api.getFieldVisitDrafts(),
                 api.getDepartments(),
                 api.getFieldVisitPlanningNotes(),
                 api.getFieldVisitPlanningNoteItems(),
                 api.getEmployees(),
+                api.getFieldVisitCoverage(),
             ]);
             const rows = rowsRes.status === 'fulfilled' ? (rowsRes.value || []) : [];
             const deptRows = deptRes.status === 'fulfilled' ? (deptRes.value || []) : [];
             const notesData = notesRes.status === 'fulfilled' ? (notesRes.value || {}) : {};
             const noteItems = itemsRes.status === 'fulfilled' ? (itemsRes.value || []) : [];
             const employeeRows = empRes.status === 'fulfilled' ? (empRes.value || []) : [];
+            const coverageData = coverageRes.status === 'fulfilled' ? (coverageRes.value || EMPTY_COVERAGE) : EMPTY_COVERAGE;
 
             setDrafts(rows);
             setDepartments(deptRows);
@@ -449,6 +814,7 @@ const FieldVisits = ({ user, onLogout }) => {
             setHomeBase(notesData?.home_base || 'Collectorate, Dantewada');
             setPlanningNoteItems(noteItems?.length ? noteItems : parseNotepadLines(notesData?.note_text || ''));
             setEmployees(employeeRows.filter(emp => emp.is_active !== false));
+            setCoverage(coverageData);
 
             if (notesRes.status !== 'fulfilled' || itemsRes.status !== 'fulfilled') {
                 const cached = window.localStorage.getItem(localNotepadKey);
@@ -472,7 +838,7 @@ const FieldVisits = ({ user, onLogout }) => {
             });
             setPlanDateById(defaults);
 
-            const failed = [rowsRes, deptRes, notesRes, itemsRes, empRes].some(r => r.status === 'rejected');
+            const failed = [rowsRes, deptRes, notesRes, itemsRes, empRes, coverageRes].some(r => r.status === 'rejected');
             if (failed) {
                 toast.info('Some Field Visit data could not load. Check backend server and refresh.');
             }
@@ -780,6 +1146,29 @@ const FieldVisits = ({ user, onLogout }) => {
         }
     };
 
+    const handleMarkCoverageVisited = async () => {
+        if (!selectedGpIds.length) {
+            toast.error('Select at least one Gram Panchayat');
+            return;
+        }
+        setMarkingCoverage(true);
+        try {
+            const updated = await api.markFieldVisitCoverage({
+                gp_ids: selectedGpIds,
+                visited_on: coverageVisitDate || todayDate,
+                notes: coverageVisitNotes,
+            });
+            setCoverage(updated || EMPTY_COVERAGE);
+            toast.success(`${selectedGpIds.length} Gram Panchayat${selectedGpIds.length === 1 ? '' : 's'} marked visited`);
+            setSelectedGpIds([]);
+            setCoverageVisitNotes('');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to mark visit coverage');
+        } finally {
+            setMarkingCoverage(false);
+        }
+    };
+
     return (
         <Layout user={user} onLogout={onLogout}>
             <div className="space-y-6 flex flex-col">
@@ -797,6 +1186,20 @@ const FieldVisits = ({ user, onLogout }) => {
                         Open Weekly Planner
                     </button>
                 </div>
+
+                <FieldVisitCoveragePanel
+                    coverage={coverage}
+                    selectedGpIds={selectedGpIds}
+                    setSelectedGpIds={setSelectedGpIds}
+                    filters={coverageFilters}
+                    setFilters={setCoverageFilters}
+                    visitDate={coverageVisitDate}
+                    setVisitDate={setCoverageVisitDate}
+                    visitNotes={coverageVisitNotes}
+                    setVisitNotes={setCoverageVisitNotes}
+                    marking={markingCoverage}
+                    onMarkVisited={handleMarkCoverageVisited}
+                />
 
                 <form onSubmit={handleCreateDraft} className="glass-card rounded-3xl p-5 border border-indigo-100 order-3">
                     <div className="flex items-center gap-2 mb-4">

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean, Float, Enum
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean, Float, Enum, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -371,6 +371,42 @@ class FieldVisitPlanningNote(Base):
     home_base = Column(String, default="Collectorate, Dantewada")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ─── Gram Panchayat Visit Coverage ────────────────────────────────────────────
+# Master list + dated field visit marks used by the Field Visits coverage map
+
+class GramPanchayat(Base):
+    __tablename__ = "gram_panchayats"
+    __table_args__ = (
+        UniqueConstraint("block", "name", name="uq_gram_panchayats_block_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    block = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    sample_villages = Column(Text, nullable=True)
+    village_count = Column(Integer, default=0)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    visit_records = relationship("FieldVisitGPVisit", back_populates="gram_panchayat", cascade="all, delete-orphan")
+
+
+class FieldVisitGPVisit(Base):
+    __tablename__ = "field_visit_gp_visits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gp_id = Column(Integer, ForeignKey("gram_panchayats.id"), nullable=False, index=True)
+    visited_on = Column(Date, nullable=False, index=True)
+    notes = Column(Text, nullable=True)
+    source = Column(String, default="manual")
+    created_at = Column(DateTime, server_default=func.now())
+
+    gram_panchayat = relationship("GramPanchayat", back_populates="visit_records")
 
 
 # ─── Weekly Planner Event (recycled) ─────────────────────────────────────────

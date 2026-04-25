@@ -199,6 +199,24 @@ def apply_non_destructive_migrations():
             ("people_going", "TEXT"),
             ("planner_event_id", "INTEGER"),
         ],
+        "gram_panchayats": [
+            ("block", "VARCHAR"),
+            ("name", "VARCHAR"),
+            ("sample_villages", "TEXT"),
+            ("village_count", "INTEGER DEFAULT 0"),
+            ("latitude", "REAL"),
+            ("longitude", "REAL"),
+            ("is_active", "BOOLEAN DEFAULT TRUE"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
+        "field_visit_gp_visits": [
+            ("gp_id", "INTEGER"),
+            ("visited_on", "DATE"),
+            ("notes", "TEXT"),
+            ("source", "VARCHAR DEFAULT 'manual'"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
     }
 
     with engine.begin() as conn:
