@@ -511,6 +511,10 @@ export const api = {
         const res = await axios.post(`${FIELD_VISIT_URL}/coverage/mark-visited`, data);
         return res.data;
     },
+    clearFieldVisitCoverage: async (data) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/coverage/clear-visits`, data);
+        return res.data;
+    },
     bulkUpsertGramPanchayats: async (items = []) => {
         const res = await axios.post(`${FIELD_VISIT_URL}/gram-panchayats/bulk-upsert`, { items });
         return res.data;

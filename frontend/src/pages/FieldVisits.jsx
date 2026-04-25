@@ -461,6 +461,7 @@ const DANTEWADA_BLOCK_SHAPES = {
 };
 
 const fallbackBlockLayout = { x: 8, y: 10, w: 84, h: 55, labelX: 12, labelY: 15, path: 'M12 10 L84 9 L94 31 L84 62 L20 67 L6 38 Z' };
+const focusedBlockLayout = { x: 7, y: 8, w: 86, h: 61, labelX: 12, labelY: 15, path: 'M14 8 L82 9 L96 28 L88 62 L55 71 L20 67 L5 42 Z' };
 
 const getCoverageStatusMeta = (status) => COVERAGE_STATUS_META[status] || COVERAGE_STATUS_META.never;
 
@@ -574,7 +575,9 @@ const buildCoverageMapPoints = (rows, district) => {
         return acc;
     }, {});
     const blocks = Object.keys(groups);
-    const shapeMap = district === 'Dantewada' ? DANTEWADA_BLOCK_SHAPES : buildGenericBlockShapes(blocks);
+    const shapeMap = blocks.length === 1
+        ? { [blocks[0]]: focusedBlockLayout }
+        : (district === 'Dantewada' ? DANTEWADA_BLOCK_SHAPES : buildGenericBlockShapes(blocks));
 
     const points = [];
     Object.entries(groups).forEach(([block, items]) => {
@@ -625,6 +628,7 @@ const FieldVisitCoveragePanel = ({
     marking,
     importing,
     onMarkVisited,
+    onClearVisits,
     onImportCsv,
 }) => {
     const data = coverage || EMPTY_COVERAGE;
@@ -641,6 +645,7 @@ const FieldVisitCoveragePanel = ({
         });
     }, [allRows, filters]);
     const { points: mapPoints, shapes: mapShapes } = useMemo(() => buildCoverageMapPoints(visibleRows, district), [visibleRows, district]);
+    const [mapLabelMode, setMapLabelMode] = useState('smart');
     const pendingRows = useMemo(() => (
         allRows
             .filter(row => row.status === 'never' || row.status === 'stale')
@@ -667,6 +672,16 @@ const FieldVisitCoveragePanel = ({
     };
 
     const clearSelection = () => setSelectedGpIds([]);
+
+    const mapPointShouldShowLabel = (point) => {
+        if (mapLabelMode === 'all') return true;
+        if (mapLabelMode === 'pending') return ['never', 'stale', 'legacy'].includes(point.status) || selectedSet.has(point.id);
+        if (mapLabelMode === 'selected') return selectedSet.has(point.id);
+        if (selectedSet.has(point.id)) return true;
+        if (filters.block !== 'all' || filters.search.trim()) return true;
+        if (visibleRows.length <= 55) return true;
+        return ['never', 'stale'].includes(point.status);
+    };
 
     const downloadTemplate = () => {
         const templateRows = [
@@ -754,6 +769,16 @@ const FieldVisitCoveragePanel = ({
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h3 className="text-sm font-black text-slate-800">Coverage Map</h3>
                         <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
+                            <select
+                                value={mapLabelMode}
+                                onChange={e => setMapLabelMode(e.target.value)}
+                                className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600"
+                            >
+                                <option value="smart">Smart labels</option>
+                                <option value="all">All names</option>
+                                <option value="pending">Pending names</option>
+                                <option value="selected">Selected names</option>
+                            </select>
                             {Object.entries(COVERAGE_STATUS_META).map(([key, meta]) => (
                                 <span key={key} className="inline-flex items-center gap-1">
                                     <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
@@ -778,26 +803,40 @@ const FieldVisitCoveragePanel = ({
                             const label = truncateMapLabel(point.name);
                             const labelX = Math.max(3, Math.min(97 - point.label_w, point.map_x - point.label_w / 2));
                             const labelY = Math.max(4, Math.min(73, point.map_y));
+                            const showLabel = mapPointShouldShowLabel(point);
                             return (
                                 <g
                                     key={point.id}
                                     className="cursor-pointer"
                                     onClick={() => toggleGp(point.id)}
                                 >
-                                    <rect
-                                        x={labelX}
-                                        y={labelY - 2.7}
-                                        width={point.label_w}
-                                        height="3.6"
-                                        rx="1.2"
-                                        fill={meta.labelBg}
-                                        stroke={selected ? '#111827' : meta.fill}
-                                        strokeWidth={selected ? 0.42 : 0.22}
-                                    />
-                                    <circle cx={labelX + 1.25} cy={labelY - 0.95} r="0.55" fill={meta.fill} />
-                                    <text x={labelX + 2.2} y={labelY - 0.15} fill={meta.labelText} fontSize="1.45" fontWeight="800">
-                                        {label}
-                                    </text>
+                                    {showLabel ? (
+                                        <>
+                                            <rect
+                                                x={labelX}
+                                                y={labelY - 2.7}
+                                                width={point.label_w}
+                                                height="3.6"
+                                                rx="1.2"
+                                                fill={meta.labelBg}
+                                                stroke={selected ? '#111827' : meta.fill}
+                                                strokeWidth={selected ? 0.42 : 0.22}
+                                            />
+                                            <circle cx={labelX + 1.25} cy={labelY - 0.95} r="0.55" fill={meta.fill} />
+                                            <text x={labelX + 2.2} y={labelY - 0.15} fill={meta.labelText} fontSize="1.45" fontWeight="800">
+                                                {label}
+                                            </text>
+                                        </>
+                                    ) : (
+                                        <circle
+                                            cx={point.map_x}
+                                            cy={point.map_y}
+                                            r={selected ? 1.3 : 0.85}
+                                            fill={meta.fill}
+                                            stroke={selected ? '#111827' : '#ffffff'}
+                                            strokeWidth={selected ? 0.38 : 0.24}
+                                        />
+                                    )}
                                     <title>{`${point.name}, ${point.block} - ${point.status_label}`}</title>
                                 </g>
                             );
@@ -806,13 +845,17 @@ const FieldVisitCoveragePanel = ({
 
                     <div className="grid md:grid-cols-4 gap-2 mt-3">
                         {(data.blocks || []).map(block => (
-                            <div key={block.block} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <button
+                                key={block.block}
+                                onClick={() => setFilters(prev => ({ ...prev, block: prev.block === block.block ? 'all' : block.block }))}
+                                className={`text-left rounded-xl border px-3 py-2 hover:border-emerald-200 hover:bg-emerald-50 transition-colors ${filters.block === block.block ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 bg-slate-50'}`}
+                            >
                                 <p className="text-xs font-black text-slate-700 truncate">{block.block}</p>
                                 <p className="text-[11px] text-slate-500">{block.visited}/{block.total} visited</p>
                                 <div className="mt-1 h-1.5 rounded-full bg-white overflow-hidden">
                                     <div className="h-full bg-emerald-500" style={{ width: `${block.coverage_pct || 0}%` }} />
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -874,6 +917,20 @@ const FieldVisitCoveragePanel = ({
                         >
                             <RotateCcw size={12} /> Clear
                         </button>
+                        <button
+                            onClick={() => onClearVisits(selectedGpIds, selectedGpIds.length ? `${selectedGpIds.length} selected GP${selectedGpIds.length === 1 ? '' : 's'}` : '', 'last')}
+                            disabled={selectedGpIds.length === 0 || marking}
+                            className="px-3 py-1.5 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 text-xs font-bold inline-flex items-center gap-1 disabled:opacity-50"
+                        >
+                            <RotateCcw size={12} /> Undo last
+                        </button>
+                        <button
+                            onClick={() => onClearVisits(selectedGpIds, selectedGpIds.length ? `${selectedGpIds.length} selected GP${selectedGpIds.length === 1 ? '' : 's'}` : '', 'all')}
+                            disabled={selectedGpIds.length === 0 || marking}
+                            className="px-3 py-1.5 rounded-lg border border-orange-200 text-orange-700 bg-orange-50 text-xs font-bold inline-flex items-center gap-1 disabled:opacity-50"
+                        >
+                            <Trash2 size={12} /> Clear visits
+                        </button>
                     </div>
 
                     <div className="max-h-72 overflow-auto rounded-xl border border-slate-200 divide-y divide-slate-100 custom-scrollbar">
@@ -883,14 +940,17 @@ const FieldVisitCoveragePanel = ({
                             const meta = getCoverageStatusMeta(row.status);
                             const selected = selectedSet.has(row.id);
                             return (
-                                <label key={row.id} className="px-3 py-2.5 flex items-start gap-2 hover:bg-slate-50 cursor-pointer">
+                                <div key={row.id} className="px-3 py-2.5 flex items-start gap-2 hover:bg-slate-50">
                                     <input
                                         type="checkbox"
                                         checked={selected}
                                         onChange={() => toggleGp(row.id)}
                                         className="mt-1 w-4 h-4 accent-emerald-600"
                                     />
-                                    <div className="min-w-0 flex-1">
+                                    <button
+                                        onClick={() => toggleGp(row.id)}
+                                        className="min-w-0 flex-1 text-left"
+                                    >
                                         <div className="flex items-center gap-2 min-w-0">
                                             <p className="text-sm font-black text-slate-800 truncate">{row.name}</p>
                                             <span className={`px-2 py-0.5 rounded-full border text-[10px] font-black whitespace-nowrap ${meta.chip}`}>
@@ -899,8 +959,17 @@ const FieldVisitCoveragePanel = ({
                                         </div>
                                         <p className="text-[11px] text-slate-500 truncate">{row.block} | {formatLastVisit(row)}</p>
                                         {row.sample_villages && <p className="text-[11px] text-slate-400 truncate">Villages: {row.sample_villages}</p>}
-                                    </div>
-                                </label>
+                                    </button>
+                                    {row.visit_count > 0 && (
+                                        <button
+                                            onClick={() => onClearVisits([row.id], row.name, 'last')}
+                                            disabled={marking}
+                                            className="mt-0.5 px-2 py-1.5 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 text-[11px] font-black hover:bg-amber-100 disabled:opacity-50"
+                                        >
+                                            Undo
+                                        </button>
+                                    )}
+                                </div>
                             );
                         })}
                     </div>
@@ -1442,6 +1511,33 @@ const FieldVisits = ({ user, onLogout }) => {
         }
     };
 
+    const handleClearCoverageVisits = async (gpIds, label = 'selected GP', clearMode = 'all') => {
+        const ids = (gpIds || []).filter(Boolean);
+        if (!ids.length) {
+            toast.error('Select at least one Gram Panchayat');
+            return;
+        }
+        const isUndo = clearMode === 'last';
+        const actionText = isUndo ? 'Undo the latest visit mark for' : 'Clear full visit history for';
+        if (!window.confirm(`${actionText} ${label}?`)) return;
+        setMarkingCoverage(true);
+        try {
+            const updated = await api.clearFieldVisitCoverage({
+                gp_ids: ids,
+                clear_mode: clearMode,
+            });
+            setCoverage(updated || EMPTY_COVERAGE);
+            if (updated?.district) setSelectedDistrict(updated.district);
+            setSelectedGpIds(prev => prev.filter(id => !ids.includes(id)));
+            const deleted = updated?.clear_result?.deleted ?? 0;
+            toast.success(`${isUndo ? 'Undid' : 'Cleared'} ${deleted} visit mark${deleted === 1 ? '' : 's'}`);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Failed to clear visit coverage');
+        } finally {
+            setMarkingCoverage(false);
+        }
+    };
+
     return (
         <Layout user={user} onLogout={onLogout}>
             <div className="space-y-6 flex flex-col">
@@ -1475,6 +1571,7 @@ const FieldVisits = ({ user, onLogout }) => {
                     marking={markingCoverage}
                     importing={importingCoverage}
                     onMarkVisited={handleMarkCoverageVisited}
+                    onClearVisits={handleClearCoverageVisits}
                     onImportCsv={handleCoverageCsvImport}
                 />
 

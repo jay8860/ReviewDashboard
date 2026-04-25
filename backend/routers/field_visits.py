@@ -696,6 +696,11 @@ class GPVisitMarkPayload(BaseModel):
     visit_type: Optional[str] = "exact"
 
 
+class GPVisitClearPayload(BaseModel):
+    gp_ids: List[int]
+    clear_mode: Optional[str] = "all"  # all | last
+
+
 class GramPanchayatUpsertItem(BaseModel):
     name: str
     district: Optional[str] = "Dantewada"
@@ -752,6 +757,49 @@ def mark_gp_visits(data: GPVisitMarkPayload, db: Session = Depends(get_db)):
     db.commit()
     district = rows[0].district if rows else None
     return _build_coverage_payload(db, district=district)
+
+
+@router.post("/coverage/clear-visits")
+def clear_gp_visits(data: GPVisitClearPayload, db: Session = Depends(get_db)):
+    _ensure_default_gp_master(db)
+    gp_ids = sorted({int(gp_id) for gp_id in (data.gp_ids or []) if gp_id})
+    if not gp_ids:
+        raise HTTPException(status_code=400, detail="Select at least one Gram Panchayat")
+    if len(gp_ids) > 500:
+        raise HTTPException(status_code=400, detail="Too many Gram Panchayats selected at once")
+
+    rows = db.query(models.GramPanchayat).filter(
+        models.GramPanchayat.id.in_(gp_ids),
+        models.GramPanchayat.is_active == True,
+    ).all()
+    found_ids = {row.id for row in rows}
+    missing = [gp_id for gp_id in gp_ids if gp_id not in found_ids]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Gram Panchayat not found: {missing[0]}")
+
+    clear_mode = (data.clear_mode or "all").strip().lower()
+    deleted = 0
+    if clear_mode == "last":
+        for gp_id in gp_ids:
+            visit = db.query(models.FieldVisitGPVisit).filter(
+                models.FieldVisitGPVisit.gp_id == gp_id
+            ).order_by(
+                models.FieldVisitGPVisit.created_at.desc(),
+                models.FieldVisitGPVisit.id.desc(),
+            ).first()
+            if visit:
+                db.delete(visit)
+                deleted += 1
+    else:
+        deleted = db.query(models.FieldVisitGPVisit).filter(
+            models.FieldVisitGPVisit.gp_id.in_(gp_ids)
+        ).delete(synchronize_session=False)
+
+    db.commit()
+    district = rows[0].district if rows else None
+    payload = _build_coverage_payload(db, district=district)
+    payload["clear_result"] = {"deleted": deleted}
+    return payload
 
 
 @router.post("/gram-panchayats/bulk-upsert")
