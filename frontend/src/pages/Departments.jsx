@@ -180,7 +180,7 @@ const WAIcon = () => (
     </svg>
 );
 
-const buildCategoryBuckets = (departments) => {
+const buildCategoryBuckets = (departments, sortMode = 'category_order') => {
     const map = new Map();
 
     departments.forEach((dept, idx) => {
@@ -205,7 +205,9 @@ const buildCategoryBuckets = (departments) => {
         .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name))
         .map(bucket => ({
             ...bucket,
-            departments: [...bucket.departments].sort((a, b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name)),
+            departments: sortMode === 'category_order'
+                ? [...bucket.departments].sort((a, b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name))
+                : [...bucket.departments],
         }));
 };
 
@@ -923,7 +925,7 @@ const Departments = ({ user, onLogout }) => {
     const [dragOverCategory, setDragOverCategory] = useState(null);
 
     const sortedDepartments = useMemo(() => sortDepartmentRows(departments, sortMode), [departments, sortMode]);
-    const groupedCategories = useMemo(() => buildCategoryBuckets(sortedDepartments), [sortedDepartments]);
+    const groupedCategories = useMemo(() => buildCategoryBuckets(sortedDepartments, sortMode), [sortedDepartments, sortMode]);
     const categoryNames = useMemo(() => groupedCategories.map(c => c.name), [groupedCategories]);
 
     const load = async () => {
