@@ -92,7 +92,11 @@ class Employee(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     department = relationship("Department", back_populates="employees")
-    tasks = relationship("Task", back_populates="assigned_employee")
+    tasks = relationship(
+        "Task",
+        back_populates="assigned_employee",
+        foreign_keys="Task.assigned_employee_id",
+    )
 
 
 # ─── Review Program ───────────────────────────────────────────────────────────
@@ -218,7 +222,11 @@ class Task(Base):
 
     department = relationship("Department", back_populates="tasks")
     action_points = relationship("ActionPoint", back_populates="linked_task")
-    assigned_employee = relationship("Employee", back_populates="tasks")
+    assigned_employee = relationship(
+        "Employee",
+        back_populates="tasks",
+        foreign_keys=[assigned_employee_id],
+    )
     secondary_assigned_employee = relationship("Employee", foreign_keys=[secondary_assigned_employee_id])
 
 
