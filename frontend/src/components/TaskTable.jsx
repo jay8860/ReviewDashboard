@@ -107,6 +107,7 @@ const EditableRow = ({ task, rowIndex = 0, onSave, onCancel, departments = [], e
         description: task.description || '',
         assigned_agency: task.assigned_agency || '',
         assigned_employee_id: task.assigned_employee_id || '',
+        secondary_assigned_employee_id: task.secondary_assigned_employee_id || '',
         allocated_date: task.allocated_date || '',
         time_given: task.time_given || '',
         deadline_date: task.deadline_date || '',
@@ -152,6 +153,14 @@ const EditableRow = ({ task, rowIndex = 0, onSave, onCancel, departments = [], e
                         onChange={(nextId) => setForm((prev) => ({ ...prev, assigned_employee_id: nextId }))}
                         placeholder="Search by name or designation"
                         noneLabel="No employee"
+                        inputClassName={selectCls}
+                    />
+                    <EmployeeSearchSelect
+                        employees={sortedEmployees}
+                        value={form.secondary_assigned_employee_id}
+                        onChange={(nextId) => setForm((prev) => ({ ...prev, secondary_assigned_employee_id: nextId }))}
+                        placeholder="Second assignee (optional)"
+                        noneLabel="No second assignee"
                         inputClassName={selectCls}
                     />
                     <input value={form.assigned_agency} onChange={f('assigned_agency')} className={inputCls} placeholder="Other Agency" />
@@ -212,6 +221,14 @@ const getTaskAssignedText = (task) => {
     if (employeeName && designation) return `${employeeName} (${designation})`;
     if (employeeName) return employeeName;
     return String(task?.assigned_agency || '').trim();
+};
+
+const getTaskSecondaryAssignedText = (task) => {
+    const employeeName = String(task?.secondary_assigned_employee_name || '').trim();
+    const designation = String(task?.secondary_assigned_employee_display_username || '').trim();
+    if (employeeName && designation) return `${employeeName} (${designation})`;
+    if (employeeName) return employeeName;
+    return '';
 };
 
 const normalizeAssignmentText = (value) => String(value || '').trim().toLowerCase();
@@ -613,6 +630,8 @@ const TaskTable = ({
         else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
         if (payload.assigned_employee_id === '') payload.assigned_employee_id = null;
         else if (payload.assigned_employee_id) payload.assigned_employee_id = parseInt(payload.assigned_employee_id);
+        if (payload.secondary_assigned_employee_id === '') payload.secondary_assigned_employee_id = null;
+        else if (payload.secondary_assigned_employee_id) payload.secondary_assigned_employee_id = parseInt(payload.secondary_assigned_employee_id);
         if (payload.allocated_date === '') payload.allocated_date = null;
         if (payload.deadline_date === '') payload.deadline_date = null;
         if (payload.time_given === '') payload.time_given = null;
@@ -664,7 +683,7 @@ const TaskTable = ({
         let nextValue = rawOverride !== undefined ? rawOverride : rowDraft[field];
         let currentValue = task[field];
 
-        if (field === 'assigned_employee_id' || field === 'department_id') {
+        if (field === 'assigned_employee_id' || field === 'secondary_assigned_employee_id' || field === 'department_id') {
             nextValue = (nextValue === '' || nextValue === null) ? null : parseInt(nextValue, 10);
             currentValue = currentValue ?? null;
         } else if (field === 'allocated_date' || field === 'deadline_date') {
@@ -914,6 +933,17 @@ const TaskTable = ({
                                                 noneLabel="No employee"
                                                 inputClassName={inputCls}
                                             />
+                                            <EmployeeSearchSelect
+                                                employees={sortedEmployees}
+                                                value={getBulkFieldValue(task, 'secondary_assigned_employee_id') ?? ''}
+                                                onChange={(value) => {
+                                                    setBulkField(task.id, 'secondary_assigned_employee_id', value);
+                                                    commitBulkField(task, 'secondary_assigned_employee_id', value);
+                                                }}
+                                                placeholder="Second assignee"
+                                                noneLabel="No second assignee"
+                                                inputClassName={inputCls}
+                                            />
                                             <input
                                                 value={getBulkFieldValue(task, 'assigned_agency')}
                                                 onChange={(e) => setBulkField(task.id, 'assigned_agency', e.target.value)}
@@ -931,6 +961,9 @@ const TaskTable = ({
                                             )}
                                             {shouldShowDesignationLine(task) && (
                                                 <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{task.assigned_employee_display_username}</p>
+                                            )}
+                                            {getTaskSecondaryAssignedText(task) && (
+                                                <p className="text-[10px] text-indigo-500 mt-0.5 line-clamp-1">{getTaskSecondaryAssignedText(task)}</p>
                                             )}
                                             {shouldShowAgencyLine(task) && (
                                                 <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>

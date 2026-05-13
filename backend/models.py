@@ -214,10 +214,12 @@ class Task(Base):
     
     # Employee linking
     assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    secondary_assigned_employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
 
     department = relationship("Department", back_populates="tasks")
     action_points = relationship("ActionPoint", back_populates="linked_task")
     assigned_employee = relationship("Employee", back_populates="tasks")
+    secondary_assigned_employee = relationship("Employee", foreign_keys=[secondary_assigned_employee_id])
 
 
 # ─── Personal To-do Items ─────────────────────────────────────────────────────

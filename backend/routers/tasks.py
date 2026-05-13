@@ -38,6 +38,7 @@ class TaskCreate(BaseModel):
     remarks: Optional[str] = None
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
+    secondary_assigned_employee_id: Optional[int] = None
 
 
 class TaskUpdate(BaseModel):
@@ -57,6 +58,7 @@ class TaskUpdate(BaseModel):
     remarks: Optional[str] = None
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
+    secondary_assigned_employee_id: Optional[int] = None
 
 
 class BulkUpdateRequest(BaseModel):
@@ -171,20 +173,24 @@ def _aggregate_agencies(tasks: List[models.Task], include_unassigned: bool = Tru
     unassigned_key = _agency_key("Unassigned")
     grouped = {}
 
-    for task in tasks:
-        effective_value = _effective_agency_value(task)
+    def _bump(effective_value: str, task: models.Task):
         key = _agency_key(effective_value) or unassigned_key
         label, priority = _pick_group_label(task, key)
-
         row = grouped.get(key)
         if not row:
             grouped[key] = {"agency": label, "count": 1, "_priority": priority}
-            continue
-
+            return
         row["count"] += 1
         if priority < row["_priority"]:
             row["agency"] = label
             row["_priority"] = priority
+
+    for task in tasks:
+        _bump(_effective_agency_value(task), task)
+        # Count the secondary assignee separately so tasks show up for both.
+        if task.secondary_assigned_employee:
+            eff = _canonical_text(task.secondary_assigned_employee.display_username) or _canonical_text(task.secondary_assigned_employee.name) or "Unassigned"
+            _bump(eff, task)
 
     rows = []
     for key, row in grouped.items():
@@ -245,8 +251,11 @@ def task_to_dict(t: models.Task) -> dict:
         "department_id": t.department_id,
         "source": t.source,
         "assigned_employee_id": t.assigned_employee_id,
+        "secondary_assigned_employee_id": t.secondary_assigned_employee_id,
         "assigned_employee_name": t.assigned_employee.name if t.assigned_employee else None,
         "assigned_employee_display_username": t.assigned_employee.display_username if t.assigned_employee else None,
+        "secondary_assigned_employee_name": t.secondary_assigned_employee.name if t.secondary_assigned_employee else None,
+        "secondary_assigned_employee_display_username": t.secondary_assigned_employee.display_username if t.secondary_assigned_employee else None,
         "created_at": str(t.created_at)
     }
 
@@ -354,6 +363,7 @@ def get_tasks(
         db.query(models.Task)
         .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
         .options(joinedload(models.Task.assigned_employee))
+        .options(joinedload(models.Task.secondary_assigned_employee))
     )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
@@ -409,10 +419,16 @@ def get_tasks(
 
     tasks = q.all()
     if selected_agency_key:
-        tasks = [
-            task for task in tasks
-            if _agency_key(_effective_agency_value(task)) == selected_agency_key
-        ]
+        filtered = []
+        for task in tasks:
+            primary_key = _agency_key(_effective_agency_value(task))
+            secondary_key = None
+            if task.secondary_assigned_employee:
+                secondary_label = _canonical_text(task.secondary_assigned_employee.display_username) or _canonical_text(task.secondary_assigned_employee.name)
+                secondary_key = _agency_key(secondary_label)
+            if primary_key == selected_agency_key or (secondary_key and secondary_key == selected_agency_key):
+                filtered.append(task)
+        tasks = filtered
 
     return [task_to_dict(t) for t in tasks]
 
@@ -489,7 +505,7 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
                     # completion_date is stored as string in this schema.
                     parsed = _coerce_date_field(v, k)
                     v = parsed.isoformat() if parsed else None
-                elif k in {"department_id", "assigned_employee_id"}:
+                elif k in {"department_id", "assigned_employee_id", "secondary_assigned_employee_id"}:
                     v = _coerce_int_field(v)
 
                 setattr(task, k, v)
@@ -527,6 +543,8 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
             payload["completion_date"] = None
 
     for k, v in payload.items():
+        if k == "secondary_assigned_employee_id" and v == payload.get("assigned_employee_id"):
+            v = None
         setattr(task, k, v)
 
     # Keep completion_date and status consistent in both directions.

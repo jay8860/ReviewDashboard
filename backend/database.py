@@ -93,6 +93,7 @@ def apply_non_destructive_migrations():
             ("department_id", "INTEGER"),
             ("source", "VARCHAR(50) DEFAULT 'manual'"),
             ("assigned_employee_id", "INTEGER"),
+            ("secondary_assigned_employee_id", "INTEGER"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],

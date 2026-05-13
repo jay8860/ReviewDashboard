@@ -78,7 +78,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
         // auto-filled / advanced
         task_number: '', allocated_date: todayStr, time_given: '7 days',
         completion_date: '', steno_comment: '', status: 'Pending', priority: 'Normal',
-        remarks: '', department_id: '', assigned_employee_id: '', is_pinned: false, is_today: false,
+        remarks: '', department_id: '', assigned_employee_id: '', secondary_assigned_employee_id: '', is_pinned: false, is_today: false,
     };
     const [form, setForm] = useState(blank);
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -101,6 +101,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                 remarks: initial.remarks || '',
                 department_id: initial.department_id || '',
                 assigned_employee_id: initial.assigned_employee_id || '',
+                secondary_assigned_employee_id: initial.secondary_assigned_employee_id || '',
                 is_pinned: initial.is_pinned || false,
                 is_today: initial.is_today || false,
             });
@@ -185,6 +186,17 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                                         value={form.assigned_employee_id}
                                         onChange={(nextId) => setForm((prev) => ({ ...prev, assigned_employee_id: nextId }))}
                                         placeholder="Search by name or designation"
+                                        noneLabel="None"
+                                        inputClassName={inputCls}
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Second Assignee</label>
+                                    <EmployeeSearchSelect
+                                        employees={sortedEmployees}
+                                        value={form.secondary_assigned_employee_id}
+                                        onChange={(nextId) => setForm((prev) => ({ ...prev, secondary_assigned_employee_id: nextId }))}
+                                        placeholder="Optional"
                                         noneLabel="None"
                                         inputClassName={inputCls}
                                     />
@@ -561,6 +573,8 @@ const Tasks = ({ user, onLogout }) => {
             else if (payload.department_id) payload.department_id = parseInt(payload.department_id);
             if (payload.assigned_employee_id === '') payload.assigned_employee_id = null;
             else if (payload.assigned_employee_id) payload.assigned_employee_id = parseInt(payload.assigned_employee_id);
+            if (payload.secondary_assigned_employee_id === '') payload.secondary_assigned_employee_id = null;
+            else if (payload.secondary_assigned_employee_id) payload.secondary_assigned_employee_id = parseInt(payload.secondary_assigned_employee_id);
             if (!payload.completion_date) payload.completion_date = null;
             if (!payload.deadline_date) payload.deadline_date = null;
             if (!payload.allocated_date) payload.allocated_date = null;
@@ -594,6 +608,15 @@ const Tasks = ({ user, onLogout }) => {
             const match = employees.find((emp) => Number(emp.id) === patchEmployeeId);
             optimistic.assigned_employee_name = match ? match.name : null;
             optimistic.assigned_employee_display_username = match ? (match.display_username || null) : null;
+        }
+        if (Object.prototype.hasOwnProperty.call(patch, 'secondary_assigned_employee_id')) {
+            const patchEmployeeId = (patch.secondary_assigned_employee_id === '' || patch.secondary_assigned_employee_id === null)
+                ? null
+                : Number(patch.secondary_assigned_employee_id);
+            optimistic.secondary_assigned_employee_id = patchEmployeeId;
+            const match = employees.find((emp) => Number(emp.id) === patchEmployeeId);
+            optimistic.secondary_assigned_employee_name = match ? match.name : null;
+            optimistic.secondary_assigned_employee_display_username = match ? (match.display_username || null) : null;
         }
         setTasks((prev) => prev.map((row) => (row.id === id ? optimistic : row)));
         try {
