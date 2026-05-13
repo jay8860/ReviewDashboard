@@ -42,6 +42,29 @@ const DueInBadge = ({ deadline, completion_date, status }) => {
     return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">{diff}d</span>;
 };
 
+const ImagePreviewModal = ({ isOpen, imageUrl, onClose }) => {
+    if (!isOpen || !imageUrl) return null;
+    return (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="relative max-w-[92vw] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="absolute -top-3 -right-3 p-2 rounded-full bg-white shadow-lg border border-slate-200"
+                    title="Close"
+                >
+                    <X size={14} className="text-slate-500" />
+                </button>
+                <img
+                    src={imageUrl}
+                    alt="Task reference"
+                    className="block max-w-[92vw] max-h-[92vh] object-contain bg-white rounded-xl shadow-2xl"
+                />
+            </div>
+        </div>
+    );
+};
+
 // ── Inline Calendar Picker ─────────────────────────────────────────────────────
 const DeadlinePicker = ({ value, onSave, onClose }) => {
     const [date, setDate] = useState(value || '');
@@ -109,6 +132,9 @@ const EditableRow = ({ task, rowIndex = 0, onSave, onCancel, departments = [], e
                     completion_date={task.completion_date}
                     status={form.status || task.status}
                 />
+            </td>
+            <td className="px-2 py-2">
+                <span className="text-slate-300 text-xs">—</span>
             </td>
             <td className="px-2 py-2 min-w-48">
                 <textarea value={form.description} onChange={f('description')} rows={2} className={inputCls + " resize-none"} placeholder="Task description" />
@@ -539,6 +565,7 @@ const TaskTable = ({
     const [bulkDrafts, setBulkDrafts] = useState({});
     const [savingCells, setSavingCells] = useState({});
     const [scheduleTask, setScheduleTask] = useState(null);
+    const [imageModalUrl, setImageModalUrl] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
     const scheduleRef = useRef(null);
@@ -693,6 +720,11 @@ const TaskTable = ({
 
     return (
         <div className="overflow-x-auto">
+            <ImagePreviewModal
+                isOpen={!!imageModalUrl}
+                imageUrl={imageModalUrl}
+                onClose={() => setImageModalUrl(null)}
+            />
             <table className="w-full min-w-[1400px] text-sm">
                 <thead>
                     <tr className="border-b-2 border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-white/2">
@@ -706,6 +738,7 @@ const TaskTable = ({
                         <ColHeader label="S.No" className="w-12" />
                         <ColHeader label="Task #" sortKey="task_number" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Due In" sortKey="deadline_date" currentSort={sort} onSort={handleSort} className="w-20" />
+                        <ColHeader label="Image" className="w-28" />
                         <ColHeader label="Task / Description" sortKey="description" currentSort={sort} onSort={handleSort} className="min-w-[360px]" />
                         <ColHeader label="Comments" className="w-[28rem]" />
                         <ColHeader label="Assigned" sortKey="assigned_agency" currentSort={sort} onSort={handleSort} className="w-32" />
@@ -767,6 +800,27 @@ const TaskTable = ({
                                 {/* Due In */}
                                 <td className="px-3 py-3">
                                     <DueInBadge deadline={task.deadline_date} completion_date={task.completion_date} status={task.status} />
+                                </td>
+
+                                {/* Image */}
+                                <td className="px-3 py-3">
+                                    {task.image_url ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setImageModalUrl(task.image_url)}
+                                            className="group w-20 h-12 rounded-lg border border-slate-200 bg-white overflow-hidden hover:border-indigo-300 transition-colors"
+                                            title="Open image"
+                                        >
+                                            <img
+                                                src={task.image_url}
+                                                alt="Task"
+                                                className="w-full h-full object-cover"
+                                                loading="lazy"
+                                            />
+                                        </button>
+                                    ) : (
+                                        <span className="text-slate-300 text-xs">—</span>
+                                    )}
                                 </td>
 
                                 {/* Task Description */}

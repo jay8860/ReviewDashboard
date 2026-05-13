@@ -193,6 +193,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     task_number = Column(String, unique=True, index=True)
     description = Column(Text, nullable=True)          # Task name / description
+    image_url = Column(Text, nullable=True)           # Stored dashboard URL for uploaded reference image (PNG/JPG)
     assigned_agency = Column(String, nullable=True)
     allocated_date = Column(Date, nullable=True)       # Date task was assigned
     time_given = Column(String, nullable=True)         # e.g. "7 days", "30 days"

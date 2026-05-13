@@ -85,6 +85,7 @@ def apply_non_destructive_migrations():
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
         "tasks": [
+            ("image_url", "TEXT"),
             ("is_pinned", "BOOLEAN DEFAULT FALSE"),
             ("is_today", "BOOLEAN DEFAULT FALSE"),
             ("steno_comment", "TEXT"),
