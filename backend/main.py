@@ -48,6 +48,10 @@ app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
 
+TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(__file__), "data", "task_uploads")
+os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
+app.mount("/uploads/tasks", StaticFiles(directory=TASK_UPLOAD_ROOT), name="task_uploads")
+
 
 @app.get("/healthz")
 def healthz():

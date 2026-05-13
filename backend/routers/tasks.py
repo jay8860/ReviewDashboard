@@ -1,20 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, case
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 import re
+import os
+import uuid
+from pathlib import Path
+from io import BytesIO
+from PIL import Image
 
 from database import get_db
 import models
 
 router = APIRouter()
 
+TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "task_uploads")
+os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
+MAX_TASK_IMAGE_BYTES = int(os.getenv("MAX_TASK_IMAGE_BYTES", str(8 * 1024 * 1024)))
+
 
 class TaskCreate(BaseModel):
     task_number: Optional[str] = None
     description: Optional[str] = None
+    image_url: Optional[str] = None
     assigned_agency: Optional[str] = None
     allocated_date: Optional[date] = None
     time_given: Optional[str] = None
@@ -33,6 +43,7 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     task_number: Optional[str] = None
     description: Optional[str] = None
+    image_url: Optional[str] = None
     assigned_agency: Optional[str] = None
     allocated_date: Optional[date] = None
     time_given: Optional[str] = None
@@ -219,6 +230,7 @@ def task_to_dict(t: models.Task) -> dict:
         "id": t.id,
         "task_number": t.task_number,
         "description": t.description,
+        "image_url": t.image_url,
         "assigned_agency": t.assigned_agency,
         "allocated_date": str(t.allocated_date) if t.allocated_date else None,
         "time_given": t.time_given,
@@ -237,6 +249,59 @@ def task_to_dict(t: models.Task) -> dict:
         "assigned_employee_display_username": t.assigned_employee.display_username if t.assigned_employee else None,
         "created_at": str(t.created_at)
     }
+
+
+def _store_task_image(task_id: int, upload: UploadFile) -> str:
+    filename = (upload.filename or "").strip()
+    ext = Path(filename).suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported image format. Use PNG/JPG/WEBP.")
+
+    stored_name = f"task_{task_id}_{uuid.uuid4().hex}.png"
+    out_path = os.path.join(TASK_UPLOAD_ROOT, stored_name)
+
+    total = 0
+    try:
+        raw = upload.file.read()
+        total = len(raw or b"")
+        if total > MAX_TASK_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="Image too large.")
+    finally:
+        try:
+            upload.file.close()
+        except Exception:
+            pass
+
+    try:
+        with Image.open(BytesIO(raw)) as im:
+            im = im.convert("RGB")
+            max_w = 1400
+            max_h = 1400
+            im.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+            im.save(out_path, format="PNG", optimize=True)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=f"Invalid image: {exc}")
+
+    return f"/uploads/tasks/{stored_name}"
+
+
+@router.post("/{task_id}/image")
+def upload_task_image(task_id: int, image: UploadFile = File(...), db: Session = Depends(get_db)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    url = _store_task_image(task_id, image)
+    task.image_url = url
+    db.commit()
+    db.refresh(task)
+    return task_to_dict(task)
 
 
 def _sync_task_statuses(db: Session) -> None:

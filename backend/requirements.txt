@@ -6,6 +6,7 @@ python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv
+Pillow
 openpyxl
 python-docx
 python-pptx
