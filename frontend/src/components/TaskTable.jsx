@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
@@ -44,7 +45,7 @@ const DueInBadge = ({ deadline, completion_date, status }) => {
 
 const ImagePreviewModal = ({ isOpen, imageUrl, onClose }) => {
     if (!isOpen || !imageUrl) return null;
-    return (
+    const node = (
         <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
             <div className="relative max-w-[92vw] max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
                 <button
@@ -63,6 +64,7 @@ const ImagePreviewModal = ({ isOpen, imageUrl, onClose }) => {
             </div>
         </div>
     );
+    return createPortal(node, document.body);
 };
 
 // ── Inline Calendar Picker ─────────────────────────────────────────────────────
