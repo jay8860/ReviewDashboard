@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw, FileDown } from 'lucide-react';
 import Layout from '../components/Layout';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
+import { ensurePdfUnicodeFont } from '../utils/pdfFont';
 
 const Audit = ({ user, onLogout }) => {
     const toast = useToast();
@@ -40,6 +41,59 @@ const Audit = ({ user, onLogout }) => {
 
     useEffect(() => { load(); }, []); // initial
 
+    const exportPdf = async () => {
+        try {
+            const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+                import('jspdf'),
+                import('jspdf-autotable'),
+            ]);
+
+            const body = rows.map((r, idx) => ([
+                idx + 1,
+                r.created_at || '',
+                r.action || '',
+                r.actor_username || '',
+                r.target_type || '',
+                r.target_id ?? '',
+                r.summary || '',
+            ]));
+
+            const doc = new jsPDF({ orientation: 'landscape' });
+            let tableFont = 'helvetica';
+            try {
+                tableFont = await ensurePdfUnicodeFont(doc);
+            } catch (error) {
+                console.error('Failed to load Unicode PDF font', error);
+            }
+            doc.setFontSize(14);
+            doc.text('Audit Log Export', 14, 14);
+            doc.setFontSize(9);
+            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 20);
+
+            autoTable(doc, {
+                startY: 24,
+                head: [['S.No', 'When', 'Action', 'Actor', 'Target', 'ID', 'Summary']],
+                body,
+                styles: { font: tableFont, fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
+                headStyles: { font: tableFont, fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+                columnStyles: {
+                    0: { cellWidth: 12 },
+                    1: { cellWidth: 38 },
+                    2: { cellWidth: 22 },
+                    3: { cellWidth: 30 },
+                    4: { cellWidth: 34 },
+                    5: { cellWidth: 14 },
+                    6: { cellWidth: 125 },
+                },
+                theme: 'grid',
+            });
+
+            doc.save(`audit_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (err) {
+            toast.error(err?.message || 'PDF export failed');
+        }
+    };
+
     const actions = useMemo(() => ([
         { value: '', label: 'All actions' },
         { value: 'created', label: 'Created' },
@@ -58,14 +112,25 @@ const Audit = ({ user, onLogout }) => {
                             {canAdmin ? 'All task activity across users.' : 'Your task activity.'}
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={load}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50"
-                    >
-                        <RefreshCw size={16} />
-                        Refresh
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={exportPdf}
+                            disabled={loading || rows.length === 0}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                            <FileDown size={16} />
+                            PDF
+                        </button>
+                        <button
+                            type="button"
+                            onClick={load}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50"
+                        >
+                            <RefreshCw size={16} />
+                            Refresh
+                        </button>
+                    </div>
                 </div>
 
                 {canAdmin && (
@@ -150,4 +215,3 @@ const Audit = ({ user, onLogout }) => {
 };
 
 export default Audit;
-

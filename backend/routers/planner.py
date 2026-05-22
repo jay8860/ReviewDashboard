@@ -13,6 +13,7 @@ import re
 import secrets
 
 from database import get_db
+from routers.auth import get_current_user_optional
 import models
 
 router = APIRouter()
@@ -22,6 +23,32 @@ DEFAULT_RECURRING_BLOCKS = [
 ]
 VALID_STATUSES = {"Draft", "Confirmed", "Cancelled"}
 VALID_EVENT_TYPES = {"meeting", "review", "task", "reminder", "field-visit", "other"}
+
+def _audit_log(
+    db: Session,
+    actor: Optional[models.User],
+    action: str,
+    target_id: Optional[int],
+    summary: str,
+    changes: Optional[dict] = None,
+) -> None:
+    if not actor:
+        return
+    try:
+        row = models.AuditLog(
+            actor_user_id=actor.id,
+            actor_username=getattr(actor, "username", None),
+            actor_role=getattr(actor, "role", None),
+            target_type="planner_event",
+            target_id=target_id,
+            action=action,
+            summary=summary,
+            changes_json=(json.dumps(changes) if changes else None),
+        )
+        db.add(row)
+    except Exception:
+        # Never block planner flow due to audit logging.
+        pass
 
 
 class RecurringBlock(BaseModel):
@@ -941,7 +968,11 @@ def get_events(start_date: Optional[DateValue] = None, end_date: Optional[DateVa
 
 
 @router.post("/")
-def create_event(data: EventCreate, db: Session = Depends(get_db)):
+def create_event(
+    data: EventCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     payload = data.dict()
     payload["event_type"] = _normalize_event_type(payload.get("event_type"))
     payload["status"] = _normalize_status(payload.get("status"))
@@ -953,6 +984,7 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
     db.flush()
     _sync_department_meeting_from_event(event, db)
     draft_id = _sync_field_visit_draft_from_event(event, db)
+    _audit_log(db, current_user, "created", event.id, f"Created planner event: {event.title}")
     db.commit()
     db.refresh(event)
     dept_name = None
@@ -968,7 +1000,12 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{event_id}")
-def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)):
+def update_event(
+    event_id: int,
+    data: EventUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     event = db.query(models.PlannerEvent).filter(models.PlannerEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -976,6 +1013,11 @@ def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="External calendar events are read-only")
 
     payload = data.dict(exclude_unset=True)
+    before = {}
+    if current_user:
+        for k in payload.keys():
+            if hasattr(event, k):
+                before[k] = getattr(event, k)
     if "event_type" in payload and payload["event_type"] is not None:
         payload["event_type"] = _normalize_event_type(payload["event_type"])
     if "status" in payload and payload["status"] is not None:
@@ -998,6 +1040,13 @@ def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)
 
     _sync_department_meeting_from_event(event, db)
     draft_id = _sync_field_visit_draft_from_event(event, db)
+    if current_user:
+        changes = {}
+        for k, old in before.items():
+            new = getattr(event, k, None)
+            if str(old) != str(new):
+                changes[k] = {"from": old, "to": new}
+        _audit_log(db, current_user, "updated", event.id, f"Updated planner event: {event.title}", changes=changes or None)
     db.commit()
     db.refresh(event)
 
@@ -1014,7 +1063,11 @@ def update_event(event_id: int, data: EventUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{event_id}")
-def delete_event(event_id: int, db: Session = Depends(get_db)):
+def delete_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     event = db.query(models.PlannerEvent).filter(models.PlannerEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -1037,6 +1090,8 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
         linked_field_visit.planned_date = None
         linked_field_visit.planned_time = None
 
+    title = event.title
     db.delete(event)
+    _audit_log(db, current_user, "deleted", event_id, f"Deleted planner event: {title}")
     db.commit()
     return {"message": "Deleted"}

@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from database import get_db
+from routers.auth import get_current_user_optional
 import models
 from services.document_ai import (
     SUPPORTED_EXTENSIONS,
@@ -27,6 +28,32 @@ router = APIRouter()
 DEFAULT_MEETING_TABLE_COLUMNS = ["Action Point", "Owner", "Timeline", "Status", "Remarks"]
 MAX_DOC_UPLOAD_BYTES = int(os.getenv("MAX_DOC_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "uploads")
+
+def _audit_log(
+    db: Session,
+    actor: Optional[models.User],
+    action: str,
+    target_type: str,
+    target_id: Optional[int],
+    summary: str,
+    changes: Optional[dict] = None,
+) -> None:
+    if not actor:
+        return
+    try:
+        row = models.AuditLog(
+            actor_user_id=actor.id,
+            actor_username=getattr(actor, "username", None),
+            actor_role=getattr(actor, "role", None),
+            target_type=target_type,
+            target_id=target_id,
+            action=action,
+            summary=summary,
+            changes_json=(json.dumps(changes) if changes else None),
+        )
+        db.add(row)
+    except Exception:
+        pass
 
 
 def _safe_json_list(value: Optional[str], fallback: list) -> list:
@@ -1014,7 +1041,12 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{dept_id}/meetings")
-def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_db)):
+def create_meeting(
+    dept_id: int,
+    data: MeetingCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
@@ -1053,6 +1085,14 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
         department_name=dept.name,
         department_color=dept.color,
     )
+    _audit_log(
+        db,
+        current_user,
+        "created",
+        "department_meeting",
+        meeting.id,
+        f"Created department meeting ({dept.name}) on {meeting.scheduled_date}",
+    )
     db.commit()
     db.refresh(meeting)
 
@@ -1077,7 +1117,13 @@ def create_meeting(dept_id: int, data: MeetingCreate, db: Session = Depends(get_
 
 
 @router.put("/{dept_id}/meetings/{meeting_id}")
-def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Session = Depends(get_db)):
+def update_meeting(
+    dept_id: int,
+    meeting_id: int,
+    data: MeetingUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     dept = db.query(models.Department).filter(models.Department.id == dept_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
@@ -1089,6 +1135,11 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     payload = data.dict(exclude_none=True)
+    before = {}
+    if current_user:
+        for k in payload.keys():
+            if hasattr(meeting, k):
+                before[k] = getattr(meeting, k)
     if "action_table_columns" in payload:
         meeting.action_table_columns = json.dumps(payload.pop("action_table_columns") or DEFAULT_MEETING_TABLE_COLUMNS)
     if "action_table_rows" in payload:
@@ -1113,6 +1164,21 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
         department_name=dept.name,
         department_color=dept.color,
     )
+    if current_user:
+        changes = {}
+        for k, old in before.items():
+            new = getattr(meeting, k, None)
+            if str(old) != str(new):
+                changes[k] = {"from": old, "to": new}
+        _audit_log(
+            db,
+            current_user,
+            "updated",
+            "department_meeting",
+            meeting.id,
+            f"Updated department meeting ({dept.name}) on {meeting.scheduled_date}",
+            changes=changes or None,
+        )
     db.commit()
     db.refresh(meeting)
     return {
@@ -1134,7 +1200,12 @@ def update_meeting(dept_id: int, meeting_id: int, data: MeetingUpdate, db: Sessi
 
 
 @router.delete("/{dept_id}/meetings/{meeting_id}")
-def delete_meeting(dept_id: int, meeting_id: int, db: Session = Depends(get_db)):
+def delete_meeting(
+    dept_id: int,
+    meeting_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     meeting = db.query(models.DepartmentMeeting).filter(
         models.DepartmentMeeting.id == meeting_id,
         models.DepartmentMeeting.department_id == dept_id
@@ -1147,6 +1218,14 @@ def delete_meeting(dept_id: int, meeting_id: int, db: Session = Depends(get_db))
     for event in linked_events:
         db.delete(event)
     db.delete(meeting)
+    _audit_log(
+        db,
+        current_user,
+        "deleted",
+        "department_meeting",
+        meeting_id,
+        f"Deleted department meeting for dept_id={dept_id} on {meeting.scheduled_date}",
+    )
     db.commit()
     return {"message": "Deleted"}
 
