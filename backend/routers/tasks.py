@@ -10,8 +10,10 @@ import uuid
 from pathlib import Path
 from io import BytesIO
 from PIL import Image
+import json
 
 from database import get_db
+from routers.auth import get_current_user_optional
 import models
 
 router = APIRouter()
@@ -19,6 +21,31 @@ router = APIRouter()
 TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "task_uploads")
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
 MAX_TASK_IMAGE_BYTES = int(os.getenv("MAX_TASK_IMAGE_BYTES", str(8 * 1024 * 1024)))
+
+
+def _audit_log(
+    db: Session,
+    actor: models.User,
+    action: str,
+    target_id: Optional[int],
+    summary: str,
+    changes: Optional[dict] = None,
+) -> None:
+    try:
+        row = models.AuditLog(
+            actor_user_id=actor.id if actor else None,
+            actor_username=getattr(actor, "username", None),
+            actor_role=getattr(actor, "role", None),
+            target_type="task",
+            target_id=target_id,
+            action=action,
+            summary=summary,
+            changes_json=(json.dumps(changes) if changes else None),
+        )
+        db.add(row)
+    except Exception:
+        # Never break task flow due to audit logging.
+        pass
 
 
 class TaskCreate(BaseModel):
@@ -467,7 +494,11 @@ def get_agencies(db: Session = Depends(get_db)):
 
 
 @router.post("/")
-def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+def create_task(
+    data: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     task_data = data.dict()
     task_data["status"] = _normalize_task_status(task_data.get("status"))
     if not task_data.get("task_number"):
@@ -480,6 +511,9 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
     db.add(task)
     db.commit()
     db.refresh(task)
+    if current_user:
+        _audit_log(db, current_user, "created", task.id, f"Created task {task.task_number}")
+        db.commit()
     return task_to_dict(task)
 
 
@@ -530,7 +564,12 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
 
 
 @router.put("/{task_id}")
-def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
+def update_task(
+    task_id: int,
+    data: TaskUpdate,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -542,6 +581,11 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
         if payload["completion_date"] in ("", None):
             payload["completion_date"] = None
 
+    before = {}
+    if current_user:
+        for k in payload.keys():
+            if hasattr(task, k):
+                before[k] = getattr(task, k)
     for k, v in payload.items():
         if k == "secondary_assigned_employee_id" and v == payload.get("assigned_employee_id"):
             v = None
@@ -558,14 +602,31 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(task)
+    if current_user:
+        changes = {}
+        for k, old in before.items():
+            new = getattr(task, k, None)
+            if str(old) != str(new):
+                changes[k] = {"from": old, "to": new}
+        action = "completed" if payload.get("status") == "Completed" else "updated"
+        _audit_log(db, current_user, action, task.id, f"Updated task {task.task_number}", changes=changes or None)
+        db.commit()
     return task_to_dict(task)
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    tn = task.task_number
     db.delete(task)
     db.commit()
+    if current_user:
+        _audit_log(db, current_user, "deleted", task_id, f"Deleted task {tn}")
+        db.commit()
     return {"message": "Deleted"}

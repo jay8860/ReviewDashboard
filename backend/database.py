@@ -223,6 +223,17 @@ def apply_non_destructive_migrations():
             ("source", "VARCHAR DEFAULT 'manual'"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "audit_logs": [
+            ("actor_user_id", "INTEGER"),
+            ("actor_username", "VARCHAR"),
+            ("actor_role", "VARCHAR"),
+            ("target_type", "VARCHAR"),
+            ("target_id", "INTEGER"),
+            ("action", "VARCHAR"),
+            ("summary", "TEXT"),
+            ("changes_json", "TEXT"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ],
     }
 
     with engine.begin() as conn:

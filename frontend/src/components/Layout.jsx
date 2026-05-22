@@ -28,7 +28,10 @@ const Layout = ({ children, user, onLogout }) => {
         { icon: Calendar, label: 'Planner', path: '/planner', desc: 'Weekly planner', module: 'planner' },
         { icon: BarChart3, label: 'Analytics', path: '/analytics', desc: 'Command center', module: 'analytics' },
         { icon: Users, label: 'Employees', path: '/employees', desc: 'Team directory', module: 'employees' },
-        ...(user?.role === 'admin' ? [{ icon: ShieldCheck, label: 'Access Module', path: '/access', desc: 'Users & access' }] : []),
+        ...(user?.role === 'admin' ? [
+            { icon: ShieldCheck, label: 'Audit Log', path: '/audit', desc: 'Task change history' },
+            { icon: ShieldCheck, label: 'Access Module', path: '/access', desc: 'Users & access' },
+        ] : []),
     ].filter((item) => !item.module || canAccessModule(user, item.module));
 
     const isActive = (path) => {

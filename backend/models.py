@@ -230,6 +230,22 @@ class Task(Base):
     secondary_assigned_employee = relationship("Employee", foreign_keys=[secondary_assigned_employee_id])
 
 
+# ─── Audit Log ────────────────────────────────────────────────────────────────
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    actor_username = Column(String, nullable=True, index=True)
+    actor_role = Column(String, nullable=True, index=True)  # admin | user | viewer
+    target_type = Column(String, nullable=False, index=True)  # e.g. task
+    target_id = Column(Integer, nullable=True, index=True)    # e.g. task.id
+    action = Column(String, nullable=False, index=True)       # created | updated | deleted | completed
+    summary = Column(Text, nullable=True)
+    changes_json = Column(Text, nullable=True)                # JSON dict {field:{from,to}}
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
 # ─── Personal To-do Items ─────────────────────────────────────────────────────
 # Lightweight reminder list; selected rows can be converted into formal tasks
 

@@ -11,6 +11,7 @@ const FIELD_VISIT_URL = `${BASE_URL}/api/field-visits`;
 const TODO_URL = `${BASE_URL}/api/todos`;
 const ANALYTICS_URL = `${BASE_URL}/api/analytics`;
 const BACKUP_URL = `${BASE_URL}/api/backup`;
+const AUDIT_URL = `${BASE_URL}/api/audit`;
 
 const readToken = () => {
     const raw = localStorage.getItem('token');
@@ -389,6 +390,23 @@ export const api = {
     },
     deleteTask: async (id) => {
         const res = await axios.delete(`${TASK_URL}/${id}`);
+        return res.data;
+    },
+
+    // ── Audit ────────────────────────────────────────────────────────────────
+    getAuditAdmin: async (filters = {}) => {
+        const params = new URLSearchParams();
+        if (filters.start_date) params.append('start_date', filters.start_date);
+        if (filters.end_date) params.append('end_date', filters.end_date);
+        if (filters.action) params.append('action', filters.action);
+        if (filters.actor) params.append('actor', filters.actor);
+        if (filters.q) params.append('q', filters.q);
+        if (filters.limit) params.append('limit', String(filters.limit));
+        const res = await axios.get(`${AUDIT_URL}/admin?${params.toString()}`);
+        return res.data;
+    },
+    getAuditMe: async (limit = 100) => {
+        const res = await axios.get(`${AUDIT_URL}/me?limit=${limit}`);
         return res.data;
     },
 

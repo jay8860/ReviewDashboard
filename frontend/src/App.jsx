@@ -17,6 +17,7 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const FieldVisits = lazy(() => import('./pages/FieldVisits'));
 const Todos = lazy(() => import('./pages/Todos'));
 const AccessModule = lazy(() => import('./pages/AccessModule'));
+const Audit = lazy(() => import('./pages/Audit'));
 
 const AdminRoute = ({ children, user }) => {
     if (!user) return <Navigate to="/login" replace />;
@@ -130,6 +131,11 @@ function App() {
                         <ModuleRoute user={user} moduleKey="employees">
                             <Employees user={user} onLogout={handleLogout} />
                         </ModuleRoute>
+                    } />
+                    <Route path="/audit" element={
+                        <AdminRoute user={user}>
+                            <Audit user={user} onLogout={handleLogout} />
+                        </AdminRoute>
                     } />
                     <Route path="/access" element={
                         <AdminRoute user={user}>
