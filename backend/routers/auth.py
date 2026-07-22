@@ -116,9 +116,9 @@ def user_to_dict(user: models.User) -> dict:
     }
 
 
-def get_current_user(
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db),
+def get_current_user_from_authorization(
+    authorization: Optional[str],
+    db: Session,
 ) -> models.User:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -135,7 +135,19 @@ def get_current_user(
     user = db.query(models.User).filter(models.User.username == username).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+
+    token_version = payload.get("tv", 0)
+    if token_version != (user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Session expired")
+
     return user
+
+
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+) -> models.User:
+    return get_current_user_from_authorization(authorization=authorization, db=db)
 
 
 def get_current_user_optional(
@@ -143,7 +155,7 @@ def get_current_user_optional(
     db: Session = Depends(get_db),
 ) -> Optional[models.User]:
     try:
-        return get_current_user(authorization=authorization, db=db)
+        return get_current_user_from_authorization(authorization=authorization, db=db)
     except Exception:
         return None
 
@@ -155,7 +167,7 @@ def require_admin(current_user: models.User = Depends(get_current_user)) -> mode
 
 
 @router.get("/modules")
-def get_modules():
+def get_modules(_: models.User = Depends(get_current_user)):
     return [{"key": key, "label": key.replace("_", " ").title()} for key in AVAILABLE_MODULES]
 
 
@@ -172,12 +184,23 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     if not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
+    access_token = create_access_token(
+        data={
+            "sub": user.username,
+            "role": user.role,
+            "tv": user.token_version or 0,
+        }
+    )
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user": user_to_dict(user),
     }
+
+
+@router.get("/me")
+def get_me(current_user: models.User = Depends(get_current_user)):
+    return user_to_dict(current_user)
 
 
 @router.get("/users")
@@ -218,6 +241,7 @@ def create_user(
         email=(request.email or None),
         hashed_password=get_password_hash(request.password),
         role=role,
+        token_version=0,
         hint=request.hint,
         module_access=json.dumps(modules),
     )
@@ -267,6 +291,7 @@ def update_user(
         if len(request.password.strip()) < 4:
             raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
         user.hashed_password = get_password_hash(request.password.strip())
+        user.token_version = (user.token_version or 0) + 1
 
     if request.module_access is not None or request.role is not None:
         raw = request.module_access if request.module_access is not None else parse_module_access(user.module_access, new_role)
@@ -340,6 +365,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     user.hashed_password = get_password_hash(request.new_password)
+    user.token_version = (user.token_version or 0) + 1
     user.reset_token = None
     user.reset_token_expiry = None
     db.commit()

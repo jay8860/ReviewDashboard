@@ -70,6 +70,7 @@ axios.interceptors.response.use(
             detail === 'Unauthorized' ||
             detail === 'Invalid token payload' ||
             detail === 'User not found' ||
+            detail === 'Session expired' ||
             detail === ''
         );
         if (isAuthError) {
@@ -83,6 +84,10 @@ export const api = {
     // ── Auth ──────────────────────────────────────────────────────────────────
     login: async (credentials) => {
         const res = await axios.post(`${AUTH_URL}/login`, credentials);
+        return res.data;
+    },
+    getCurrentUser: async () => {
+        const res = await axios.get(`${AUTH_URL}/me`);
         return res.data;
     },
     getHint: async (username) => {

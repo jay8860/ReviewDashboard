@@ -1,8 +1,8 @@
 import os
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from database import engine, Base, apply_non_destructive_migrations
 import models
@@ -25,6 +25,82 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+PUBLIC_API_PATHS = {
+    "/api/auth/login",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+}
+
+MODULE_BY_PREFIX = {
+    "/api/departments": "departments",
+    "/api/reviews": "departments",
+    "/api/tasks": "tasks",
+    "/api/planner": "planner",
+    "/api/employees": "employees",
+    "/api/field-visits": "field_visits",
+    "/api/todos": "todos",
+    "/api/analytics": "analytics",
+}
+
+
+def _module_for_path(path: str) -> str | None:
+    for prefix, module_key in MODULE_BY_PREFIX.items():
+        if path == prefix or path.startswith(f"{prefix}/"):
+            return module_key
+    return None
+
+
+def _is_admin_only_path(path: str) -> bool:
+    admin_prefixes = ("/api/audit", "/api/backup")
+    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in admin_prefixes):
+        return True
+    return path in {"/api/auth/users", "/api/auth/modules"} or path.startswith("/api/auth/users/")
+
+
+@app.middleware("http")
+async def enforce_api_auth(request: Request, call_next):
+    path = request.url.path
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if not path.startswith("/api/"):
+        return await call_next(request)
+
+    if path in PUBLIC_API_PATHS:
+        return await call_next(request)
+
+    if path.startswith("/api/auth/hint/"):
+        return await call_next(request)
+
+    if path == "/api/planner/export.ics":
+        return await call_next(request)
+
+    db = SessionLocal()
+    try:
+        try:
+            current_user = auth.get_current_user_from_authorization(
+                authorization=request.headers.get("authorization"),
+                db=db,
+            )
+        except Exception as exc:
+            detail = getattr(exc, "detail", "Unauthorized")
+            status_code = getattr(exc, "status_code", 401)
+            return JSONResponse(status_code=status_code, content={"detail": detail})
+
+        if _is_admin_only_path(path) and current_user.role != "admin":
+            return JSONResponse(status_code=403, content={"detail": "Admin access required"})
+
+        required_module = _module_for_path(path)
+        if required_module and current_user.role != "admin":
+            modules = auth.parse_module_access(current_user.module_access, current_user.role)
+            if required_module not in modules:
+                return JSONResponse(status_code=403, content={"detail": "Module access denied"})
+
+        return await call_next(request)
+    finally:
+        db.close()
 
 # Seed admin user
 from database import SessionLocal

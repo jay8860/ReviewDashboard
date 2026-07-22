@@ -1,6 +1,7 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { canAccessModule, getDefaultPathForUser } from './utils/access';
+import { api } from './services/api';
 
 const Login = lazy(() => import('./pages/Login'));
 const Overview = lazy(() => import('./pages/Overview'));
@@ -34,6 +35,7 @@ const ModuleRoute = ({ children, user, moduleKey }) => {
 };
 
 function App() {
+    const [authReady, setAuthReady] = useState(false);
     const [user, setUser] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem('user'));
@@ -42,16 +44,57 @@ function App() {
         }
     });
 
+    useEffect(() => {
+        let active = true;
+
+        const verifySession = async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                if (active) setAuthReady(true);
+                return;
+            }
+
+            try {
+                const currentUser = await api.getCurrentUser();
+                if (!active) return;
+                localStorage.setItem('user', JSON.stringify(currentUser));
+                setUser(currentUser);
+            } catch {
+                if (!active) return;
+                localStorage.removeItem('user');
+                localStorage.removeItem('token');
+                setUser(null);
+            } finally {
+                if (active) setAuthReady(true);
+            }
+        };
+
+        verifySession();
+        return () => {
+            active = false;
+        };
+    }, []);
+
     const handleLogin = (userData) => {
         // Login.jsx already saves token/user to localStorage before calling this
         setUser(userData);
+        setAuthReady(true);
     };
 
     const handleLogout = () => {
         localStorage.removeItem('user');
         localStorage.removeItem('token');
         setUser(null);
+        setAuthReady(true);
     };
+
+    if (!authReady) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-semibold">
+                Loading dashboard...
+            </div>
+        );
+    }
 
     return (
         <BrowserRouter>
