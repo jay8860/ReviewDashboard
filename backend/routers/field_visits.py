@@ -208,10 +208,11 @@ def _split_sample_villages(value: Optional[str]) -> List[str]:
 
 def _ensure_default_gp_master(db: Session) -> None:
     # Older deployments created the GP table before district support existed.
-    db.query(models.GramPanchayat).filter(
+    updated = db.query(models.GramPanchayat).filter(
         models.GramPanchayat.district == None
     ).update({"district": "Dantewada"}, synchronize_session=False)
-    db.commit()
+    if updated:
+        db.commit()
 
     has_any_gp = db.query(models.GramPanchayat.id).filter(
         models.GramPanchayat.is_active == True,
