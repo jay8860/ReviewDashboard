@@ -107,6 +107,22 @@ def _normalize_task_status(value: Optional[str]) -> Optional[str]:
     return "Pending"
 
 
+def _effective_task_status(task: models.Task, today: Optional[date] = None) -> str:
+    today = today or date.today()
+    raw_status = (task.status or "").strip().lower()
+    completion_text = str(task.completion_date or "").strip()
+
+    if raw_status in {"completed", "done", "closed"} or completion_text:
+        return "Completed"
+    if task.deadline_date and task.deadline_date < today:
+        return "Overdue"
+    if raw_status == "overdue":
+        return "Overdue"
+    if raw_status in {"in progress", "in_progress", "progress"}:
+        return "Pending"
+    return "Pending"
+
+
 def _coerce_date_field(value, field_name: str) -> Optional[date]:
     if value in (None, "", "null", "None"):
         return None
@@ -269,7 +285,7 @@ def task_to_dict(t: models.Task) -> dict:
         "time_given": t.time_given,
         "deadline_date": str(t.deadline_date) if t.deadline_date else None,
         "completion_date": t.completion_date,
-        "status": t.status,
+        "status": _effective_task_status(t),
         "priority": t.priority,
         "is_pinned": t.is_pinned or False,
         "is_today": t.is_today or False,
@@ -383,8 +399,6 @@ def get_tasks(
     sort_dir: Optional[str] = "asc",
     db: Session = Depends(get_db)
 ):
-    _sync_task_statuses(db)
-
     agency_expr = _effective_agency_expr()
     q = (
         db.query(models.Task)
@@ -395,12 +409,11 @@ def get_tasks(
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
     selected_agency_key = _agency_key(agency) if agency else None
+    requested_statuses = set()
     if status:
         raw_statuses = [s.strip() for s in status.split(',') if s.strip()]
-        statuses = [_normalize_task_status(s) for s in raw_statuses]
-        statuses = [s for s in statuses if s]
-        if statuses:
-            q = q.filter(models.Task.status.in_(statuses))
+        requested_statuses = {_normalize_task_status(s) for s in raw_statuses}
+        requested_statuses.discard(None)
     if priority:
         q = q.filter(models.Task.priority == priority)
     if is_today is not None:
@@ -445,6 +458,9 @@ def get_tasks(
         q = q.order_by(models.Task.deadline_date.desc().nullslast() if is_desc else models.Task.deadline_date.asc().nullslast())
 
     tasks = q.all()
+    if requested_statuses:
+        today = date.today()
+        tasks = [task for task in tasks if _effective_task_status(task, today) in requested_statuses]
     if selected_agency_key:
         filtered = []
         for task in tasks:
@@ -462,22 +478,24 @@ def get_tasks(
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    _sync_task_statuses(db)
-    total = db.query(func.count(models.Task.id)).scalar()
-    completed = db.query(func.count(models.Task.id)).filter(
-        or_(models.Task.status == "Completed", models.Task.completion_date != None)
-    ).scalar()
-    pending = db.query(func.count(models.Task.id)).filter(
-        models.Task.completion_date == None,
-        or_(models.Task.status == None, models.Task.status != "Completed")
-    ).scalar()
-    overdue = db.query(func.count(models.Task.id)).filter(
-        models.Task.status == "Overdue", models.Task.completion_date == None
-    ).scalar()
-    important = db.query(func.count(models.Task.id)).filter(
-        models.Task.priority.in_(["High", "Critical"]), models.Task.completion_date == None
-    ).scalar()
     agency_tasks = db.query(models.Task).options(joinedload(models.Task.assigned_employee)).all()
+    today = date.today()
+    total = len(agency_tasks)
+    completed = 0
+    pending = 0
+    overdue = 0
+    important = 0
+    for task in agency_tasks:
+        bucket = _effective_task_status(task, today)
+        if bucket == "Completed":
+            completed += 1
+        elif bucket == "Overdue":
+            overdue += 1
+            pending += 1
+        else:
+            pending += 1
+        if bucket != "Completed" and task.priority in ["High", "Critical"]:
+            important += 1
     by_agency = _aggregate_agencies(agency_tasks, include_unassigned=True)
     return {
         "total": total, "completed": completed, "pending": pending,

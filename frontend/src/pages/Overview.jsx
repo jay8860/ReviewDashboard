@@ -128,46 +128,14 @@ const Overview = ({ user, onLogout }) => {
         try {
             const startDate = format(new Date(), 'yyyy-MM-dd');
             const endDate = format(addDays(new Date(), 45), 'yyyy-MM-dd');
-            const [deptsRes, statsRes, tasksRes, reviewsRes, plannerRes, fieldDraftsRes, meetingsRes] = await Promise.allSettled([
-                api.getDepartments(),
-                api.getTaskStats(),
-                api.getTasks({ status: 'Pending,In Progress,Overdue' }),
-                api.getSessions(),
-                api.getPlannerEvents(startDate, endDate),
-                api.getFieldVisitDrafts(),
-                api.getDepartmentMeetingsOverview(),
-            ]);
-
-            const depts = deptsRes.status === 'fulfilled' ? (deptsRes.value || []) : null;
-            const stats = statsRes.status === 'fulfilled' ? (statsRes.value || { total: 0, completed: 0, pending: 0, overdue: 0 }) : null;
-            const tasks = tasksRes.status === 'fulfilled' ? (tasksRes.value || []) : null;
-            const reviews = reviewsRes.status === 'fulfilled' ? (reviewsRes.value || []) : null;
-            const plannerEvents = plannerRes.status === 'fulfilled' ? (plannerRes.value || []) : null;
-            const fieldDrafts = fieldDraftsRes.status === 'fulfilled' ? (fieldDraftsRes.value || []) : null;
-            const meetingsMap = meetingsRes.status === 'fulfilled' ? (meetingsRes.value || {}) : null;
-
-            const failedSections = [];
-            if (deptsRes.status !== 'fulfilled') failedSections.push('departments');
-            if (statsRes.status !== 'fulfilled') failedSections.push('task counts');
-            if (tasksRes.status !== 'fulfilled') failedSections.push('tasks');
-            if (reviewsRes.status !== 'fulfilled') failedSections.push('reviews');
-            if (plannerRes.status !== 'fulfilled') failedSections.push('planner');
-            if (fieldDraftsRes.status !== 'fulfilled') failedSections.push('field visits');
-            if (meetingsRes.status !== 'fulfilled') failedSections.push('department meetings');
-
-            if (depts) setDepartments(depts);
-            if (stats) setTaskStats(stats);
-            if (tasks) setTaskRows(tasks);
-            if (reviews) setReviewRows(reviews);
-            if (plannerEvents) setPlannerRows(plannerEvents);
-            if (fieldDrafts) setFieldVisitDraftRows(fieldDrafts);
-            if (meetingsMap) setDeptMeetings(meetingsMap);
-
-            if (failedSections.length) {
-                const message = `Some dashboard data could not be loaded: ${failedSections.join(', ')}.`;
-                setLoadWarning(message);
-                toast.warning(message, 6500);
-            }
+            const overview = await api.getDashboardOverview(startDate, endDate);
+            setDepartments(overview?.departments || []);
+            setTaskStats(overview?.taskStats || { total: 0, completed: 0, pending: 0, overdue: 0 });
+            setTaskRows(overview?.taskRows || []);
+            setReviewRows(overview?.reviewRows || []);
+            setPlannerRows(overview?.plannerRows || []);
+            setFieldVisitDraftRows(overview?.fieldVisitDraftRows || []);
+            setDeptMeetings(overview?.deptMeetings || {});
         } catch (e) {
             console.error(e);
             const message = 'Dashboard refresh failed. Please try again.';

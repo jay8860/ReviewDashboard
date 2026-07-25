@@ -378,6 +378,14 @@ export const api = {
         const res = await axios.get(`${ANALYTICS_URL}/tasks`);
         return res.data;
     },
+    getDashboardOverview: async (startDate, endDate) => {
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        params.append('t', Date.now());
+        const res = await axios.get(`${ANALYTICS_URL}/dashboard?${params.toString()}`);
+        return res.data;
+    },
     downloadBackup: async () => {
         return axios.get(`${BACKUP_URL}/export`, { responseType: 'blob' });
     },

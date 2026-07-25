@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session, joinedload
 
 import models
 from database import get_db
+from routers.departments import get_departments, get_department_meetings_overview
+from routers.field_visits import get_field_visit_drafts
+from routers.planner import get_events
+from routers.reviews import get_sessions
+from routers.tasks import get_stats, get_tasks
 
 router = APIRouter()
 
@@ -238,4 +243,21 @@ def get_task_analytics(db: Session = Depends(get_db)):
         "oldest_pending": oldest_pending,
         "agency_performance": agency_performance,
         "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.get("/dashboard")
+def get_dashboard_overview(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+):
+    return {
+        "departments": get_departments(db=db),
+        "taskStats": get_stats(db=db),
+        "taskRows": get_tasks(status="Pending,In Progress,Overdue", db=db),
+        "reviewRows": get_sessions(db=db),
+        "plannerRows": get_events(start_date=start_date, end_date=end_date, db=db),
+        "fieldVisitDraftRows": get_field_visit_drafts(db=db),
+        "deptMeetings": get_department_meetings_overview(db=db),
     }
