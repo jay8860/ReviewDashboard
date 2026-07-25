@@ -100,6 +100,17 @@ async def enforce_api_auth(request: Request, call_next):
     finally:
         db.close()
 
+
+@app.middleware("http")
+async def disable_asset_caching(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/") or path in {"/vite.svg"}:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 from database import SessionLocal
 
 
