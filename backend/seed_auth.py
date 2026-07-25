@@ -1,11 +1,12 @@
 from sqlalchemy.orm import Session
 import models
-from utils import get_password_hash
+from utils import get_password_hash, verify_password
 import json
 
 ALL_MODULES = [
     "overview",
     "tasks",
+    "analytics",
     "employees",
     "departments",
     "field_visits",
@@ -22,17 +23,36 @@ def seed_admin(db: Session):
         admin = models.User(
             username="admin",
             email="admin@governance.local",
-            hashed_password=get_password_hash("admin123"),
+            hashed_password=get_password_hash("admin321"),
             role="admin",
+            token_version=0,
             module_access=json.dumps(ALL_MODULES),
-            hint="Default admin — change password after first login"
+            hint="Default admin login"
         )
         db.add(admin)
         db.commit()
-        print("✅ Admin user created: admin / admin123")
+        print("✅ Admin user created: admin / admin321")
     else:
+        updated = False
+        if existing.role != "admin":
+            existing.role = "admin"
+            updated = True
+        if not existing.module_access or json.loads(existing.module_access or "[]") != ALL_MODULES:
+            existing.module_access = json.dumps(ALL_MODULES)
+            updated = True
+        current_version = getattr(existing, "token_version", 0) or 0
+        if not verify_password("admin321", existing.hashed_password):
+            existing.hashed_password = get_password_hash("admin321")
+            existing.hint = "Default admin login"
+            existing.token_version = current_version + 1
+            updated = True
+        elif existing.hint != "Default admin login":
+            existing.hint = "Default admin login"
+            updated = True
         if not existing.module_access:
             existing.module_access = json.dumps(ALL_MODULES)
+            updated = True
+        if updated:
             db.commit()
         print("ℹ️  Admin user already exists")
 
