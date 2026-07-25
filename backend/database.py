@@ -40,7 +40,7 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 is_sqlite_url = "sqlite" in SQLALCHEMY_DATABASE_URL
-connect_args = {"check_same_thread": False, "timeout": 60} if is_sqlite_url else {}
+connect_args = {"check_same_thread": False, "timeout": 15} if is_sqlite_url else {}
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -59,7 +59,7 @@ if is_sqlite_url:
         try:
             cursor.execute("PRAGMA journal_mode=WAL;")
             cursor.execute("PRAGMA synchronous=NORMAL;")
-            cursor.execute("PRAGMA busy_timeout=60000;")
+            cursor.execute("PRAGMA busy_timeout=15000;")
             cursor.execute("PRAGMA foreign_keys=ON;")
         finally:
             cursor.close()

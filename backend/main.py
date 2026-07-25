@@ -1,21 +1,19 @@
 import os
+import threading
 from fastapi import FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from database import engine, Base, apply_non_destructive_migrations
+from database import engine, Base, apply_non_destructive_migrations, is_railway_runtime
 import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
 from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit
 
-# Create all tables
-Base.metadata.create_all(bind=engine)
-apply_non_destructive_migrations()
-
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
+BOOTSTRAP_STATE = {"status": "pending", "detail": ""}
 
 # CORS
 app.add_middleware(
@@ -102,15 +100,39 @@ async def enforce_api_auth(request: Request, call_next):
     finally:
         db.close()
 
-# Seed admin user
 from database import SessionLocal
-db = SessionLocal()
-try:
-    seed_admin(db)
-    seed_departments_and_agenda(db)
-    seed_special_employees(db)
-finally:
-    db.close()
+
+
+def bootstrap_database():
+    try:
+        Base.metadata.create_all(bind=engine)
+        apply_non_destructive_migrations()
+
+        db = SessionLocal()
+        try:
+            seed_admin(db)
+            seed_departments_and_agenda(db)
+            seed_special_employees(db)
+        finally:
+            db.close()
+        BOOTSTRAP_STATE["status"] = "ready"
+        BOOTSTRAP_STATE["detail"] = ""
+    except Exception as exc:
+        BOOTSTRAP_STATE["status"] = "error"
+        BOOTSTRAP_STATE["detail"] = str(exc)
+        print(f"⚠️  Bootstrap warning: {exc}")
+
+
+if is_railway_runtime:
+    @app.on_event("startup")
+    async def kickoff_bootstrap():
+        if BOOTSTRAP_STATE["status"] in {"running", "ready"}:
+            return
+        BOOTSTRAP_STATE["status"] = "running"
+        threading.Thread(target=bootstrap_database, daemon=True).start()
+else:
+    BOOTSTRAP_STATE["status"] = "running"
+    bootstrap_database()
 
 # Register routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -132,7 +154,11 @@ app.mount("/uploads/tasks", StaticFiles(directory=TASK_UPLOAD_ROOT), name="task_
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "bootstrap": BOOTSTRAP_STATE["status"],
+        "detail": BOOTSTRAP_STATE["detail"],
+    }
 
 
 @app.head("/healthz")
