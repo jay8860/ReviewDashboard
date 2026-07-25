@@ -213,11 +213,10 @@ def _ensure_default_gp_master(db: Session) -> None:
     ).update({"district": "Dantewada"}, synchronize_session=False)
     db.commit()
 
-    has_dantewada = db.query(models.GramPanchayat.id).filter(
+    has_any_gp = db.query(models.GramPanchayat.id).filter(
         models.GramPanchayat.is_active == True,
-        models.GramPanchayat.district == "Dantewada",
     ).first()
-    if has_dantewada:
+    if has_any_gp:
         return
 
     for item in DEFAULT_GP_MASTER:
