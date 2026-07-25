@@ -149,13 +149,23 @@ frontend_dist = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(frontend_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
 
+    def serve_frontend_index():
+        return FileResponse(
+            os.path.join(frontend_dist, "index.html"),
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     @app.get("/reset-password")
     def reset_password_page():
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+        return serve_frontend_index()
 
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
         file_path = os.path.join(frontend_dist, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+        return serve_frontend_index()
