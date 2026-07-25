@@ -14,7 +14,9 @@ ALL_MODULES = [
     "planner",
 ]
 
-TASK_EMPLOYEE_MODULES = ["tasks", "employees"]
+# Modules needed by the TaskAdderBot service account (creates/updates tasks,
+# looks up employees, and writes to the field-visit planning notepad).
+TASK_EMPLOYEE_MODULES = ["tasks", "employees", "field_visits"]
 
 def seed_admin(db: Session):
     """Seed default admin user if none exists."""
@@ -75,8 +77,13 @@ def seed_admin(db: Session):
         if restricted_user.role != "user":
             restricted_user.role = "user"
             updated = True
-        if not restricted_user.module_access:
-            restricted_user.module_access = json.dumps(TASK_EMPLOYEE_MODULES)
+        try:
+            existing_modules = json.loads(restricted_user.module_access or "[]")
+        except Exception:
+            existing_modules = []
+        if not restricted_user.module_access or set(TASK_EMPLOYEE_MODULES) - set(existing_modules):
+            merged = existing_modules + [m for m in TASK_EMPLOYEE_MODULES if m not in existing_modules]
+            restricted_user.module_access = json.dumps(merged)
             updated = True
         if updated:
             db.commit()
