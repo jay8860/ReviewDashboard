@@ -113,6 +113,7 @@ const Overview = ({ user, onLogout }) => {
     const [plannerRows, setPlannerRows] = useState([]);
     const [fieldVisitDraftRows, setFieldVisitDraftRows] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadWarning, setLoadWarning] = useState('');
     const [deptSectionCollapsed, setDeptSectionCollapsed] = useState(false);
     const [deptSortMode, setDeptSortMode] = useState('next_upcoming');
     const [timelineFilters, setTimelineFilters] = useState({
@@ -123,16 +124,18 @@ const Overview = ({ user, onLogout }) => {
 
     const loadData = async () => {
         setLoading(true);
+        setLoadWarning('');
         try {
             const startDate = format(new Date(), 'yyyy-MM-dd');
             const endDate = format(addDays(new Date(), 45), 'yyyy-MM-dd');
-            const [deptsRes, statsRes, tasksRes, reviewsRes, plannerRes, fieldDraftsRes] = await Promise.allSettled([
+            const [deptsRes, statsRes, tasksRes, reviewsRes, plannerRes, fieldDraftsRes, meetingsRes] = await Promise.allSettled([
                 api.getDepartments(),
                 api.getTaskStats(),
                 api.getTasks({ status: 'Pending,In Progress,Overdue' }),
                 api.getSessions(),
                 api.getPlannerEvents(startDate, endDate),
                 api.getFieldVisitDrafts(),
+                api.getDepartmentMeetingsOverview(),
             ]);
 
             const depts = deptsRes.status === 'fulfilled' ? (deptsRes.value || []) : [];
@@ -141,6 +144,16 @@ const Overview = ({ user, onLogout }) => {
             const reviews = reviewsRes.status === 'fulfilled' ? (reviewsRes.value || []) : [];
             const plannerEvents = plannerRes.status === 'fulfilled' ? (plannerRes.value || []) : [];
             const fieldDrafts = fieldDraftsRes.status === 'fulfilled' ? (fieldDraftsRes.value || []) : [];
+            const meetingsMap = meetingsRes.status === 'fulfilled' ? (meetingsRes.value || {}) : {};
+
+            const failedSections = [];
+            if (deptsRes.status !== 'fulfilled') failedSections.push('departments');
+            if (statsRes.status !== 'fulfilled') failedSections.push('task counts');
+            if (tasksRes.status !== 'fulfilled') failedSections.push('tasks');
+            if (reviewsRes.status !== 'fulfilled') failedSections.push('reviews');
+            if (plannerRes.status !== 'fulfilled') failedSections.push('planner');
+            if (fieldDraftsRes.status !== 'fulfilled') failedSections.push('field visits');
+            if (meetingsRes.status !== 'fulfilled') failedSections.push('department meetings');
 
             setDepartments(depts);
             setTaskStats(stats);
@@ -148,23 +161,18 @@ const Overview = ({ user, onLogout }) => {
             setReviewRows(reviews);
             setPlannerRows(plannerEvents);
             setFieldVisitDraftRows(fieldDrafts);
+            setDeptMeetings(meetingsMap);
 
-            if (depts.length) {
-                const meetingResults = await Promise.allSettled(
-                    depts.map(d => api.getMeetings(d.id).then(meetings => ({ deptId: d.id, meetings })))
-                );
-                const meetingsMap = {};
-                meetingResults.forEach(result => {
-                    if (result.status === 'fulfilled') {
-                        meetingsMap[result.value.deptId] = result.value.meetings;
-                    }
-                });
-                setDeptMeetings(meetingsMap);
-            } else {
-                setDeptMeetings({});
+            if (failedSections.length) {
+                const message = `Some dashboard data could not be loaded: ${failedSections.join(', ')}.`;
+                setLoadWarning(message);
+                toast.warning(message, 6500);
             }
         } catch (e) {
             console.error(e);
+            const message = 'Dashboard refresh failed. Please try again.';
+            setLoadWarning(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -469,6 +477,12 @@ const Overview = ({ user, onLogout }) => {
                 <StatCard title="Pending" value={taskStats.pending} icon={Clock} color="yellow" delay={2} onClick={() => navigate('/tasks?status=Pending')} />
                 <StatCard title="Overdue" value={taskStats.overdue} icon={AlertTriangle} color="red" delay={3} onClick={() => navigate('/tasks?status=Overdue')} />
             </div>
+
+            {loadWarning && (
+                <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                    {loadWarning}
+                </div>
+            )}
 
             <div className="grid lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2">

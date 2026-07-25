@@ -208,6 +208,28 @@ def _serialize_meeting_summary(meeting: Optional[models.DepartmentMeeting]) -> O
     }
 
 
+def _serialize_meeting_detail(meeting: models.DepartmentMeeting) -> dict:
+    snapshot = _safe_json_list(meeting.agenda_snapshot, [])
+    table_columns = _safe_json_list(meeting.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS)
+    table_rows = _safe_json_list(meeting.action_table_rows, [])
+    return {
+        "id": meeting.id,
+        "department_id": meeting.department_id,
+        "scheduled_date": str(meeting.scheduled_date),
+        "scheduled_time": meeting.scheduled_time,
+        "venue": meeting.venue,
+        "attendees": meeting.attendees,
+        "notes": meeting.notes,
+        "status": meeting.status,
+        "officer_phone": meeting.officer_phone,
+        "agenda_snapshot": snapshot,
+        "action_table_columns": table_columns,
+        "action_table_rows": table_rows,
+        "created_at": meeting.created_at,
+        "updated_at": meeting.updated_at,
+    }
+
+
 def _planner_status_from_meeting_status(status: Optional[str]) -> str:
     val = (status or "").strip().lower()
     if val in {"cancelled", "canceled"}:
@@ -632,6 +654,26 @@ def get_departments(db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/overview/meetings")
+def get_department_meetings_overview(db: Session = Depends(get_db)):
+    meetings = db.query(models.DepartmentMeeting).join(
+        models.Department,
+        models.Department.id == models.DepartmentMeeting.department_id,
+    ).filter(
+        models.Department.is_active == True
+    ).order_by(
+        models.DepartmentMeeting.department_id.asc(),
+        models.DepartmentMeeting.scheduled_date.desc(),
+        models.DepartmentMeeting.scheduled_time.desc(),
+    ).all()
+
+    result = {}
+    for meeting in meetings:
+        dept_key = str(meeting.department_id)
+        result.setdefault(dept_key, []).append(_serialize_meeting_detail(meeting))
+    return result
+
+
 @router.post("/")
 def create_department(data: DepartmentCreate, db: Session = Depends(get_db)):
     category_name = _sanitize_category_name(data.category_name)
@@ -1006,38 +1048,7 @@ def get_meetings(dept_id: int, db: Session = Depends(get_db)):
         models.DepartmentMeeting.department_id == dept_id
     ).order_by(models.DepartmentMeeting.scheduled_date.desc(), models.DepartmentMeeting.scheduled_time.desc()).all()
 
-    # Self-heal planner linkage for legacy/missed sync records.
-    for m in meetings:
-        _sync_planner_event_from_department_meeting(
-            db,
-            m,
-            department_name=dept.name,
-            department_color=dept.color,
-        )
-    db.commit()
-
-    result = []
-    for m in meetings:
-        snapshot = _safe_json_list(m.agenda_snapshot, [])
-        table_columns = _safe_json_list(m.action_table_columns, DEFAULT_MEETING_TABLE_COLUMNS)
-        table_rows = _safe_json_list(m.action_table_rows, [])
-        result.append({
-            "id": m.id,
-            "department_id": m.department_id,
-            "scheduled_date": str(m.scheduled_date),
-            "scheduled_time": m.scheduled_time,
-            "venue": m.venue,
-            "attendees": m.attendees,
-            "notes": m.notes,
-            "status": m.status,
-            "officer_phone": m.officer_phone,
-            "agenda_snapshot": snapshot,
-            "action_table_columns": table_columns,
-            "action_table_rows": table_rows,
-            "created_at": m.created_at,
-            "updated_at": m.updated_at,
-        })
-    return result
+    return [_serialize_meeting_detail(m) for m in meetings]
 
 
 @router.post("/{dept_id}/meetings")

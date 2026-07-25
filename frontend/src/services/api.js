@@ -213,6 +213,10 @@ export const api = {
         const res = await axios.get(`${DEPT_URL}/${deptId}/meetings`);
         return res.data;
     },
+    getDepartmentMeetingsOverview: async () => {
+        const res = await axios.get(`${DEPT_URL}/overview/meetings`);
+        return res.data;
+    },
     createMeeting: async (deptId, data) => {
         const res = await axios.post(`${DEPT_URL}/${deptId}/meetings`, data);
         return res.data;
