@@ -12,6 +12,7 @@ const TODO_URL = `${BASE_URL}/api/todos`;
 const ANALYTICS_URL = `${BASE_URL}/api/analytics`;
 const BACKUP_URL = `${BASE_URL}/api/backup`;
 const AUDIT_URL = `${BASE_URL}/api/audit`;
+const GENERAL_INFO_URL = `${BASE_URL}/api/general-info`;
 
 const readToken = () => {
     const raw = localStorage.getItem('token');
@@ -257,6 +258,44 @@ export const api = {
     },
     downloadMeetingDocument: async (deptId, meetingId, docId) => {
         return axios.get(`${DEPT_URL}/${deptId}/meetings/${meetingId}/documents/${docId}/download`, { responseType: 'blob' });
+    },
+
+    // ── General Info ──────────────────────────────────────────────────────────
+    getGeneralInfo: async () => {
+        const res = await axios.get(`${GENERAL_INFO_URL}/`);
+        return res.data;
+    },
+    updateGeneralInfoProfile: async (data) => {
+        const res = await axios.put(`${GENERAL_INFO_URL}/profile`, data);
+        return res.data;
+    },
+    uploadGeneralInfoDocuments: async (fileOrFiles, options = {}) => {
+        const fd = new FormData();
+        appendFiles(fd, fileOrFiles);
+        if (options.title) fd.append('title', options.title);
+        if (options.category) fd.append('category', options.category);
+        if (options.is_map !== undefined) fd.append('is_map', String(options.is_map));
+        const res = await axios.post(`${GENERAL_INFO_URL}/documents`, fd);
+        return res.data;
+    },
+    createGeneralInfoLink: async (data) => {
+        const res = await axios.post(`${GENERAL_INFO_URL}/links`, data);
+        return res.data;
+    },
+    analyzeGeneralInfoDocument: async (docId, data) => {
+        const res = await axios.post(`${GENERAL_INFO_URL}/documents/${docId}/analyze`, data);
+        return res.data;
+    },
+    generateGeneralInfoBrief: async (data = {}) => {
+        const res = await axios.post(`${GENERAL_INFO_URL}/generate-brief`, data);
+        return res.data;
+    },
+    downloadGeneralInfoDocument: async (docId) => {
+        return axios.get(`${GENERAL_INFO_URL}/documents/${docId}/download`, { responseType: 'blob' });
+    },
+    deleteGeneralInfoDocument: async (docId) => {
+        const res = await axios.delete(`${GENERAL_INFO_URL}/documents/${docId}`);
+        return res.data;
     },
 
     // ── Department Data Grid ───────────────────────────────────────────────────

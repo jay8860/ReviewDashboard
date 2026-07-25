@@ -361,6 +361,45 @@ class DocumentAttachment(Base):
     meeting = relationship("DepartmentMeeting", back_populates="document_attachments")
 
 
+# ─── General Info ─────────────────────────────────────────────────────────────
+
+class GeneralInfoProfile(Base):
+    __tablename__ = "general_info_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    district_name = Column(String, nullable=False, default="District")
+    headline = Column(String, nullable=True)
+    overview_markdown = Column(Text, nullable=True)
+    sections_json = Column(Text, nullable=False, default='[]')
+    key_metrics_json = Column(Text, nullable=False, default='[]')
+    raw_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class GeneralInfoDocument(Base):
+    __tablename__ = "general_info_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    category = Column(String, nullable=False, default="reference")   # reference | map | brief | dataset
+    is_map = Column(Boolean, default=False)
+    external_url = Column(Text, nullable=True)
+    original_filename = Column(String, nullable=True)
+    stored_filename = Column(String, nullable=True)
+    file_path = Column(Text, nullable=True)
+    mime_type = Column(String, nullable=True)
+    file_extension = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=False, default=0)
+    extracted_text = Column(Text, nullable=True)
+    extraction_truncated = Column(Boolean, default=False)
+    analysis_mode = Column(String, nullable=True)
+    analysis_prompt = Column(Text, nullable=True)
+    analysis_output = Column(Text, nullable=True)
+    analysis_status = Column(String, nullable=False, default="Not Analyzed")
+    analysis_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 # ─── Field Visit Drafts ───────────────────────────────────────────────────────
 # Draft pool of villages/themes that can later be scheduled in weekly planner
 

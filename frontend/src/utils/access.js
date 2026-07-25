@@ -1,5 +1,6 @@
 export const MODULE_CONFIG = [
     { key: 'overview', label: 'Overview', path: '/' },
+    { key: 'general_info', label: 'General Info', path: '/general-info' },
     { key: 'tasks', label: 'Tasks', path: '/tasks' },
     { key: 'analytics', label: 'Analytics', path: '/analytics' },
     { key: 'employees', label: 'Employees', path: '/employees' },

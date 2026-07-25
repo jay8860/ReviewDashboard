@@ -69,6 +69,7 @@ const FieldVisits = lazyRetry(() => import('./pages/FieldVisits'));
 const Todos = lazyRetry(() => import('./pages/Todos'));
 const AccessModule = lazyRetry(() => import('./pages/AccessModule'));
 const Audit = lazyRetry(() => import('./pages/Audit'));
+const GeneralInfo = lazyRetry(() => import('./pages/GeneralInfo'));
 
 const AdminRoute = ({ children, user }) => {
     if (!user) return <Navigate to="/login" replace />;
@@ -164,6 +165,11 @@ function App() {
                         <Route path="/" element={
                             <ModuleRoute user={user} moduleKey="overview">
                                 <Overview user={user} onLogout={handleLogout} />
+                            </ModuleRoute>
+                        } />
+                        <Route path="/general-info" element={
+                            <ModuleRoute user={user} moduleKey="general_info">
+                                <GeneralInfo user={user} onLogout={handleLogout} />
                             </ModuleRoute>
                         } />
                         <Route path="/departments" element={

@@ -10,7 +10,7 @@ import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
-from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit
+from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit, general_info
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 BOOTSTRAP_STATE = {"status": "pending", "detail": ""}
@@ -32,6 +32,7 @@ PUBLIC_API_PATHS = {
 
 MODULE_BY_PREFIX = {
     "/api/departments": "departments",
+    "/api/general-info": "general_info",
     "/api/reviews": "departments",
     "/api/tasks": "tasks",
     "/api/planner": "planner",
@@ -147,6 +148,7 @@ else:
 
 # Register routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(general_info.router, prefix="/api/general-info", tags=["general-info"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
 app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])

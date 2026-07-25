@@ -31,6 +31,8 @@ BACKUP_MODELS: List[Type] = [
     models.FieldVisitDraft,
     models.FieldVisitPlanningNote,
     models.DocumentAttachment,
+    models.GeneralInfoProfile,
+    models.GeneralInfoDocument,
 ]
 
 

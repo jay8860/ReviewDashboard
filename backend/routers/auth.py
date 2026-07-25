@@ -25,6 +25,7 @@ router = APIRouter()
 
 AVAILABLE_MODULES = [
     "overview",
+    "general_info",
     "tasks",
     "analytics",
     "employees",
