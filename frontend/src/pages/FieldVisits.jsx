@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Calendar, ExternalLink, MapPin, Plus, Trash2, ArrowUp, ArrowDown,
     Save, Sparkles, Route, FileText, Users, Search, Clock, ClipboardCheck,
-    CheckCircle2, Circle, Filter, RotateCcw, Upload, Download, History, MapPinned
+    CheckCircle2, Circle, Filter, RotateCcw, Upload, Download, History, MapPinned, AlertTriangle
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import Layout from '../components/Layout';
@@ -29,6 +29,11 @@ const getTodayInputValue = () => {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+};
+
+const getDefaultHomeBase = (district = '') => {
+    const normalized = cleanText(district);
+    return normalized ? `Collectorate, ${normalized}` : 'Collectorate';
 };
 
 const toDisplayDate = (value) => {
@@ -655,6 +660,37 @@ const FieldVisitCoveragePanel = ({
             })
             .slice(0, 8)
     ), [allRows]);
+    const recentRows = useMemo(() => (
+        allRows
+            .filter(row => row.last_visit_date && (row.status === 'recent' || row.status === 'visited'))
+            .sort((a, b) => new Date(b.last_visit_date) - new Date(a.last_visit_date))
+            .slice(0, 6)
+    ), [allRows]);
+    const actionNeededCount = (data.summary.never_visited_gps || 0) + (data.summary.stale_gps || 0);
+    const coverageSegments = useMemo(() => {
+        const total = data.summary.total_gps || 0;
+        if (!total) return [];
+        return [
+            { key: 'recent', label: 'Recent', value: data.summary.recent_gps || 0, className: 'bg-emerald-500' },
+            { key: 'visited', label: 'Visited 31-90d', value: Math.max((data.summary.visited_gps || 0) - (data.summary.recent_gps || 0) - (data.summary.legacy_gps || 0), 0), className: 'bg-sky-500' },
+            { key: 'legacy', label: 'Legacy', value: data.summary.legacy_gps || 0, className: 'bg-teal-500' },
+            { key: 'stale', label: '90+d', value: data.summary.stale_gps || 0, className: 'bg-amber-500' },
+            { key: 'never', label: 'Never', value: data.summary.never_visited_gps || 0, className: 'bg-rose-500' },
+        ].filter(segment => segment.value > 0).map(segment => ({
+            ...segment,
+            pct: Math.max((segment.value / total) * 100, 2),
+        }));
+    }, [data.summary]);
+    const attentionBlocks = useMemo(() => (
+        [...(data.blocks || [])]
+            .sort((a, b) => {
+                const aNeed = (a.never || 0) + (a.stale || 0);
+                const bNeed = (b.never || 0) + (b.stale || 0);
+                if (aNeed !== bNeed) return bNeed - aNeed;
+                return (a.coverage_pct || 0) - (b.coverage_pct || 0);
+            })
+            .slice(0, 5)
+    ), [data.blocks]);
 
     const toggleGp = (id) => {
         setSelectedGpIds(prev => (
@@ -730,7 +766,7 @@ const FieldVisitCoveragePanel = ({
                         <Download size={14} /> Download format
                     </button>
                     <label className={`px-3 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-sm font-bold text-emerald-700 inline-flex items-center justify-center gap-1.5 cursor-pointer ${importing ? 'opacity-60 pointer-events-none' : ''}`}>
-                        <Upload size={14} /> {importing ? 'Importing...' : 'Upload GP CSV'}
+                        <Upload size={14} /> {importing ? 'Replacing...' : 'Replace GP CSV'}
                         <input
                             type="file"
                             accept=".csv,text/csv"
@@ -750,8 +786,8 @@ const FieldVisitCoveragePanel = ({
                         <p className="text-2xl font-black text-emerald-700">{data.summary.visited_gps || 0}</p>
                     </div>
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                        <p className="text-[11px] uppercase tracking-widest font-black text-rose-600">Pending</p>
-                        <p className="text-2xl font-black text-rose-700">{data.summary.never_visited_gps || 0}</p>
+                        <p className="text-[11px] uppercase tracking-widest font-black text-rose-600">Action Needed</p>
+                        <p className="text-2xl font-black text-rose-700">{actionNeededCount}</p>
                     </div>
                     <div className="rounded-2xl border border-teal-200 bg-teal-50 p-3">
                         <p className="text-[11px] uppercase tracking-widest font-black text-teal-600">Legacy</p>
@@ -766,6 +802,37 @@ const FieldVisitCoveragePanel = ({
 
             <div className="grid xl:grid-cols-[1.08fr_0.92fr] gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 mb-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-[11px] uppercase tracking-widest font-black text-slate-400">Coverage Journey</p>
+                                <p className="text-sm font-bold text-slate-700">Quick view of what is done, old, and still pending.</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs font-black text-slate-500">District readiness</p>
+                                <p className="text-xl font-black text-slate-800">{data.summary.coverage_pct || 0}%</p>
+                            </div>
+                        </div>
+                        <div className="mt-3 h-3 rounded-full overflow-hidden bg-white border border-slate-200 flex">
+                            {coverageSegments.map(segment => (
+                                <div
+                                    key={segment.key}
+                                    className={segment.className}
+                                    style={{ width: `${segment.pct}%` }}
+                                    title={`${segment.label}: ${segment.value}`}
+                                />
+                            ))}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {coverageSegments.map(segment => (
+                                <span key={segment.key} className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600">
+                                    <span className={`w-2.5 h-2.5 rounded-full ${segment.className}`} />
+                                    {segment.label}: {segment.value}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h3 className="text-sm font-black text-slate-800">Coverage Map</h3>
                         <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
@@ -858,6 +925,53 @@ const FieldVisitCoveragePanel = ({
                             </button>
                         ))}
                     </div>
+
+                    <div className="grid lg:grid-cols-2 gap-3 mt-3">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle size={14} className="text-amber-700" />
+                                <p className="text-xs font-black uppercase tracking-widest text-amber-700">Blocks Needing Attention</p>
+                            </div>
+                            <div className="space-y-2">
+                                {attentionBlocks.map(block => {
+                                    const need = (block.never || 0) + (block.stale || 0);
+                                    return (
+                                        <button
+                                            key={block.block}
+                                            onClick={() => setFilters(prev => ({ ...prev, block: block.block }))}
+                                            className="w-full rounded-lg bg-white/80 border border-amber-100 px-3 py-2 text-left hover:bg-white"
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-sm font-black text-slate-800 truncate">{block.block}</p>
+                                                <span className="text-[11px] font-black text-amber-700">{need} to cover</span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">{block.visited}/{block.total} visited</p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <CheckCircle2 size={14} className="text-emerald-700" />
+                                <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Recent Visit Wins</p>
+                            </div>
+                            <div className="space-y-2">
+                                {recentRows.length === 0 ? (
+                                    <p className="text-xs text-slate-500">No recent GP visits recorded yet.</p>
+                                ) : recentRows.map(row => (
+                                    <div key={row.id} className="rounded-lg bg-white/80 border border-emerald-100 px-3 py-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-sm font-black text-slate-800 truncate">{row.name}</p>
+                                            <span className="text-[11px] font-bold text-emerald-700">{formatLastVisit(row)}</span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 truncate">{row.block}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 min-w-0">
@@ -940,7 +1054,7 @@ const FieldVisitCoveragePanel = ({
                             const meta = getCoverageStatusMeta(row.status);
                             const selected = selectedSet.has(row.id);
                             return (
-                                <div key={row.id} className="px-3 py-2.5 flex items-start gap-2 hover:bg-slate-50">
+                                <div key={row.id} className={`px-3 py-2.5 flex items-start gap-2 border-l-4 hover:bg-slate-50 ${selected ? 'bg-emerald-50/60' : 'bg-white'} ${row.status === 'recent' ? 'border-l-emerald-400' : row.status === 'visited' ? 'border-l-sky-400' : row.status === 'legacy' ? 'border-l-teal-400' : row.status === 'stale' ? 'border-l-amber-400' : 'border-l-rose-400'}`}>
                                     <input
                                         type="checkbox"
                                         checked={selected}
@@ -1088,8 +1202,9 @@ const FieldVisits = ({ user, onLogout }) => {
 
             setDrafts(rows);
             setDepartments(deptRows);
+            const fallbackHomeBase = getDefaultHomeBase(coverageData?.district || selectedDistrict);
             setPlanningNoteText(notesData?.note_text || '');
-            setHomeBase(notesData?.home_base || 'Collectorate, Dantewada');
+            setHomeBase(notesData?.home_base || fallbackHomeBase);
             setPlanningNoteItems(noteItems?.length ? noteItems : parseNotepadLines(notesData?.note_text || ''));
             setEmployees(employeeRows.filter(emp => emp.is_active !== false));
             setCoverage(coverageData);
@@ -1103,7 +1218,7 @@ const FieldVisits = ({ user, onLogout }) => {
                     try {
                         const parsed = JSON.parse(cached);
                         const noteText = parsed?.note_text || '';
-                        const base = parsed?.home_base || 'Collectorate, Dantewada';
+                        const base = parsed?.home_base || fallbackHomeBase;
                         if (!notesData?.note_text) setPlanningNoteText(noteText);
                         if (!notesData?.home_base) setHomeBase(base);
                         if (!noteItems?.length) setPlanningNoteItems(parseNotepadLines(noteText));
@@ -1213,10 +1328,11 @@ const FieldVisits = ({ user, onLogout }) => {
             const parsed = await api.getFieldVisitPlanningNoteItems();
             setPlanningNoteItems(parsed?.length ? parsed : parseNotepadLines(saved?.note_text || ''));
             setPlanningNoteText(saved?.note_text || '');
-            setHomeBase(saved?.home_base || 'Collectorate, Dantewada');
+            const fallbackHomeBase = getDefaultHomeBase(selectedDistrict || coverage?.district);
+            setHomeBase(saved?.home_base || fallbackHomeBase);
             window.localStorage.setItem(localNotepadKey, JSON.stringify({
                 note_text: saved?.note_text || '',
-                home_base: saved?.home_base || 'Collectorate, Dantewada',
+                home_base: saved?.home_base || fallbackHomeBase,
             }));
             toast.success('Planning notepad saved');
         } catch (e) {
@@ -1224,7 +1340,7 @@ const FieldVisits = ({ user, onLogout }) => {
             if (e?.response?.status === 404) {
                 window.localStorage.setItem(localNotepadKey, JSON.stringify({
                     note_text: planningNoteText || '',
-                    home_base: homeBase || 'Collectorate, Dantewada',
+                    home_base: homeBase || getDefaultHomeBase(selectedDistrict || coverage?.district),
                 }));
                 setPlanningNoteItems(parseNotepadLines(planningNoteText || ''));
                 toast.info('Backend route not found. Saved notepad locally in browser.');
@@ -1469,14 +1585,26 @@ const FieldVisits = ({ user, onLogout }) => {
                 toast.error('CSV must include a gram_panchayat or gp_name column');
                 return;
             }
+            const districts = [...new Set(items.map(item => item.district).filter(Boolean))];
+            if (districts.length !== 1) {
+                toast.error('CSV must contain exactly one district for a full master replacement');
+                return;
+            }
+            const districtLabel = districts[0];
+            if (!window.confirm(`Replace the current GP master with ${items.length} rows for ${districtLabel}? This will remove the old district mapping from the portal.`)) {
+                return;
+            }
 
-            const updated = await api.bulkUpsertGramPanchayats(items);
+            const updated = await api.replaceGramPanchayatsMaster({
+                items,
+                home_base: `Collectorate, ${districtLabel}`,
+            });
             setCoverage(updated || EMPTY_COVERAGE);
             if (updated?.district) setSelectedDistrict(updated.district);
             setSelectedGpIds([]);
             setCoverageFilters({ search: '', block: 'all', status: 'all' });
             const result = updated?.import_result || {};
-            toast.success(`Imported ${result.created || 0} new and updated ${result.updated || 0} GP rows`);
+            toast.success(`Replaced GP master with ${result.created || 0} rows for ${districtLabel}`);
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Failed to import GP CSV');
         } finally {

@@ -520,7 +520,7 @@ export const api = {
 
         const payload = {
             note_text: [...existingLines, ...appended].join('\n'),
-            home_base: existing.home_base || 'Collectorate, Dantewada',
+            home_base: existing.home_base || 'Collectorate',
         };
         const res = await axios.put(`${FIELD_VISIT_URL}/planning-notes`, payload);
         return res.data;
@@ -544,6 +544,10 @@ export const api = {
     },
     bulkUpsertGramPanchayats: async (items = []) => {
         const res = await axios.post(`${FIELD_VISIT_URL}/gram-panchayats/bulk-upsert`, { items });
+        return res.data;
+    },
+    replaceGramPanchayatsMaster: async ({ items = [], home_base = '' } = {}) => {
+        const res = await axios.post(`${FIELD_VISIT_URL}/gram-panchayats/replace-master`, { items, home_base });
         return res.data;
     },
 

@@ -185,7 +185,7 @@ def _get_or_create_planning_note(db: Session) -> models.FieldVisitPlanningNote:
     row = db.query(models.FieldVisitPlanningNote).order_by(models.FieldVisitPlanningNote.id.asc()).first()
     if row:
         return row
-    row = models.FieldVisitPlanningNote(note_text="", home_base="Collectorate, Dantewada")
+    row = models.FieldVisitPlanningNote(note_text="", home_base="Collectorate")
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -196,7 +196,7 @@ def _serialize_planning_note(row: models.FieldVisitPlanningNote) -> dict:
     return {
         "id": row.id,
         "note_text": row.note_text or "",
-        "home_base": row.home_base or "Collectorate, Dantewada",
+        "home_base": row.home_base or "Collectorate",
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -716,6 +716,11 @@ class GramPanchayatBulkUpsertPayload(BaseModel):
     items: List[GramPanchayatUpsertItem]
 
 
+class GramPanchayatReplacePayload(BaseModel):
+    items: List[GramPanchayatUpsertItem]
+    home_base: Optional[str] = None
+
+
 @router.get("/coverage")
 def get_gp_visit_coverage(district: Optional[str] = None, db: Session = Depends(get_db)):
     return _build_coverage_payload(db, district=district)
@@ -867,6 +872,68 @@ def bulk_upsert_gram_panchayats(data: GramPanchayatBulkUpsertPayload, db: Sessio
     db.commit()
     payload = _build_coverage_payload(db, district=first_district)
     payload["import_result"] = {"created": created, "updated": updated}
+    return payload
+
+
+@router.post("/gram-panchayats/replace-master")
+def replace_gram_panchayat_master(data: GramPanchayatReplacePayload, db: Session = Depends(get_db)):
+    incoming = data.items or []
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No Gram Panchayat rows provided")
+    if len(incoming) > 1000:
+        raise HTTPException(status_code=400, detail="Too many rows. Please import up to 1000 at a time.")
+
+    normalized_rows = []
+    seen_keys = set()
+    first_district = None
+    for item in incoming:
+        name = _normalize_text(item.name)
+        district = _normalize_text(item.district) or "Dantewada"
+        block = _normalize_text(item.block) or "Unassigned"
+        if not name:
+            continue
+        key = (district.lower(), block.lower(), name.lower())
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        sample_villages = _normalize_text(item.sample_villages)
+        village_count = len(_split_sample_villages(sample_villages))
+        if first_district is None:
+            first_district = district
+        normalized_rows.append(models.GramPanchayat(
+            district=district,
+            block=block,
+            name=name,
+            sample_villages=sample_villages or None,
+            village_count=village_count,
+            latitude=item.latitude,
+            longitude=item.longitude,
+            map_x=item.map_x,
+            map_y=item.map_y,
+            is_active=True,
+        ))
+
+    if not normalized_rows:
+        raise HTTPException(status_code=400, detail="No valid Gram Panchayat rows found in payload")
+
+    deleted_visits = db.query(models.FieldVisitGPVisit).delete(synchronize_session=False)
+    deleted_gps = db.query(models.GramPanchayat).delete(synchronize_session=False)
+    for row in normalized_rows:
+        db.add(row)
+
+    home_base = _normalize_text(data.home_base)
+    if home_base:
+        planning_note = _get_or_create_planning_note(db)
+        planning_note.home_base = home_base
+
+    db.commit()
+    payload = _build_coverage_payload(db, district=first_district)
+    payload["import_result"] = {
+        "created": len(normalized_rows),
+        "updated": 0,
+        "deleted_gps": deleted_gps,
+        "deleted_visits": deleted_visits,
+    }
     return payload
 
 

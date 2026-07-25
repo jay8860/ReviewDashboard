@@ -176,7 +176,7 @@ def apply_non_destructive_migrations():
         ],
         "field_visit_planning_notes": [
             ("note_text", "TEXT"),
-            ("home_base", "VARCHAR DEFAULT 'Collectorate, Dantewada'"),
+            ("home_base", "VARCHAR DEFAULT 'Collectorate'"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],

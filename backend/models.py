@@ -396,7 +396,7 @@ class FieldVisitPlanningNote(Base):
     __tablename__ = "field_visit_planning_notes"
     id = Column(Integer, primary_key=True, index=True)
     note_text = Column(Text, nullable=True)
-    home_base = Column(String, default="Collectorate, Dantewada")
+    home_base = Column(String, default="Collectorate")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
