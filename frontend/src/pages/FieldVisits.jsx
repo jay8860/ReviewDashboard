@@ -676,7 +676,33 @@ const escapeHtml = (value) => String(value ?? '')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey }) => {
+const GP_LABEL_TOOLTIP_STYLE_ID = 'gp-label-tooltip-style';
+
+const ensureGpLabelTooltipStyle = () => {
+    if (document.getElementById(GP_LABEL_TOOLTIP_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = GP_LABEL_TOOLTIP_STYLE_ID;
+    style.textContent = `
+        .gp-label-tooltip {
+            background: #ffffffee;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            padding: 1px 4px;
+            font-size: 10px;
+            font-weight: 700;
+            color: #1e293b;
+            box-shadow: none;
+            white-space: nowrap;
+            line-height: 1.3;
+        }
+        .gp-label-tooltip::before {
+            display: none;
+        }
+    `;
+    document.head.appendChild(style);
+};
+
+const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey, showLabels }) => {
     const containerRef = useRef(null);
     const mapRef = useRef(null);
     const layerRef = useRef(null);
@@ -690,6 +716,10 @@ const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey }) => {
             .then(() => { if (alive) setReady(true); })
             .catch(() => { if (alive) setLoadError(true); });
         return () => { alive = false; };
+    }, []);
+
+    useEffect(() => {
+        ensureGpLabelTooltipStyle();
     }, []);
 
     useEffect(() => {
@@ -734,6 +764,14 @@ const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey }) => {
                 `${point.last_visit_date ? ` &middot; ${escapeHtml(point.last_visit_date)}` : ''}</div>`,
                 { direction: 'top', offset: [0, -8], sticky: true },
             );
+            if (showLabels) {
+                marker.bindTooltip(escapeHtml(point.name), {
+                    permanent: true,
+                    direction: 'right',
+                    className: 'gp-label-tooltip',
+                    offset: [6, 0],
+                });
+            }
             marker.on('click', () => onToggle(point.id));
             marker.addTo(layer);
             bounds.push([point.lat, point.lon]);
@@ -744,7 +782,7 @@ const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey }) => {
             lastFocusRef.current = focusKey;
             map.fitBounds(bounds, { padding: [28, 28], maxZoom: 12 });
         }
-    }, [ready, points, selectedSet, onToggle, focusKey]);
+    }, [ready, points, selectedSet, onToggle, focusKey, showLabels]);
 
     if (loadError) {
         return (
@@ -797,6 +835,7 @@ const FieldVisitCoveragePanel = ({
     const allRows = data.gram_panchayats || [];
     const district = selectedDistrict || data.district || 'Dantewada';
     const selectedSet = useMemo(() => new Set(selectedGpIds), [selectedGpIds]);
+    const [showLabels, setShowLabels] = useState(false);
     const visibleRows = useMemo(() => {
         const q = (filters.search || '').trim().toLowerCase();
         return allRows.filter(row => {
@@ -996,6 +1035,15 @@ const FieldVisitCoveragePanel = ({
                                 Not visited
                             </span>
                             <span className="text-slate-400">Hover a dot for the GP name; click to select.</span>
+                            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    checked={showLabels}
+                                    onChange={(e) => setShowLabels(e.target.checked)}
+                                    className="w-3.5 h-3.5 accent-emerald-600"
+                                />
+                                Show GP names
+                            </label>
                         </div>
                     </div>
 
@@ -1004,6 +1052,7 @@ const FieldVisitCoveragePanel = ({
                         selectedSet={selectedSet}
                         onToggle={toggleGp}
                         focusKey={`${district}|${filters.block}|${filters.status}|${filters.search.trim().toLowerCase()}`}
+                        showLabels={showLabels}
                     />
 
                     <div className="grid md:grid-cols-4 gap-2 mt-3">
