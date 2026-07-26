@@ -13,3 +13,5 @@ python-pptx
 pypdf
 pdfplumber
 psycopg2-binary
+caldav
+icalendar

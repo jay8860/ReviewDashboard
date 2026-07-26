@@ -523,6 +523,8 @@ class PlannerEvent(Base):
     external_uid = Column(String, nullable=True, index=True)
     external_calendar = Column(String, nullable=True)
     is_locked = Column(Boolean, default=False)         # True for synced external events
+    icloud_uid = Column(String, nullable=True, index=True)  # UID of the pushed iCloud CalDAV event
+    icloud_synced_at = Column(DateTime, nullable=True)       # last successful CalDAV push/update
     # Link to review session if this is a scheduled review
     review_session_id = Column(Integer, ForeignKey("review_sessions.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

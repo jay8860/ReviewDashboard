@@ -157,6 +157,8 @@ def apply_non_destructive_migrations():
             ("external_calendar", "VARCHAR"),
             ("is_locked", "BOOLEAN DEFAULT FALSE"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("icloud_uid", "VARCHAR"),
+            ("icloud_synced_at", "TIMESTAMP"),
         ],
         "planner_settings": [
             ("slot_minutes", "INTEGER DEFAULT 30"),

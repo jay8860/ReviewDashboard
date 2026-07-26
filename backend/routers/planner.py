@@ -9,12 +9,14 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse, urlunparse
 import hashlib
 import json
+import logging
 import re
 import secrets
 
 from database import get_db
-from routers.auth import get_current_user_optional
+from routers.auth import get_current_user_optional, require_admin
 import models
+import icloud_caldav
 
 router = APIRouter()
 
@@ -987,6 +989,23 @@ def create_event(
     _audit_log(db, current_user, "created", event.id, f"Created planner event: {event.title}")
     db.commit()
     db.refresh(event)
+
+    # Best-effort real-time push to iCloud via CalDAV. Never let a CalDAV
+    # failure (or the feature being unconfigured) block planner event
+    # creation -- this must be fully transparent to the Telegram bot and
+    # dashboard UI.
+    try:
+        if (event.source or "") != "external_calendar" and not event.is_locked and icloud_caldav.is_configured():
+            icloud_uid = icloud_caldav.push_event(event)
+            if icloud_uid:
+                event.icloud_uid = icloud_uid
+                event.icloud_synced_at = datetime.utcnow()
+                db.commit()
+                db.refresh(event)
+    except Exception:
+        # Never block planner flow due to iCloud sync.
+        pass
+
     dept_name = None
     if event.department_id:
         dept = db.query(models.Department).filter(models.Department.id == event.department_id).first()
@@ -1050,6 +1069,37 @@ def update_event(
     db.commit()
     db.refresh(event)
 
+    # Best-effort real-time push to iCloud via CalDAV. Never let a CalDAV
+    # failure block the primary DB update response.
+    try:
+        if (event.source or "") != "external_calendar" and not event.is_locked and icloud_caldav.is_configured():
+            synced = False
+            if event.icloud_uid:
+                synced = icloud_caldav.update_event(event.icloud_uid, event)
+                if not synced:
+                    # Event may no longer exist on iCloud -- recreate it.
+                    new_uid = icloud_caldav.push_event(event)
+                    if new_uid:
+                        event.icloud_uid = new_uid
+                        event.icloud_synced_at = datetime.utcnow()
+                        db.commit()
+                        db.refresh(event)
+                        synced = True
+                else:
+                    event.icloud_synced_at = datetime.utcnow()
+                    db.commit()
+                    db.refresh(event)
+            else:
+                new_uid = icloud_caldav.push_event(event)
+                if new_uid:
+                    event.icloud_uid = new_uid
+                    event.icloud_synced_at = datetime.utcnow()
+                    db.commit()
+                    db.refresh(event)
+    except Exception:
+        # Never block planner flow due to iCloud sync.
+        pass
+
     dept_name = None
     if event.department_id:
         dept = db.query(models.Department).filter(models.Department.id == event.department_id).first()
@@ -1090,8 +1140,32 @@ def delete_event(
         linked_field_visit.planned_date = None
         linked_field_visit.planned_time = None
 
+    # Best-effort iCloud delete. Tolerate failure -- the dashboard DB delete
+    # must proceed regardless of whether the iCloud side succeeds, but we log
+    # clearly so a stuck iCloud event is debuggable via /icloud/status or logs.
+    if event.icloud_uid:
+        try:
+            ok = icloud_caldav.delete_event(event.icloud_uid)
+            if not ok:
+                logging.getLogger("icloud_caldav").error(
+                    "Failed to delete iCloud event uid=%s for planner event %s during dashboard delete",
+                    event.icloud_uid, event_id,
+                )
+        except Exception:
+            logging.getLogger("icloud_caldav").exception(
+                "Unexpected error deleting iCloud event uid=%s for planner event %s",
+                event.icloud_uid, event_id,
+            )
+
     title = event.title
     db.delete(event)
     _audit_log(db, current_user, "deleted", event_id, f"Deleted planner event: {title}")
     db.commit()
     return {"message": "Deleted"}
+
+
+@router.get("/icloud/status")
+def get_icloud_status(_: models.User = Depends(require_admin)):
+    result = icloud_caldav.test_connection()
+    result["configured"] = icloud_caldav.is_configured()
+    return result
