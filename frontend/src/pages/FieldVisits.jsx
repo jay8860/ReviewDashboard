@@ -480,10 +480,17 @@ const focusedBlockLayout = { x: 7, y: 8, w: 86, h: 61, labelX: 12, labelY: 15, p
 
 const getCoverageStatusMeta = (status) => COVERAGE_STATUS_META[status] || COVERAGE_STATUS_META.never;
 
+// Treat null/undefined/empty as unset (Number(null) === 0, which would wrongly
+// pin dots to the top-left instead of using the computed fallback position).
+const parseMapNumber = (value) => (
+    value === null || value === undefined || String(value).trim() === '' ? NaN : Number(value)
+);
+
 const clampMapPercent = (value, fallback) => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return fallback;
-    return Math.max(4, Math.min(96, number));
+    const number = parseMapNumber(value);
+    const chosen = Number.isFinite(number) ? number : Number(fallback);
+    if (!Number.isFinite(chosen)) return 4;
+    return Math.max(4, Math.min(96, chosen));
 };
 
 const truncateMapLabel = (value, max = 12) => {
@@ -592,7 +599,7 @@ const buildCoverageMapPoints = (rows, district) => {
         // Per-block geo bounds so each block plots its GPs by real GPS coordinates
         // inside its own shape on the stylized layout.
         const geoItems = items
-            .map(item => ({ lat: Number(item.latitude), lon: Number(item.longitude) }))
+            .map(item => ({ lat: parseMapNumber(item.latitude), lon: parseMapNumber(item.longitude) }))
             .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
         const hasGeo = geoItems.length >= 2;
         const minLat = hasGeo ? Math.min(...geoItems.map(point => point.lat)) : null;
@@ -613,8 +620,8 @@ const buildCoverageMapPoints = (rows, district) => {
             const row = Math.floor(idx / columns);
             const autoX = layout.x + ((col + 0.5) * layout.w) / columns;
             const autoY = layout.y + 7 + ((row + 0.45) * Math.max(layout.h - 8, 5)) / rowsCount;
-            const lat = Number(item.latitude);
-            const lon = Number(item.longitude);
+            const lat = parseMapNumber(item.latitude);
+            const lon = parseMapNumber(item.longitude);
             const geoX = hasGeo && Number.isFinite(lon)
                 ? layout.x + padX + ((lon - minLon) / lonRange) * innerW
                 : null;
