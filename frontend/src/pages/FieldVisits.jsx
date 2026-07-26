@@ -465,6 +465,16 @@ const DANTEWADA_BLOCK_SHAPES = {
     Kuakonda: { x: 48, y: 39, w: 43, h: 29, labelX: 59, labelY: 45, path: 'M51 41 L83 39 L94 52 L85 66 L57 69 L46 56 Z' },
 };
 
+// Stylized Dhamtari district layout: Kurud on top, Dhamtari on the left middle,
+// Magarlod on the right middle, Nagri at the bottom. GPs are plotted inside each
+// block using their real GPS coordinates (normalized per block).
+const DHAMTARI_BLOCK_SHAPES = {
+    Kurud: { x: 30, y: 6, w: 40, h: 21, labelX: 46, labelY: 11, path: 'M34 7 L66 6 L72 16 L66 27 L34 27 L28 16 Z' },
+    Dhamtari: { x: 5, y: 29, w: 38, h: 22, labelX: 11, labelY: 34, path: 'M9 30 L39 29 L45 40 L39 51 L10 51 L4 40 Z' },
+    Magarlod: { x: 57, y: 29, w: 38, h: 22, labelX: 66, labelY: 34, path: 'M61 30 L91 29 L96 40 L90 51 L61 51 L55 40 Z' },
+    Nagri: { x: 30, y: 53, w: 40, h: 19, labelX: 46, labelY: 58, path: 'M34 54 L66 53 L72 62 L66 72 L34 72 L28 62 Z' },
+};
+
 const fallbackBlockLayout = { x: 8, y: 10, w: 84, h: 55, labelX: 12, labelY: 15, path: 'M12 10 L84 9 L94 31 L84 62 L20 67 L6 38 Z' };
 const focusedBlockLayout = { x: 7, y: 8, w: 86, h: 61, labelX: 12, labelY: 15, path: 'M14 8 L82 9 L96 28 L88 62 L55 71 L20 67 L5 42 Z' };
 
@@ -563,16 +573,6 @@ const buildGenericBlockShapes = (blocks) => {
 };
 
 const buildCoverageMapPoints = (rows, district) => {
-    const geoRows = rows
-        .map(row => ({ lat: Number(row.latitude), lon: Number(row.longitude) }))
-        .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
-    const hasGeo = geoRows.length >= 2;
-    const minLat = hasGeo ? Math.min(...geoRows.map(point => point.lat)) : null;
-    const maxLat = hasGeo ? Math.max(...geoRows.map(point => point.lat)) : null;
-    const minLon = hasGeo ? Math.min(...geoRows.map(point => point.lon)) : null;
-    const maxLon = hasGeo ? Math.max(...geoRows.map(point => point.lon)) : null;
-    const latRange = hasGeo ? Math.max(maxLat - minLat, 0.000001) : null;
-    const lonRange = hasGeo ? Math.max(maxLon - minLon, 0.000001) : null;
     const groups = rows.reduce((acc, row) => {
         const block = row.block || 'Unassigned';
         if (!acc[block]) acc[block] = [];
@@ -582,11 +582,30 @@ const buildCoverageMapPoints = (rows, district) => {
     const blocks = Object.keys(groups);
     const shapeMap = blocks.length === 1
         ? { [blocks[0]]: focusedBlockLayout }
-        : (district === 'Dantewada' ? DANTEWADA_BLOCK_SHAPES : buildGenericBlockShapes(blocks));
+        : (district === 'Dantewada'
+            ? DANTEWADA_BLOCK_SHAPES
+            : (district === 'Dhamtari' ? DHAMTARI_BLOCK_SHAPES : buildGenericBlockShapes(blocks)));
 
     const points = [];
     Object.entries(groups).forEach(([block, items]) => {
         const layout = shapeMap[block] || fallbackBlockLayout;
+        // Per-block geo bounds so each block plots its GPs by real GPS coordinates
+        // inside its own shape on the stylized layout.
+        const geoItems = items
+            .map(item => ({ lat: Number(item.latitude), lon: Number(item.longitude) }))
+            .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+        const hasGeo = geoItems.length >= 2;
+        const minLat = hasGeo ? Math.min(...geoItems.map(point => point.lat)) : null;
+        const maxLat = hasGeo ? Math.max(...geoItems.map(point => point.lat)) : null;
+        const minLon = hasGeo ? Math.min(...geoItems.map(point => point.lon)) : null;
+        const maxLon = hasGeo ? Math.max(...geoItems.map(point => point.lon)) : null;
+        const latRange = hasGeo ? Math.max(maxLat - minLat, 0.000001) : null;
+        const lonRange = hasGeo ? Math.max(maxLon - minLon, 0.000001) : null;
+        const padX = 2.5;
+        const padTop = 5.5;
+        const padBottom = 2.5;
+        const innerW = Math.max(layout.w - padX * 2, 4);
+        const innerH = Math.max(layout.h - padTop - padBottom, 4);
         const columns = Math.max(2, Math.ceil(Math.sqrt(items.length * (layout.w / Math.max(layout.h, 1)))));
         const rowsCount = Math.max(1, Math.ceil(items.length / columns));
         items.forEach((item, idx) => {
@@ -596,8 +615,12 @@ const buildCoverageMapPoints = (rows, district) => {
             const autoY = layout.y + 7 + ((row + 0.45) * Math.max(layout.h - 8, 5)) / rowsCount;
             const lat = Number(item.latitude);
             const lon = Number(item.longitude);
-            const geoX = hasGeo && Number.isFinite(lon) ? 7 + ((lon - minLon) / lonRange) * 86 : null;
-            const geoY = hasGeo && Number.isFinite(lat) ? 68 - ((lat - minLat) / latRange) * 58 : null;
+            const geoX = hasGeo && Number.isFinite(lon)
+                ? layout.x + padX + ((lon - minLon) / lonRange) * innerW
+                : null;
+            const geoY = hasGeo && Number.isFinite(lat)
+                ? layout.y + padTop + (1 - ((lat - minLat) / latRange)) * innerH
+                : null;
             points.push({
                 ...item,
                 map_x: clampMapPercent(item.map_x, geoX ?? autoX),
@@ -608,6 +631,11 @@ const buildCoverageMapPoints = (rows, district) => {
     });
     return { points, shapes: shapeMap };
 };
+
+// Map dots use a simple binary colour scheme: green = visited (ever), red = not visited.
+const getMapDotMeta = (point) => (
+    point?.status === 'never' ? COVERAGE_STATUS_META.never : COVERAGE_STATUS_META.recent
+);
 
 const formatLastVisit = (row) => {
     if (row?.status === 'legacy') return 'Visited before tracking';
@@ -846,12 +874,14 @@ const FieldVisitCoveragePanel = ({
                                 <option value="pending">Pending names</option>
                                 <option value="selected">Selected names</option>
                             </select>
-                            {Object.entries(COVERAGE_STATUS_META).map(([key, meta]) => (
-                                <span key={key} className="inline-flex items-center gap-1">
-                                    <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
-                                    {meta.label}
-                                </span>
-                            ))}
+                            <span className="inline-flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                                Visited
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-rose-600" />
+                                Not visited
+                            </span>
                         </div>
                     </div>
 
@@ -865,7 +895,7 @@ const FieldVisitCoveragePanel = ({
                             </g>
                         ))}
                         {mapPoints.map(point => {
-                            const meta = getCoverageStatusMeta(point.status);
+                            const meta = getMapDotMeta(point);
                             const selected = selectedSet.has(point.id);
                             const label = truncateMapLabel(point.name);
                             const labelX = Math.max(3, Math.min(97 - point.label_w, point.map_x - point.label_w / 2));
