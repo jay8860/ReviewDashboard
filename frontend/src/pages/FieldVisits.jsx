@@ -758,12 +758,10 @@ const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey, showLabel
                 fillColor: visited ? '#059669' : '#e11d48',
                 fillOpacity: 0.92,
             });
-            marker.bindTooltip(
-                `<div style="font-weight:800">${escapeHtml(point.name)}</div>` +
-                `<div style="font-size:11px;color:#475569">${escapeHtml(point.block)} &middot; ${escapeHtml(point.status_label || (visited ? 'Visited' : 'Not visited'))}` +
-                `${point.last_visit_date ? ` &middot; ${escapeHtml(point.last_visit_date)}` : ''}</div>`,
-                { direction: 'top', offset: [0, -8], sticky: true },
-            );
+            // Bind exactly one tooltip per marker (binding twice leaves stale
+            // hover listeners around and the permanent tooltip doesn't
+            // reliably auto-open). Name-only permanent label when the
+            // "Show GP names" toggle is on; rich hover tooltip otherwise.
             if (showLabels) {
                 marker.bindTooltip(escapeHtml(point.name), {
                     permanent: true,
@@ -771,9 +769,21 @@ const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey, showLabel
                     className: 'gp-label-tooltip',
                     offset: [6, 0],
                 });
+            } else {
+                marker.bindTooltip(
+                    `<div style="font-weight:800">${escapeHtml(point.name)}</div>` +
+                    `<div style="font-size:11px;color:#475569">${escapeHtml(point.block)} &middot; ${escapeHtml(point.status_label || (visited ? 'Visited' : 'Not visited'))}` +
+                    `${point.last_visit_date ? ` &middot; ${escapeHtml(point.last_visit_date)}` : ''}</div>`,
+                    { direction: 'top', offset: [0, -8], sticky: true },
+                );
             }
             marker.on('click', () => onToggle(point.id));
             marker.addTo(layer);
+            if (showLabels) {
+                // Force the permanent tooltip open explicitly rather than
+                // relying solely on Leaflet's internal 'add' event wiring.
+                marker.openTooltip();
+            }
             bounds.push([point.lat, point.lon]);
         });
         // Refit the view only when the focus (district/block/search) changes,
