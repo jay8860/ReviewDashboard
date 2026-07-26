@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Calendar, ExternalLink, MapPin, Plus, Trash2, ArrowUp, ArrowDown,
@@ -644,6 +644,128 @@ const getMapDotMeta = (point) => (
     point?.status === 'never' ? COVERAGE_STATUS_META.never : COVERAGE_STATUS_META.recent
 );
 
+// ---- Real map (Leaflet + OpenStreetMap) -----------------------------------
+// Loaded from CDN at runtime so no build-time dependency is needed.
+const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+let leafletPromise = null;
+
+const ensureLeaflet = () => {
+    if (window.L) return Promise.resolve(window.L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+        if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = LEAFLET_CSS;
+            document.head.appendChild(link);
+        }
+        const script = document.createElement('script');
+        script.src = LEAFLET_JS;
+        script.async = true;
+        script.onload = () => resolve(window.L);
+        script.onerror = () => { leafletPromise = null; reject(new Error('Failed to load map library')); };
+        document.head.appendChild(script);
+    });
+    return leafletPromise;
+};
+
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+const LeafletCoverageMap = ({ points, selectedSet, onToggle, focusKey }) => {
+    const containerRef = useRef(null);
+    const mapRef = useRef(null);
+    const layerRef = useRef(null);
+    const lastFocusRef = useRef(null);
+    const [ready, setReady] = useState(false);
+    const [loadError, setLoadError] = useState(false);
+
+    useEffect(() => {
+        let alive = true;
+        ensureLeaflet()
+            .then(() => { if (alive) setReady(true); })
+            .catch(() => { if (alive) setLoadError(true); });
+        return () => { alive = false; };
+    }, []);
+
+    useEffect(() => {
+        if (!ready || !containerRef.current || mapRef.current) return undefined;
+        const L = window.L;
+        const map = L.map(containerRef.current, { scrollWheelZoom: true, zoomControl: true });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+        map.setView([20.6, 81.75], 9);
+        layerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
+        return () => {
+            map.remove();
+            mapRef.current = null;
+            layerRef.current = null;
+            lastFocusRef.current = null;
+        };
+    }, [ready]);
+
+    useEffect(() => {
+        const map = mapRef.current;
+        const layer = layerRef.current;
+        if (!ready || !map || !layer) return;
+        const L = window.L;
+        layer.clearLayers();
+        const bounds = [];
+        points.forEach(point => {
+            const selected = selectedSet.has(point.id);
+            const visited = point.status !== 'never';
+            const marker = L.circleMarker([point.lat, point.lon], {
+                radius: selected ? 9 : 6,
+                color: selected ? '#111827' : '#ffffff',
+                weight: selected ? 3 : 1.4,
+                fillColor: visited ? '#059669' : '#e11d48',
+                fillOpacity: 0.92,
+            });
+            marker.bindTooltip(
+                `<div style="font-weight:800">${escapeHtml(point.name)}</div>` +
+                `<div style="font-size:11px;color:#475569">${escapeHtml(point.block)} &middot; ${escapeHtml(point.status_label || (visited ? 'Visited' : 'Not visited'))}` +
+                `${point.last_visit_date ? ` &middot; ${escapeHtml(point.last_visit_date)}` : ''}</div>`,
+                { direction: 'top', offset: [0, -8], sticky: true },
+            );
+            marker.on('click', () => onToggle(point.id));
+            marker.addTo(layer);
+            bounds.push([point.lat, point.lon]);
+        });
+        // Refit the view only when the focus (district/block/search) changes,
+        // not on every selection toggle.
+        if (bounds.length && lastFocusRef.current !== focusKey) {
+            lastFocusRef.current = focusKey;
+            map.fitBounds(bounds, { padding: [28, 28], maxZoom: 12 });
+        }
+    }, [ready, points, selectedSet, onToggle, focusKey]);
+
+    if (loadError) {
+        return (
+            <div className="w-full h-[480px] rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center text-sm font-bold text-slate-500">
+                Map could not load. Check your internet connection and refresh.
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full rounded-2xl border border-slate-200 overflow-hidden relative" style={{ zIndex: 0 }}>
+            <div ref={containerRef} style={{ height: 520, width: '100%' }} />
+            {!ready && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-sm font-bold text-slate-500">
+                    Loading map...
+                </div>
+            )}
+        </div>
+    );
+};
+
 const formatLastVisit = (row) => {
     if (row?.status === 'legacy') return 'Visited before tracking';
     if (!row?.last_visit_date) return 'Never visited';
@@ -684,8 +806,12 @@ const FieldVisitCoveragePanel = ({
             return blockMatch && statusMatch && searchMatch;
         });
     }, [allRows, filters]);
-    const { points: mapPoints, shapes: mapShapes } = useMemo(() => buildCoverageMapPoints(visibleRows, district), [visibleRows, district]);
-    const [mapLabelMode, setMapLabelMode] = useState('smart');
+    // Real-map points: use actual GPS coordinates directly.
+    const mapGeoPoints = useMemo(() => (
+        visibleRows
+            .map(row => ({ ...row, lat: parseMapNumber(row.latitude), lon: parseMapNumber(row.longitude) }))
+            .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+    ), [visibleRows]);
     const pendingRows = useMemo(() => (
         allRows
             .filter(row => row.status === 'never' || row.status === 'stale')
@@ -743,16 +869,6 @@ const FieldVisitCoveragePanel = ({
     };
 
     const clearSelection = () => setSelectedGpIds([]);
-
-    const mapPointShouldShowLabel = (point) => {
-        if (mapLabelMode === 'all') return true;
-        if (mapLabelMode === 'pending') return ['never', 'stale', 'legacy'].includes(point.status) || selectedSet.has(point.id);
-        if (mapLabelMode === 'selected') return selectedSet.has(point.id);
-        if (selectedSet.has(point.id)) return true;
-        if (filters.block !== 'all' || filters.search.trim()) return true;
-        if (visibleRows.length <= 55) return true;
-        return ['never', 'stale'].includes(point.status);
-    };
 
     const downloadTemplate = () => {
         const templateRows = [
@@ -871,16 +987,6 @@ const FieldVisitCoveragePanel = ({
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h3 className="text-sm font-black text-slate-800">Coverage Map</h3>
                         <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
-                            <select
-                                value={mapLabelMode}
-                                onChange={e => setMapLabelMode(e.target.value)}
-                                className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600"
-                            >
-                                <option value="smart">Smart labels</option>
-                                <option value="all">All names</option>
-                                <option value="pending">Pending names</option>
-                                <option value="selected">Selected names</option>
-                            </select>
                             <span className="inline-flex items-center gap-1">
                                 <span className="w-2 h-2 rounded-full bg-emerald-600" />
                                 Visited
@@ -889,63 +995,16 @@ const FieldVisitCoveragePanel = ({
                                 <span className="w-2 h-2 rounded-full bg-rose-600" />
                                 Not visited
                             </span>
+                            <span className="text-slate-400">Hover a dot for the GP name; click to select.</span>
                         </div>
                     </div>
 
-                    <svg viewBox="0 0 100 76" role="img" aria-label="Gram Panchayat visit coverage map" className="w-full aspect-[1.45] rounded-2xl bg-slate-50 border border-slate-100">
-                        <rect x="2" y="2" width="96" height="72" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
-                        <path d="M8 15 L26 6 L52 7 L83 9 L96 25 L90 58 L66 70 L33 69 L9 59 L4 36 Z" fill="#eefdf6" stroke="#bbf7d0" strokeWidth="0.5" />
-                        {Object.entries(mapShapes).map(([block, layout]) => (
-                            <g key={block}>
-                                <path d={layout.path} fill="#ffffff" stroke="#94a3b8" strokeWidth="0.45" />
-                                <text x={layout.labelX} y={layout.labelY} fill="#334155" fontSize="2.6" fontWeight="800">{block}</text>
-                            </g>
-                        ))}
-                        {mapPoints.map(point => {
-                            const meta = getMapDotMeta(point);
-                            const selected = selectedSet.has(point.id);
-                            const label = truncateMapLabel(point.name);
-                            const labelX = Math.max(3, Math.min(97 - point.label_w, point.map_x - point.label_w / 2));
-                            const labelY = Math.max(4, Math.min(73, point.map_y));
-                            const showLabel = mapPointShouldShowLabel(point);
-                            return (
-                                <g
-                                    key={point.id}
-                                    className="cursor-pointer"
-                                    onClick={() => toggleGp(point.id)}
-                                >
-                                    {showLabel ? (
-                                        <>
-                                            <rect
-                                                x={labelX}
-                                                y={labelY - 2.7}
-                                                width={point.label_w}
-                                                height="3.6"
-                                                rx="1.2"
-                                                fill={meta.labelBg}
-                                                stroke={selected ? '#111827' : meta.fill}
-                                                strokeWidth={selected ? 0.42 : 0.22}
-                                            />
-                                            <circle cx={labelX + 1.25} cy={labelY - 0.95} r="0.55" fill={meta.fill} />
-                                            <text x={labelX + 2.2} y={labelY - 0.15} fill={meta.labelText} fontSize="1.45" fontWeight="800">
-                                                {label}
-                                            </text>
-                                        </>
-                                    ) : (
-                                        <circle
-                                            cx={point.map_x}
-                                            cy={point.map_y}
-                                            r={selected ? 1.3 : 0.85}
-                                            fill={meta.fill}
-                                            stroke={selected ? '#111827' : '#ffffff'}
-                                            strokeWidth={selected ? 0.38 : 0.24}
-                                        />
-                                    )}
-                                    <title>{`${point.name}, ${point.block} - ${point.status_label}`}</title>
-                                </g>
-                            );
-                        })}
-                    </svg>
+                    <LeafletCoverageMap
+                        points={mapGeoPoints}
+                        selectedSet={selectedSet}
+                        onToggle={toggleGp}
+                        focusKey={`${district}|${filters.block}|${filters.status}|${filters.search.trim().toLowerCase()}`}
+                    />
 
                     <div className="grid md:grid-cols-4 gap-2 mt-3">
                         {(data.blocks || []).map(block => (
