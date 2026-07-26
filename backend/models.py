@@ -229,6 +229,28 @@ class Task(Base):
         foreign_keys=[assigned_employee_id],
     )
     secondary_assigned_employee = relationship("Employee", foreign_keys=[secondary_assigned_employee_id])
+    assignee_links = relationship(
+        "TaskAssignee",
+        back_populates="task",
+        order_by="TaskAssignee.position",
+        cascade="all, delete-orphan",
+    )
+
+
+# ─── Task Assignees (unlimited, ordered) ─────────────────────────────────────
+# Association table so a task can have any number of assignees.
+# Legacy columns tasks.assigned_employee_id / secondary_assigned_employee_id
+# stay in sync (first / second position) for backward compatibility.
+
+class TaskAssignee(Base):
+    __tablename__ = "task_assignees"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0)
+
+    task = relationship("Task", back_populates="assignee_links")
+    employee = relationship("Employee")
 
 
 # ─── Audit Log ────────────────────────────────────────────────────────────────

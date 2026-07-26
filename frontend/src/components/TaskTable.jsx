@@ -215,38 +215,55 @@ const getEmployeeSelectLabel = (employee) => {
     return getEmployeeAssignmentLabel(employee) || `Employee ${employee?.id || ''}`.trim();
 };
 
-const getTaskAssignedText = (task) => {
-    const employeeName = String(task?.assigned_employee_name || '').trim();
-    const designation = String(task?.assigned_employee_display_username || '').trim();
-    if (employeeName && designation) return `${employeeName} (${designation})`;
-    if (employeeName) return employeeName;
-    return String(task?.assigned_agency || '').trim();
-};
-
-const getTaskSecondaryAssignedText = (task) => {
-    const employeeName = String(task?.secondary_assigned_employee_name || '').trim();
-    const designation = String(task?.secondary_assigned_employee_display_username || '').trim();
-    if (employeeName && designation) return `${employeeName} (${designation})`;
-    if (employeeName) return employeeName;
-    return '';
-};
-
 const normalizeAssignmentText = (value) => String(value || '').trim().toLowerCase();
 
-const shouldShowDesignationLine = (task) => {
-    const employeeName = String(task?.assigned_employee_name || '').trim();
-    const designation = String(task?.assigned_employee_display_username || '').trim();
-    if (!designation) return false;
-    return normalizeAssignmentText(designation) !== normalizeAssignmentText(employeeName);
+// All assignees for a task, in order. Prefers the API's `assignees` array;
+// falls back to the legacy primary/secondary fields for older payloads.
+const getTaskAssignees = (task) => {
+    const fromApi = Array.isArray(task?.assignees)
+        ? task.assignees.filter((p) => p && (String(p.name || '').trim() || String(p.display_username || '').trim()))
+        : [];
+    if (fromApi.length > 0) return fromApi;
+    const fallback = [];
+    if (String(task?.assigned_employee_name || '').trim() || String(task?.assigned_employee_display_username || '').trim()) {
+        fallback.push({
+            id: task?.assigned_employee_id ?? null,
+            name: task?.assigned_employee_name || '',
+            display_username: task?.assigned_employee_display_username || '',
+        });
+    }
+    if (String(task?.secondary_assigned_employee_name || '').trim() || String(task?.secondary_assigned_employee_display_username || '').trim()) {
+        fallback.push({
+            id: task?.secondary_assigned_employee_id ?? null,
+            name: task?.secondary_assigned_employee_name || '',
+            display_username: task?.secondary_assigned_employee_display_username || '',
+        });
+    }
+    return fallback;
+};
+
+const formatAssigneeLabel = (person) => {
+    const name = String(person?.name || '').trim();
+    const designation = String(person?.display_username || '').trim();
+    if (name && designation && normalizeAssignmentText(name) !== normalizeAssignmentText(designation)) {
+        return `${name} (${designation})`;
+    }
+    return name || designation;
+};
+
+const getTaskAssignedText = (task) => {
+    const parts = getTaskAssignees(task).map(formatAssigneeLabel).filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+    return String(task?.assigned_agency || '').trim();
 };
 
 const shouldShowAgencyLine = (task) => {
     const agency = String(task?.assigned_agency || '').trim();
     if (!agency) return false;
-    const employeeName = String(task?.assigned_employee_name || '').trim();
-    const designation = String(task?.assigned_employee_display_username || '').trim();
     const agencyKey = normalizeAssignmentText(agency);
-    return agencyKey !== normalizeAssignmentText(employeeName) && agencyKey !== normalizeAssignmentText(designation);
+    return getTaskAssignees(task).every((person) => (
+        agencyKey !== normalizeAssignmentText(person?.name) && agencyKey !== normalizeAssignmentText(person?.display_username)
+    ));
 };
 
 const sortEmployeesForSelect = (rows = []) => (
@@ -954,17 +971,32 @@ const TaskTable = ({
                                         </div>
                                     ) : (
                                         <>
-                                            {task.assigned_employee_name ? (
-                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{task.assigned_employee_name}</p>
-                                            ) : (
-                                                <p className="text-xs text-slate-500">—</p>
-                                            )}
-                                            {shouldShowDesignationLine(task) && (
-                                                <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{task.assigned_employee_display_username}</p>
-                                            )}
-                                            {getTaskSecondaryAssignedText(task) && (
-                                                <p className="text-[10px] text-indigo-500 mt-0.5 line-clamp-1">{getTaskSecondaryAssignedText(task)}</p>
-                                            )}
+                                            {(() => {
+                                                const assignees = getTaskAssignees(task);
+                                                if (assignees.length === 0) {
+                                                    return <p className="text-xs text-slate-500">—</p>;
+                                                }
+                                                const multiple = assignees.length > 1;
+                                                return assignees.map((person, idx) => {
+                                                    const name = String(person?.name || '').trim();
+                                                    const designation = String(person?.display_username || '').trim();
+                                                    const showDesignation = Boolean(name) && Boolean(designation)
+                                                        && normalizeAssignmentText(designation) !== normalizeAssignmentText(name);
+                                                    return (
+                                                        <div key={person?.id ?? `${idx}-${name}`} className={idx > 0 ? 'mt-1' : ''}>
+                                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                                {multiple && (
+                                                                    <span className="font-semibold text-slate-400 dark:text-slate-500 mr-1">{idx + 1}.</span>
+                                                                )}
+                                                                {name || designation}
+                                                            </p>
+                                                            {showDesignation && (
+                                                                <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{designation}</p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                             {shouldShowAgencyLine(task) && (
                                                 <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{task.assigned_agency}</p>
                                             )}

@@ -60,11 +60,37 @@ const sortEmployeesByDisplay = (rows = []) => (
     ))
 );
 
+const getTaskAssigneeList = (task) => {
+    const fromApi = Array.isArray(task?.assignees)
+        ? task.assignees.filter((p) => p && (String(p.name || '').trim() || String(p.display_username || '').trim()))
+        : [];
+    if (fromApi.length > 0) return fromApi;
+    const fallback = [];
+    if (String(task?.assigned_employee_name || '').trim()) {
+        fallback.push({
+            id: task?.assigned_employee_id ?? null,
+            name: task?.assigned_employee_name || '',
+            display_username: task?.assigned_employee_display_username || '',
+        });
+    }
+    if (String(task?.secondary_assigned_employee_name || '').trim()) {
+        fallback.push({
+            id: task?.secondary_assigned_employee_id ?? null,
+            name: task?.secondary_assigned_employee_name || '',
+            display_username: task?.secondary_assigned_employee_display_username || '',
+        });
+    }
+    return fallback;
+};
+
 const getTaskAssignedLabel = (task) => {
-    const employeeName = String(task?.assigned_employee_name || '').trim();
-    const designation = String(task?.assigned_employee_display_username || '').trim();
-    if (employeeName && designation) return `${employeeName} (${designation})`;
-    if (employeeName) return employeeName;
+    const parts = getTaskAssigneeList(task).map((person) => {
+        const name = String(person?.name || '').trim();
+        const designation = String(person?.display_username || '').trim();
+        if (name && designation && name.toLowerCase() !== designation.toLowerCase()) return `${name} (${designation})`;
+        return name || designation;
+    }).filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
     return String(task?.assigned_agency || '').trim();
 };
 
@@ -617,6 +643,23 @@ const Tasks = ({ user, onLogout }) => {
             const match = employees.find((emp) => Number(emp.id) === patchEmployeeId);
             optimistic.secondary_assigned_employee_name = match ? match.name : null;
             optimistic.secondary_assigned_employee_display_username = match ? (match.display_username || null) : null;
+        }
+        if (Object.prototype.hasOwnProperty.call(patch, 'assigned_employee_id')
+            || Object.prototype.hasOwnProperty.call(patch, 'secondary_assigned_employee_id')) {
+            // Rebuild the assignees array from the (optimistic) legacy fields so the
+            // display doesn't show stale multi-assignee data while the request runs.
+            optimistic.assignees = [
+                optimistic.assigned_employee_id ? {
+                    id: optimistic.assigned_employee_id,
+                    name: optimistic.assigned_employee_name,
+                    display_username: optimistic.assigned_employee_display_username,
+                } : null,
+                optimistic.secondary_assigned_employee_id ? {
+                    id: optimistic.secondary_assigned_employee_id,
+                    name: optimistic.secondary_assigned_employee_name,
+                    display_username: optimistic.secondary_assigned_employee_display_username,
+                } : null,
+            ].filter(Boolean);
         }
         setTasks((prev) => prev.map((row) => (row.id === id ? optimistic : row)));
         try {

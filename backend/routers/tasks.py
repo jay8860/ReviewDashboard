@@ -66,6 +66,9 @@ class TaskCreate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
+    # Unlimited assignees (ordered). When provided it overrides the legacy
+    # assigned_employee_id / secondary_assigned_employee_id pair.
+    assigned_employee_ids: Optional[List[int]] = None
 
 
 class TaskUpdate(BaseModel):
@@ -86,6 +89,7 @@ class TaskUpdate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
+    assigned_employee_ids: Optional[List[int]] = None
 
 
 class BulkUpdateRequest(BaseModel):
@@ -195,6 +199,41 @@ def _effective_agency_value(task: models.Task) -> str:
     return "Unassigned"
 
 
+def _dedupe_employee_ids(ids) -> List[int]:
+    """Coerce to ints, drop None/invalid, dedupe preserving order."""
+    seen = set()
+    out: List[int] = []
+    for raw in ids or []:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def _sync_assignees(db: Session, task: models.Task, employee_ids) -> None:
+    """Replace task_assignees rows (positions 0..n-1) and keep the legacy
+    assigned_employee_id / secondary_assigned_employee_id columns consistent."""
+    ids = _dedupe_employee_ids(employee_ids)
+    db.query(models.TaskAssignee).filter(models.TaskAssignee.task_id == task.id).delete(synchronize_session=False)
+    for pos, emp_id in enumerate(ids):
+        db.add(models.TaskAssignee(task_id=task.id, employee_id=emp_id, position=pos))
+    task.assigned_employee_id = ids[0] if ids else None
+    task.secondary_assigned_employee_id = ids[1] if len(ids) > 1 else None
+    try:
+        db.expire(task, ["assignee_links"])
+    except Exception:
+        pass
+
+
+def _legacy_assignee_ids(task: models.Task) -> List[int]:
+    return _dedupe_employee_ids([task.assigned_employee_id, task.secondary_assigned_employee_id])
+
+
 def _pick_group_label(task: models.Task, group_key: str) -> tuple[str, int]:
     emp = task.assigned_employee
     if emp and emp.display_username:
@@ -219,6 +258,10 @@ def _aggregate_agencies(tasks: List[models.Task], include_unassigned: bool = Tru
     def _bump(effective_value: str, task: models.Task):
         key = _agency_key(effective_value) or unassigned_key
         label, priority = _pick_group_label(task, key)
+        if label == "Unassigned" and key != unassigned_key:
+            # Person is not this task's primary assignee/agency; use the
+            # effective value itself as the label.
+            label, priority = effective_value, 2
         row = grouped.get(key)
         if not row:
             grouped[key] = {"agency": label, "count": 1, "_priority": priority}
@@ -228,12 +271,31 @@ def _aggregate_agencies(tasks: List[models.Task], include_unassigned: bool = Tru
             row["agency"] = label
             row["_priority"] = priority
 
+    def _employee_effective(emp) -> Optional[str]:
+        if not emp:
+            return None
+        return _canonical_text(emp.display_username) or _canonical_text(emp.name)
+
     for task in tasks:
-        _bump(_effective_agency_value(task), task)
-        # Count the secondary assignee separately so tasks show up for both.
-        if task.secondary_assigned_employee:
-            eff = _canonical_text(task.secondary_assigned_employee.display_username) or _canonical_text(task.secondary_assigned_employee.name) or "Unassigned"
+        # Count the task once per distinct person/agency (dedupe by key so a
+        # person present both in assignee_links and legacy fields counts once).
+        seen_keys = set()
+
+        def _bump_once(effective_value: Optional[str]):
+            eff = effective_value or "Unassigned"
+            key = _agency_key(eff) or unassigned_key
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
             _bump(eff, task)
+
+        _bump_once(_effective_agency_value(task))
+        if task.secondary_assigned_employee:
+            _bump_once(_employee_effective(task.secondary_assigned_employee) or "Unassigned")
+        for link in (task.assignee_links or []):
+            eff = _employee_effective(getattr(link, "employee", None))
+            if eff:
+                _bump_once(eff)
 
     rows = []
     for key, row in grouped.items():
@@ -275,7 +337,28 @@ def generate_task_number(db: Session, assigned_agency: Optional[str], department
 
 
 def task_to_dict(t: models.Task) -> dict:
+    assignees = []
+    for link in (t.assignee_links or []):
+        emp = link.employee
+        if not emp:
+            continue
+        assignees.append({
+            "id": emp.id,
+            "name": emp.name,
+            "display_username": emp.display_username,
+        })
+    if not assignees:
+        # Legacy tasks without task_assignees rows: fall back to the
+        # primary/secondary relationships.
+        for emp in (t.assigned_employee, t.secondary_assigned_employee):
+            if emp and all(a["id"] != emp.id for a in assignees):
+                assignees.append({
+                    "id": emp.id,
+                    "name": emp.name,
+                    "display_username": emp.display_username,
+                })
     return {
+        "assignees": assignees,
         "id": t.id,
         "task_number": t.task_number,
         "description": t.description,
@@ -405,6 +488,7 @@ def get_tasks(
         .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
         .options(joinedload(models.Task.assigned_employee))
         .options(joinedload(models.Task.secondary_assigned_employee))
+        .options(joinedload(models.Task.assignee_links).joinedload(models.TaskAssignee.employee))
     )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
@@ -422,6 +506,15 @@ def get_tasks(
         q = q.filter(models.Task.is_pinned == is_pinned)
     if search:
         search_term = _canonical_text(search) or search
+        # Tasks where ANY assignee (via task_assignees) matches the term.
+        assignee_match_subq = (
+            db.query(models.TaskAssignee.task_id)
+            .join(models.Employee, models.TaskAssignee.employee_id == models.Employee.id)
+            .filter(or_(
+                models.Employee.name.ilike(f"%{search_term}%"),
+                models.Employee.display_username.ilike(f"%{search_term}%"),
+            ))
+        )
         q = q.filter(or_(
             models.Task.task_number.ilike(f"%{search_term}%"),
             models.Task.description.ilike(f"%{search_term}%"),
@@ -430,6 +523,7 @@ def get_tasks(
             models.Employee.name.ilike(f"%{search_term}%"),
             models.Employee.display_username.ilike(f"%{search_term}%"),
             agency_expr.ilike(f"%{search_term}%"),
+            models.Task.id.in_(assignee_match_subq),
         ))
 
     direction = (sort_dir or "asc").strip().lower()
@@ -464,12 +558,18 @@ def get_tasks(
     if selected_agency_key:
         filtered = []
         for task in tasks:
-            primary_key = _agency_key(_effective_agency_value(task))
-            secondary_key = None
+            keys = {_agency_key(_effective_agency_value(task))}
             if task.secondary_assigned_employee:
                 secondary_label = _canonical_text(task.secondary_assigned_employee.display_username) or _canonical_text(task.secondary_assigned_employee.name)
-                secondary_key = _agency_key(secondary_label)
-            if primary_key == selected_agency_key or (secondary_key and secondary_key == selected_agency_key):
+                keys.add(_agency_key(secondary_label))
+            for link in (task.assignee_links or []):
+                emp = link.employee
+                if not emp:
+                    continue
+                link_label = _canonical_text(emp.display_username) or _canonical_text(emp.name)
+                keys.add(_agency_key(link_label))
+            keys.discard(None)
+            if selected_agency_key in keys:
                 filtered.append(task)
         tasks = filtered
 
@@ -478,7 +578,13 @@ def get_tasks(
 
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
-    agency_tasks = db.query(models.Task).options(joinedload(models.Task.assigned_employee)).all()
+    agency_tasks = (
+        db.query(models.Task)
+        .options(joinedload(models.Task.assigned_employee))
+        .options(joinedload(models.Task.secondary_assigned_employee))
+        .options(joinedload(models.Task.assignee_links).joinedload(models.TaskAssignee.employee))
+        .all()
+    )
     today = date.today()
     total = len(agency_tasks)
     completed = 0
@@ -506,7 +612,13 @@ def get_stats(db: Session = Depends(get_db)):
 
 @router.get("/agencies")
 def get_agencies(db: Session = Depends(get_db)):
-    tasks = db.query(models.Task).options(joinedload(models.Task.assigned_employee)).all()
+    tasks = (
+        db.query(models.Task)
+        .options(joinedload(models.Task.assigned_employee))
+        .options(joinedload(models.Task.secondary_assigned_employee))
+        .options(joinedload(models.Task.assignee_links).joinedload(models.TaskAssignee.employee))
+        .all()
+    )
     rows = _aggregate_agencies(tasks, include_unassigned=False)
     return [item["agency"] for item in rows]
 
@@ -518,6 +630,7 @@ def create_task(
     current_user: Optional[models.User] = Depends(get_current_user_optional),
 ):
     task_data = data.dict()
+    requested_assignee_ids = task_data.pop("assigned_employee_ids", None)
     task_data["status"] = _normalize_task_status(task_data.get("status"))
     if not task_data.get("task_number"):
         task_data["task_number"] = generate_task_number(db, task_data.get("assigned_agency"), task_data.get("department_id"))
@@ -527,6 +640,13 @@ def create_task(
         task_data["status"] = "Completed"
     task = models.Task(**task_data)
     db.add(task)
+    db.flush()
+    if requested_assignee_ids is not None:
+        _sync_assignees(db, task, requested_assignee_ids)
+    else:
+        legacy_ids = _legacy_assignee_ids(task)
+        if legacy_ids:
+            _sync_assignees(db, task, legacy_ids)
     db.commit()
     db.refresh(task)
     if current_user:
@@ -568,6 +688,10 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
             elif item.get("status") in {"Pending", "Overdue"}:
                 task.completion_date = None
 
+            # Keep task_assignees in sync when legacy assignee fields change.
+            if ("assigned_employee_id" in item) or ("secondary_assigned_employee_id" in item):
+                _sync_assignees(db, task, _legacy_assignee_ids(task))
+
             updated.append(task_id)
 
         db.commit()
@@ -592,6 +716,7 @@ def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     payload = data.dict(exclude_unset=True)
+    requested_assignee_ids = payload.pop("assigned_employee_ids", None)
     if "status" in payload:
         payload["status"] = _normalize_task_status(payload.get("status"))
 
@@ -608,6 +733,12 @@ def update_task(
         if k == "secondary_assigned_employee_id" and v == payload.get("assigned_employee_id"):
             v = None
         setattr(task, k, v)
+
+    # Keep task_assignees in sync with whichever representation was sent.
+    if requested_assignee_ids is not None:
+        _sync_assignees(db, task, requested_assignee_ids)
+    elif ("assigned_employee_id" in payload) or ("secondary_assigned_employee_id" in payload):
+        _sync_assignees(db, task, _legacy_assignee_ids(task))
 
     # Keep completion_date and status consistent in both directions.
     if payload.get("status") == "Completed":
