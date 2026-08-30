@@ -113,51 +113,83 @@ const AttachmentIcon = ({ fileType, size = 14 }) => {
 };
 
 // ── Attachments Popover (compliance proof uploads) ─────────────────────────────
-const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, isAdmin }) => {
+const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, onAddMore, isAdmin }) => {
     const attachments = task.attachments || [];
+    const [confirmId, setConfirmId] = useState(null);
+
     return (
         <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-3 w-72 max-h-80 overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-black uppercase tracking-widest text-slate-400">Attachments</p>
-                <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400">
-                    <X size={12} />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={onAddMore}
+                        title="Add more files"
+                        className="p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-indigo-500 hover:text-indigo-700"
+                    >
+                        <Paperclip size={13} />
+                    </button>
+                    <button onClick={onClose} title="Close" className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400">
+                        <X size={13} />
+                    </button>
+                </div>
             </div>
             {attachments.length === 0 ? (
                 <p className="text-xs text-slate-400 py-4 text-center">No files uploaded yet.</p>
             ) : (
                 <div className="space-y-1">
                     {attachments.map((a) => (
-                        <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 group/att">
-                            <button
-                                type="button"
-                                onClick={() => (a.file_type === 'image' ? onOpenImage(a.file_url) : window.open(a.file_url, '_blank', 'noopener,noreferrer'))}
-                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                                title={a.original_filename}
-                            >
-                                <AttachmentIcon fileType={a.file_type} />
-                                <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{a.original_filename}</span>
-                            </button>
-                            <a
-                                href={a.file_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Open / download"
-                                className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-opacity"
-                            >
-                                <Download size={12} />
-                            </a>
-                            {isAdmin && (
+                        confirmId === a.id ? (
+                            <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl bg-red-50 dark:bg-red-500/10">
+                                <span className="text-xs text-red-600 dark:text-red-400 flex-1 min-w-0 truncate">Delete "{a.original_filename}"?</span>
                                 <button
                                     type="button"
-                                    onClick={() => onDelete(a.id)}
-                                    title="Remove"
-                                    className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-opacity"
+                                    onClick={() => { onDelete(a.id); setConfirmId(null); }}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-bold bg-red-600 text-white hover:bg-red-700"
                                 >
-                                    <Trash2 size={12} />
+                                    Delete
                                 </button>
-                            )}
-                        </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmId(null)}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-bold border border-slate-200 text-slate-500 hover:bg-slate-50"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ) : (
+                            <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 group/att">
+                                <button
+                                    type="button"
+                                    onClick={() => (a.file_type === 'image' ? onOpenImage(a.file_url) : window.open(a.file_url, '_blank', 'noopener,noreferrer'))}
+                                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                    title={a.original_filename}
+                                >
+                                    <AttachmentIcon fileType={a.file_type} />
+                                    <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{a.original_filename}</span>
+                                </button>
+                                <a
+                                    href={a.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Open / download"
+                                    className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-opacity"
+                                >
+                                    <Download size={12} />
+                                </a>
+                                {isAdmin && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmId(a.id)}
+                                        title="Remove"
+                                        className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-opacity"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                )}
+                            </div>
+                        )
                     ))}
                 </div>
             )}
@@ -1167,26 +1199,14 @@ const TaskTable = ({
                                 {/* Actions */}
                                 {isAdmin && (
                                     <td className="px-3 py-3 relative" ref={scheduleTask?.id === task.id ? scheduleRef : null}>
-                                        <div className={`flex items-center gap-0.5 transition-opacity ${scheduleTask?.id === task.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                            {/* WhatsApp */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const msg = buildTaskWhatsAppMessage(task);
-                                                    if (quickRecipientNumbers.length) {
-                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
-                                                    } else {
-                                                        window.open(
-                                                            `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
-                                                            '_blank',
-                                                            'noopener,noreferrer'
-                                                        );
-                                                    }
-                                                }}
-                                                title="WhatsApp follow-up"
-                                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors"
-                                            >
-                                                <WhatsAppIcon />
+                                        <div className={`flex items-center gap-0.5 transition-opacity ${(scheduleTask?.id === task.id || attachmentsTaskId === task.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                            {/* Quick Complete */}
+                                            <button onClick={() => handleQuickAction(task.id, {
+                                                status: isCompleted ? 'Pending' : 'Completed',
+                                                completion_date: isCompleted ? null : new Date().toISOString().split('T')[0]
+                                            })} title={isCompleted ? 'Mark Pending' : 'Mark Complete'}
+                                                className={`p-1.5 rounded-lg border transition-colors ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'}`}>
+                                                <CheckCircle2 size={13} />
                                             </button>
 
                                             {/* Edit inline */}
@@ -1196,21 +1216,6 @@ const TaskTable = ({
                                                     <Edit2 size={13} />
                                                 </button>
                                             )}
-
-                                            {/* Extend deadline */}
-                                            <button onClick={() => setCalendarId(calendarId === task.id ? null : task.id)} title="Extend deadline"
-                                                className="p-1.5 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-400 hover:text-violet-600 transition-colors">
-                                                <Calendar size={13} />
-                                            </button>
-
-                                            {/* Schedule task meeting */}
-                                            <button
-                                                onClick={() => setScheduleTask(scheduleTask?.id === task.id ? null : task)}
-                                                title="Schedule meeting in planner"
-                                                className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
-                                            >
-                                                <CalendarClock size={13} />
-                                            </button>
 
                                             {/* Attachments / compliance proof upload */}
                                             <div className="relative" ref={attachmentsTaskId === task.id ? attachmentsRef : null}>
@@ -1238,26 +1243,54 @@ const TaskTable = ({
                                                     {attachmentsTaskId === task.id && (
                                                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
                                                             className="absolute right-0 top-full mt-1">
-                                                            <div className="flex justify-end mb-1">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => triggerAttachmentUpload(task.id)}
-                                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                                                                >
-                                                                    <Paperclip size={10} /> Add more
-                                                                </button>
-                                                            </div>
                                                             <AttachmentsPopover
                                                                 task={task}
                                                                 isAdmin={isAdmin}
                                                                 onOpenImage={(url) => { setImageModalUrl(url); setAttachmentsTaskId(null); }}
                                                                 onDelete={(attachmentId) => onDeleteAttachment?.(attachmentId, task.id)}
+                                                                onAddMore={() => triggerAttachmentUpload(task.id)}
                                                                 onClose={() => setAttachmentsTaskId(null)}
                                                             />
                                                         </motion.div>
                                                     )}
                                                 </AnimatePresence>
                                             </div>
+
+                                            {/* WhatsApp */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const msg = buildTaskWhatsAppMessage(task);
+                                                    if (quickRecipientNumbers.length) {
+                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
+                                                    } else {
+                                                        window.open(
+                                                            `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
+                                                            '_blank',
+                                                            'noopener,noreferrer'
+                                                        );
+                                                    }
+                                                }}
+                                                title="WhatsApp follow-up"
+                                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors"
+                                            >
+                                                <WhatsAppIcon />
+                                            </button>
+
+                                            {/* Extend deadline */}
+                                            <button onClick={() => setCalendarId(calendarId === task.id ? null : task.id)} title="Extend deadline"
+                                                className="p-1.5 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-400 hover:text-violet-600 transition-colors">
+                                                <Calendar size={13} />
+                                            </button>
+
+                                            {/* Schedule task meeting */}
+                                            <button
+                                                onClick={() => setScheduleTask(scheduleTask?.id === task.id ? null : task)}
+                                                title="Schedule meeting in planner"
+                                                className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
+                                            >
+                                                <CalendarClock size={13} />
+                                            </button>
 
                                             {/* Copy to field visit planning notepad */}
                                             <button
@@ -1267,15 +1300,6 @@ const TaskTable = ({
                                                 className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-600 transition-colors"
                                             >
                                                 <MapPin size={13} />
-                                            </button>
-
-                                            {/* Quick Complete */}
-                                            <button onClick={() => handleQuickAction(task.id, {
-                                                status: isCompleted ? 'Pending' : 'Completed',
-                                                completion_date: isCompleted ? null : new Date().toISOString().split('T')[0]
-                                            })} title={isCompleted ? 'Mark Pending' : 'Mark Complete'}
-                                                className={`p-1.5 rounded-lg transition-colors ${isCompleted ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600'}`}>
-                                                <CheckCircle2 size={13} />
                                             </button>
 
                                             {/* Flag Important */}
@@ -1297,7 +1321,7 @@ const TaskTable = ({
 
                                             {/* Delete */}
                                             <button onClick={() => onDelete(task.id)} title="Delete"
-                                                className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                                                className="p-1.5 rounded-lg border border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors">
                                                 <Trash2 size={13} />
                                             </button>
                                         </div>
