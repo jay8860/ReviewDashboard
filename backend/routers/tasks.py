@@ -138,8 +138,6 @@ def _effective_task_status(task: models.Task, today: Optional[date] = None) -> s
         return "Completed"
     if task.deadline_date and task.deadline_date < today:
         return "Overdue"
-    if raw_status == "overdue":
-        return "Overdue"
     if raw_status in {"in progress", "in_progress", "progress"}:
         return "Pending"
     return "Pending"
