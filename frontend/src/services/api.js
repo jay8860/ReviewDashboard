@@ -448,6 +448,20 @@ export const api = {
         const res = await axios.delete(`${TASK_URL}/${id}`);
         return res.data;
     },
+    getTaskAttachments: async (taskId) => {
+        const res = await axios.get(`${TASK_URL}/${taskId}/attachments`);
+        return res.data;
+    },
+    uploadTaskAttachments: async (taskId, fileOrFiles) => {
+        const fd = new FormData();
+        appendFiles(fd, fileOrFiles);
+        const res = await axios.post(`${TASK_URL}/${taskId}/attachments`, fd);
+        return res.data;
+    },
+    deleteTaskAttachment: async (attachmentId) => {
+        const res = await axios.delete(`${TASK_URL}/attachments/${attachmentId}`);
+        return res.data;
+    },
 
     // ── Audit ────────────────────────────────────────────────────────────────
     getAuditAdmin: async (filters = {}) => {

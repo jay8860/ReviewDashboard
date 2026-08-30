@@ -235,6 +235,31 @@ class Task(Base):
         order_by="TaskAssignee.position",
         cascade="all, delete-orphan",
     )
+    attachments = relationship(
+        "TaskAttachment",
+        back_populates="task",
+        order_by="TaskAttachment.uploaded_at",
+        cascade="all, delete-orphan",
+    )
+
+
+# ─── Task Attachments (compliance proof: images, PDFs, Excel, docs) ─────────
+# Uploaded from the dashboard against a task, e.g. proof of compliance once
+# an officer completes an action point. Distinct from Task.image_url, which
+# is the single reference image set by the Telegram bot at creation time.
+
+class TaskAttachment(Base):
+    __tablename__ = "task_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_url = Column(Text, nullable=False)             # Served URL, e.g. /uploads/task-attachments/xxx.pdf
+    original_filename = Column(String, nullable=True)
+    file_type = Column(String, nullable=True)           # image | pdf | excel | word | ppt | other
+    file_extension = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now())
+
+    task = relationship("Task", back_populates="attachments")
 
 
 # ─── Task Assignees (unlimited, ordered) ─────────────────────────────────────

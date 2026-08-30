@@ -22,6 +22,20 @@ TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dat
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
 MAX_TASK_IMAGE_BYTES = int(os.getenv("MAX_TASK_IMAGE_BYTES", str(8 * 1024 * 1024)))
 
+# ─── Task Attachments (compliance proof: images, PDFs, Excel, Word, etc.) ──
+TASK_ATTACHMENT_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "task_attachments")
+os.makedirs(TASK_ATTACHMENT_ROOT, exist_ok=True)
+MAX_TASK_ATTACHMENT_BYTES = int(os.getenv("MAX_TASK_ATTACHMENT_BYTES", str(20 * 1024 * 1024)))
+
+ATTACHMENT_TYPE_BY_EXT = {
+    ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image", ".heic": "image",
+    ".pdf": "pdf",
+    ".xlsx": "excel", ".xls": "excel", ".csv": "excel",
+    ".docx": "word", ".doc": "word",
+    ".pptx": "ppt", ".ppt": "ppt",
+    ".txt": "other",
+}
+
 
 def _audit_log(
     db: Session,
@@ -359,6 +373,7 @@ def task_to_dict(t: models.Task) -> dict:
                 })
     return {
         "assignees": assignees,
+        "attachments": [attachment_to_dict(a) for a in (t.attachments or [])],
         "id": t.id,
         "task_number": t.task_number,
         "description": t.description,
@@ -439,6 +454,148 @@ def upload_task_image(task_id: int, image: UploadFile = File(...), db: Session =
     return task_to_dict(task)
 
 
+def attachment_to_dict(a: models.TaskAttachment) -> dict:
+    return {
+        "id": a.id,
+        "task_id": a.task_id,
+        "file_url": a.file_url,
+        "original_filename": a.original_filename,
+        "file_type": a.file_type,
+        "file_extension": a.file_extension,
+        "file_size": a.file_size,
+        "uploaded_at": str(a.uploaded_at) if a.uploaded_at else None,
+    }
+
+
+def _store_task_attachment(task_id: int, upload: UploadFile) -> models.TaskAttachment:
+    filename = (upload.filename or "").strip()
+    ext = Path(filename).suffix.lower()
+    file_type = ATTACHMENT_TYPE_BY_EXT.get(ext)
+    if not file_type:
+        supported = ", ".join(sorted(ATTACHMENT_TYPE_BY_EXT))
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext or 'unknown'}. Supported: {supported}")
+
+    stored_name = f"task_{task_id}_{uuid.uuid4().hex}{ext}"
+    out_path = os.path.join(TASK_ATTACHMENT_ROOT, stored_name)
+
+    total = 0
+    try:
+        with open(out_path, "wb") as out:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_TASK_ATTACHMENT_BYTES:
+                    out.close()
+                    if os.path.exists(out_path):
+                        os.remove(out_path)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Max allowed: {MAX_TASK_ATTACHMENT_BYTES // (1024 * 1024)} MB",
+                    )
+                out.write(chunk)
+    finally:
+        try:
+            upload.file.close()
+        except Exception:
+            pass
+
+    return models.TaskAttachment(
+        task_id=task_id,
+        file_url=f"/uploads/task-attachments/{stored_name}",
+        original_filename=filename or stored_name,
+        file_type=file_type,
+        file_extension=ext,
+        file_size=total,
+    )
+
+
+@router.get("/{task_id}/attachments")
+def list_task_attachments(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return [attachment_to_dict(a) for a in (task.attachments or [])]
+
+
+@router.post("/{task_id}/attachments")
+def upload_task_attachments(
+    task_id: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    valid_files = [f for f in files if (f.filename or "").strip()]
+    if not valid_files:
+        raise HTTPException(status_code=400, detail="At least one valid file is required")
+
+    created: List[models.TaskAttachment] = []
+    try:
+        for upload in valid_files:
+            attachment = _store_task_attachment(task_id, upload)
+            db.add(attachment)
+            created.append(attachment)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        for attachment in created:
+            try:
+                path = os.path.join(TASK_ATTACHMENT_ROOT, os.path.basename(attachment.file_url))
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        raise
+
+    for attachment in created:
+        db.refresh(attachment)
+
+    if current_user:
+        names = ", ".join(a.original_filename or "file" for a in created)
+        _audit_log(db, current_user, "updated", task_id, f"Uploaded {len(created)} attachment(s) to task {task.task_number}: {names}")
+        db.commit()
+
+    db.refresh(task)
+    return task_to_dict(task)
+
+
+@router.delete("/attachments/{attachment_id}")
+def delete_task_attachment(
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    attachment = db.query(models.TaskAttachment).filter(models.TaskAttachment.id == attachment_id).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    task_id = attachment.task_id
+    filename = attachment.original_filename
+    try:
+        path = os.path.join(TASK_ATTACHMENT_ROOT, os.path.basename(attachment.file_url))
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+    db.delete(attachment)
+    db.commit()
+
+    if current_user:
+        task = db.query(models.Task).filter(models.Task.id == task_id).first()
+        tn = task.task_number if task else task_id
+        _audit_log(db, current_user, "updated", task_id, f"Removed attachment '{filename}' from task {tn}")
+        db.commit()
+
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    return task_to_dict(task) if task else {"message": "Deleted"}
+
+
 def _sync_task_statuses(db: Session) -> None:
     today = date.today()
     changed = False
@@ -489,6 +646,7 @@ def get_tasks(
         .options(joinedload(models.Task.assigned_employee))
         .options(joinedload(models.Task.secondary_assigned_employee))
         .options(joinedload(models.Task.assignee_links).joinedload(models.TaskAssignee.employee))
+        .options(joinedload(models.Task.attachments))
     )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)

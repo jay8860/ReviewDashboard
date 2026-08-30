@@ -164,6 +164,10 @@ TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(__file__), "data", "task_uploads
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
 app.mount("/uploads/tasks", StaticFiles(directory=TASK_UPLOAD_ROOT), name="task_uploads")
 
+TASK_ATTACHMENT_ROOT = os.path.join(os.path.dirname(__file__), "data", "task_attachments")
+os.makedirs(TASK_ATTACHMENT_ROOT, exist_ok=True)
+app.mount("/uploads/task-attachments", StaticFiles(directory=TASK_ATTACHMENT_ROOT), name="task_attachments")
+
 
 @app.get("/healthz")
 def healthz():

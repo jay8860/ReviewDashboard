@@ -691,6 +691,33 @@ const Tasks = ({ user, onLogout }) => {
     };
     const handleDelete = (id) => setTaskDeleteConfirm({ open: true, id });
 
+    const handleUploadAttachments = async (taskId, files) => {
+        if (!files || files.length === 0) return;
+        try {
+            const updated = await api.uploadTaskAttachments(taskId, files);
+            setTasks((prev) => prev.map((row) => (row.id === taskId ? updated : row)));
+            toast.success(files.length > 1 ? `${files.length} files uploaded` : 'File uploaded');
+        } catch (err) {
+            toast.error(err?.response?.data?.detail || 'Failed to upload attachment');
+        }
+    };
+
+    const handleDeleteAttachment = async (attachmentId, taskId) => {
+        const previousTasks = tasks;
+        setTasks((prev) => prev.map((row) => (
+            row.id === taskId
+                ? { ...row, attachments: (row.attachments || []).filter((a) => a.id !== attachmentId) }
+                : row
+        )));
+        try {
+            const updated = await api.deleteTaskAttachment(attachmentId);
+            setTasks((prev) => prev.map((row) => (row.id === taskId ? updated : row)));
+        } catch (err) {
+            setTasks(previousTasks);
+            toast.error(err?.response?.data?.detail || 'Failed to remove attachment');
+        }
+    };
+
     const handleScheduleTaskMeeting = async (task, schedulePayload) => {
         try {
             const titleText = (schedulePayload?.title || task?.description || task?.task_number || 'Task Meeting').trim();
@@ -1133,6 +1160,8 @@ const Tasks = ({ user, onLogout }) => {
                         employees={employees}
                         onUpdate={handleUpdate}
                         onDelete={handleDelete}
+                        onUploadAttachments={handleUploadAttachments}
+                        onDeleteAttachment={handleDeleteAttachment}
                         onScheduleTask={handleScheduleTaskMeeting}
                         onAddToFieldVisitNotepad={handleAddTaskToFieldVisitNotepad}
                         isAdmin={canManageTasks}

@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
-    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin
+    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin,
+    Paperclip, FileText, FileSpreadsheet, FileType2, File as FileIcon, Download
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import EmployeeSearchSelect, { getEmployeeAssignmentLabel } from './EmployeeSearchSelect';
@@ -96,6 +97,70 @@ const StenoPopup = ({ value, onSave, onClose }) => {
                 <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50">Cancel</button>
                 <button onClick={() => { onSave(text); onClose(); }} className="flex-1 py-2 text-xs rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800">Save</button>
             </div>
+        </div>
+    );
+};
+
+// ── Attachment file-type icon ──────────────────────────────────────────────────
+const AttachmentIcon = ({ fileType, size = 14 }) => {
+    switch (fileType) {
+        case 'pdf': return <FileType2 size={size} className="text-rose-500" />;
+        case 'excel': return <FileSpreadsheet size={size} className="text-emerald-600" />;
+        case 'word': return <FileText size={size} className="text-blue-600" />;
+        case 'ppt': return <FileText size={size} className="text-orange-500" />;
+        default: return <FileIcon size={size} className="text-slate-400" />;
+    }
+};
+
+// ── Attachments Popover (compliance proof uploads) ─────────────────────────────
+const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, isAdmin }) => {
+    const attachments = task.attachments || [];
+    return (
+        <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-3 w-72 max-h-80 overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Attachments</p>
+                <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400">
+                    <X size={12} />
+                </button>
+            </div>
+            {attachments.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">No files uploaded yet.</p>
+            ) : (
+                <div className="space-y-1">
+                    {attachments.map((a) => (
+                        <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 group/att">
+                            <button
+                                type="button"
+                                onClick={() => (a.file_type === 'image' ? onOpenImage(a.file_url) : window.open(a.file_url, '_blank', 'noopener,noreferrer'))}
+                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                title={a.original_filename}
+                            >
+                                <AttachmentIcon fileType={a.file_type} />
+                                <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{a.original_filename}</span>
+                            </button>
+                            <a
+                                href={a.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open / download"
+                                className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-opacity"
+                            >
+                                <Download size={12} />
+                            </a>
+                            {isAdmin && (
+                                <button
+                                    type="button"
+                                    onClick={() => onDelete(a.id)}
+                                    title="Remove"
+                                    className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-opacity"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
@@ -586,6 +651,8 @@ const TaskTable = ({
     employees = [],
     onUpdate,
     onDelete,
+    onUploadAttachments,
+    onDeleteAttachment,
     onScheduleTask,
     onAddToFieldVisitNotepad,
     isAdmin = false,
@@ -598,19 +665,25 @@ const TaskTable = ({
     const [editId, setEditId] = useState(null);
     const [calendarId, setCalendarId] = useState(null);
     const [stenoId, setStenoId] = useState(null);
+    const [attachmentsTaskId, setAttachmentsTaskId] = useState(null);
+    const [uploadingTaskId, setUploadingTaskId] = useState(null);
     const [bulkDrafts, setBulkDrafts] = useState({});
     const [savingCells, setSavingCells] = useState({});
     const [scheduleTask, setScheduleTask] = useState(null);
     const [imageModalUrl, setImageModalUrl] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
+    const attachmentsRef = useRef(null);
     const scheduleRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const uploadTargetTaskId = useRef(null);
 
     // Close popups on outside click
     useEffect(() => {
         const handler = (e) => {
             if (calendarRef.current && !calendarRef.current.contains(e.target)) setCalendarId(null);
             if (stenoRef.current && !stenoRef.current.contains(e.target)) setStenoId(null);
+            if (attachmentsRef.current && !attachmentsRef.current.contains(e.target)) setAttachmentsTaskId(null);
             if (scheduleRef.current && !scheduleRef.current.contains(e.target)) setScheduleTask(null);
         };
         document.addEventListener('mousedown', handler);
@@ -661,6 +734,24 @@ const TaskTable = ({
 
     const handleQuickAction = async (id, patch) => {
         await onUpdate(id, patch);
+    };
+
+    const triggerAttachmentUpload = (taskId) => {
+        uploadTargetTaskId.current = taskId;
+        fileInputRef.current?.click();
+    };
+
+    const handleAttachmentFilesSelected = async (e) => {
+        const files = Array.from(e.target.files || []);
+        const taskId = uploadTargetTaskId.current;
+        e.target.value = '';
+        if (!files.length || !taskId || !onUploadAttachments) return;
+        setUploadingTaskId(taskId);
+        try {
+            await onUploadAttachments(taskId, files);
+        } finally {
+            setUploadingTaskId(null);
+        }
     };
 
     const setBulkField = (taskId, field, value) => {
@@ -762,6 +853,14 @@ const TaskTable = ({
                 isOpen={!!imageModalUrl}
                 imageUrl={imageModalUrl}
                 onClose={() => setImageModalUrl(null)}
+            />
+            <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".png,.jpg,.jpeg,.webp,.gif,.heic,.pdf,.xlsx,.xls,.csv,.docx,.doc,.pptx,.ppt,.txt"
+                className="hidden"
+                onChange={handleAttachmentFilesSelected}
             />
             <table className="w-full min-w-[1400px] text-sm">
                 <thead>
@@ -1112,6 +1211,53 @@ const TaskTable = ({
                                             >
                                                 <CalendarClock size={13} />
                                             </button>
+
+                                            {/* Attachments / compliance proof upload */}
+                                            <div className="relative" ref={attachmentsTaskId === task.id ? attachmentsRef : null}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if ((task.attachments || []).length > 0) {
+                                                            setAttachmentsTaskId(attachmentsTaskId === task.id ? null : task.id);
+                                                        } else {
+                                                            triggerAttachmentUpload(task.id);
+                                                        }
+                                                    }}
+                                                    title={(task.attachments || []).length > 0 ? 'View attachments' : 'Upload file (compliance proof)'}
+                                                    className={`relative p-1.5 rounded-lg transition-colors ${(task.attachments || []).length > 0 ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600'}`}
+                                                    disabled={uploadingTaskId === task.id}
+                                                >
+                                                    <Paperclip size={13} className={uploadingTaskId === task.id ? 'animate-pulse' : ''} />
+                                                    {(task.attachments || []).length > 0 && (
+                                                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold flex items-center justify-center">
+                                                            {task.attachments.length}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                                <AnimatePresence>
+                                                    {attachmentsTaskId === task.id && (
+                                                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                                                            className="absolute right-0 top-full mt-1">
+                                                            <div className="flex justify-end mb-1">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => triggerAttachmentUpload(task.id)}
+                                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                                                >
+                                                                    <Paperclip size={10} /> Add more
+                                                                </button>
+                                                            </div>
+                                                            <AttachmentsPopover
+                                                                task={task}
+                                                                isAdmin={isAdmin}
+                                                                onOpenImage={(url) => { setImageModalUrl(url); setAttachmentsTaskId(null); }}
+                                                                onDelete={(attachmentId) => onDeleteAttachment?.(attachmentId, task.id)}
+                                                                onClose={() => setAttachmentsTaskId(null)}
+                                                            />
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
 
                                             {/* Copy to field visit planning notepad */}
                                             <button
