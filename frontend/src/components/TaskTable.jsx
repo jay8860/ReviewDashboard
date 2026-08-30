@@ -543,13 +543,6 @@ const CLAMP_TWO_LINES = {
     overflow: 'hidden',
 };
 
-const CLAMP_ONE_LINE = {
-    display: '-webkit-box',
-    WebkitBoxOrient: 'vertical',
-    WebkitLineClamp: 1,
-    overflow: 'hidden',
-};
-
 // Follow-up comments are stored as one dated entry per line, e.g.
 // "28th July - The matter has been forwarded...". This splits them back
 // out so they can be rendered as a bulleted, date-wise list instead of one
@@ -1160,11 +1153,11 @@ const TaskTable = ({
                                                         {earlierCount > 0 && (
                                                             <p className="text-[10px] text-slate-400 mb-0.5">+{earlierCount} earlier update{earlierCount > 1 ? 's' : ''}</p>
                                                         )}
-                                                        <ul className="space-y-0.5">
+                                                        <ul className="space-y-0.5 max-h-20 overflow-hidden">
                                                             {recentEntries.map((entry, idx) => (
                                                                 <li key={idx} className="flex gap-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">
                                                                     <span className="text-indigo-400 shrink-0">•</span>
-                                                                    <span style={CLAMP_ONE_LINE}>{entry}</span>
+                                                                    <span>{entry}</span>
                                                                 </li>
                                                             ))}
                                                         </ul>
