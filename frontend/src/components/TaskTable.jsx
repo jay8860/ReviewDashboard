@@ -85,18 +85,86 @@ const DeadlinePicker = ({ value, onSave, onClose }) => {
 };
 
 // ── Steno Comment Popup ────────────────────────────────────────────────────────
+// Follow-up notes are date-wise entries (one per line, e.g. "28th July - ...").
+// Default view lists past entries as bullets and lets you add a new dated
+// entry without retyping history; "Edit all" drops into raw text editing for
+// fixing/reordering old entries.
 const StenoPopup = ({ value, onSave, onClose }) => {
-    const [text, setText] = useState(value || '');
+    const entries = parseStenoEntries(value);
+    const [mode, setMode] = useState(entries.length === 0 ? 'edit' : 'list');
+    const [newEntry, setNewEntry] = useState('');
+    const [rawText, setRawText] = useState(value || '');
+
+    const handleAddEntry = () => {
+        const trimmed = newEntry.trim();
+        if (!trimmed) return;
+        const dated = `${todayStenoLabel()} - ${trimmed}`;
+        const updated = entries.length ? `${entries.join('\n')}\n${dated}` : dated;
+        onSave(updated);
+        setNewEntry('');
+        onClose();
+    };
+
+    const handleSaveRaw = () => {
+        onSave(rawText);
+        onClose();
+    };
+
     return (
-        <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-4 w-72">
-            <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Steno / Follow-up Comment</p>
-            <textarea value={text} onChange={e => setText(e.target.value)} rows={4}
-                placeholder="Add follow-up note..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none mb-3" />
-            <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50">Cancel</button>
-                <button onClick={() => { onSave(text); onClose(); }} className="flex-1 py-2 text-xs rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800">Save</button>
+        <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-4 w-80">
+            <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Steno / Follow-up</p>
+                <button
+                    type="button"
+                    onClick={() => { setRawText(value || ''); setMode(mode === 'edit' ? 'list' : 'edit'); }}
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                >
+                    {mode === 'edit' ? 'View list' : 'Edit all'}
+                </button>
             </div>
+
+            {mode === 'edit' ? (
+                <>
+                    <textarea value={rawText} onChange={e => setRawText(e.target.value)} rows={6}
+                        placeholder={'28th July - ...\n5th August - ...'}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none mb-2" />
+                    <p className="text-[10px] text-slate-400 mb-3">One dated update per line.</p>
+                    <div className="flex gap-2">
+                        <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50">Cancel</button>
+                        <button onClick={handleSaveRaw} className="flex-1 py-2 text-xs rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800">Save</button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {entries.length > 0 ? (
+                        <ul className="space-y-1.5 max-h-48 overflow-y-auto mb-3 pr-1">
+                            {entries.map((entry, idx) => (
+                                <li key={idx} className="flex gap-2 text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                                    <span className="text-indigo-400 mt-0.5">•</span>
+                                    <span>{entry}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-xs text-slate-400 mb-3">No follow-up notes yet.</p>
+                    )}
+                    <div className="border-t border-slate-100 dark:border-white/10 pt-3">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                            Add {todayStenoLabel()} update
+                        </p>
+                        <textarea value={newEntry} onChange={e => setNewEntry(e.target.value)} rows={2}
+                            placeholder="What's the latest..."
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none mb-2" />
+                        <div className="flex gap-2">
+                            <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50">Close</button>
+                            <button onClick={handleAddEntry} disabled={!newEntry.trim()}
+                                className="flex-1 py-2 text-xs rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed">
+                                Add
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
@@ -452,6 +520,26 @@ const CLAMP_TWO_LINES = {
     WebkitLineClamp: 2,
     overflow: 'hidden',
 };
+
+const CLAMP_ONE_LINE = {
+    display: '-webkit-box',
+    WebkitBoxOrient: 'vertical',
+    WebkitLineClamp: 1,
+    overflow: 'hidden',
+};
+
+// Follow-up comments are stored as one dated entry per line, e.g.
+// "28th July - The matter has been forwarded...". This splits them back
+// out so they can be rendered as a bulleted, date-wise list instead of one
+// run-on paragraph.
+const parseStenoEntries = (text) => {
+    return String(text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+};
+
+const todayStenoLabel = () => format(new Date(), 'do MMMM');
 
 const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees = [], allTasks = [], onClose, onSave }) => {
     const [form, setForm] = useState({
@@ -1039,13 +1127,27 @@ const TaskTable = ({
                                         </div>
                                     ) : (
                                         <div className="relative">
-                                            {task.steno_comment ? (
-                                                <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
-                                                    className="text-xs text-slate-500 dark:text-slate-400 text-left hover:text-indigo-600 transition-colors leading-snug"
-                                                    style={CLAMP_TWO_LINES}>
-                                                    {task.steno_comment}
-                                                </button>
-                                            ) : isAdmin ? (
+                                            {task.steno_comment ? (() => {
+                                                const stenoEntries = parseStenoEntries(task.steno_comment);
+                                                const recentEntries = stenoEntries.slice(-2);
+                                                const earlierCount = stenoEntries.length - recentEntries.length;
+                                                return (
+                                                    <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
+                                                        className="text-left hover:text-indigo-600 transition-colors w-full">
+                                                        {earlierCount > 0 && (
+                                                            <p className="text-[10px] text-slate-400 mb-0.5">+{earlierCount} earlier update{earlierCount > 1 ? 's' : ''}</p>
+                                                        )}
+                                                        <ul className="space-y-0.5">
+                                                            {recentEntries.map((entry, idx) => (
+                                                                <li key={idx} className="flex gap-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">
+                                                                    <span className="text-indigo-400 shrink-0">•</span>
+                                                                    <span style={CLAMP_ONE_LINE}>{entry}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </button>
+                                                );
+                                            })() : isAdmin ? (
                                                 <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
                                                     className="text-xs text-slate-300 hover:text-indigo-500 transition-colors flex items-center gap-1">
                                                     <MessageSquare size={12} /> Add note
