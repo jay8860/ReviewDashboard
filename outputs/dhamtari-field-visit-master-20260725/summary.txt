@@ -1,0 +1,5 @@
+Total GP rows: 370
+Magarlod: 66
+Nagri: 102
+dhamtari: 94
+kurud: 108

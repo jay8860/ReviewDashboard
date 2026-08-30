@@ -210,6 +210,12 @@ class Task(Base):
     is_today = Column(Boolean, default=False)          # Flagged as today's task
     steno_comment = Column(Text, nullable=True)        # Steno / secretary comment
     remarks = Column(Text, nullable=True)
+    # Date of the most recent dated follow-up entry appended to steno_comment
+    # (used to compute whether a follow-up is due, not the row's edited_at).
+    steno_last_updated_at = Column(Date, nullable=True)
+    # Steno-level "done, pending your final sign-off" flag — separate from the
+    # real status/completion_date, which is reserved for the officer's own use.
+    provisional_complete = Column(Boolean, default=False)
     # Link to department
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     # Source tracking

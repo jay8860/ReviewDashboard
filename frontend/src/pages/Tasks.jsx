@@ -420,6 +420,8 @@ const Tasks = ({ user, onLogout }) => {
     const [sortBy, setSortBy] = useState('deadline_date');
     const [sortDir, setSortDir] = useState('asc');
     const [noCommentsOnly, setNoCommentsOnly] = useState(false);
+    const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+    const [provisionalOnly, setProvisionalOnly] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
     // Tabs: all | today | important
@@ -486,7 +488,7 @@ const Tasks = ({ user, onLogout }) => {
     useEffect(() => {
         setCurrentPage(1);
         setSelectedIds([]);
-    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -576,9 +578,16 @@ const Tasks = ({ user, onLogout }) => {
         }
     };
 
-    const displayedTasks = useMemo(() => (
-        noCommentsOnly ? tasks.filter((task) => !hasTaskComment(task)) : tasks
-    ), [tasks, noCommentsOnly]);
+    const displayedTasks = useMemo(() => {
+        let rows = tasks;
+        if (noCommentsOnly) rows = rows.filter((task) => !hasTaskComment(task));
+        if (followUpDueOnly) rows = rows.filter((task) => task.follow_up_due);
+        if (provisionalOnly) rows = rows.filter((task) => task.provisional_complete);
+        return rows;
+    }, [tasks, noCommentsOnly, followUpDueOnly, provisionalOnly]);
+
+    const followUpDueCount = useMemo(() => tasks.filter((task) => task.follow_up_due).length, [tasks]);
+    const provisionalCount = useMemo(() => tasks.filter((task) => task.provisional_complete).length, [tasks]);
 
     const totalPages = Math.max(1, Math.ceil((displayedTasks.length || 0) / PAGE_SIZE));
     const pagedTasks = useMemo(() => {
@@ -839,7 +848,7 @@ const Tasks = ({ user, onLogout }) => {
 
     const exportExcel = async () => {
         const XLSX = await import('xlsx');
-        const rows = tasks.map((t, i) => ({
+        const rows = displayedTasks.map((t, i) => ({
             'S.No': i + 1,
             'Task #': t.task_number,
             'Description': t.description,
@@ -879,7 +888,7 @@ const Tasks = ({ user, onLogout }) => {
             return `${diff}d left`;
         };
 
-        const body = tasks.map((task, index) => [
+        const body = displayedTasks.map((task, index) => [
             index + 1,
             task.task_number || '',
             task.description || '',
@@ -1100,6 +1109,30 @@ const Tasks = ({ user, onLogout }) => {
                         title="Show tasks where comments are empty"
                     >
                         No Comments
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setFollowUpDueOnly((prev) => !prev)}
+                        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-colors ${
+                            followUpDueOnly
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Tasks with no follow-up update in 7+ days"
+                    >
+                        Follow-up Due{followUpDueCount > 0 ? ` (${followUpDueCount})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setProvisionalOnly((prev) => !prev)}
+                        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-colors ${
+                            provisionalOnly
+                                ? 'bg-orange-100 text-orange-700'
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Tasks marked provisionally complete by steno, awaiting your final sign-off"
+                    >
+                        Provisional Complete{provisionalCount > 0 ? ` (${provisionalCount})` : ''}
                     </button>
 
                     <button onClick={load} className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors ml-1" title="Refresh">

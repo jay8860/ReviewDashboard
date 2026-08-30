@@ -76,6 +76,8 @@ class TaskCreate(BaseModel):
     is_pinned: Optional[bool] = False
     is_today: Optional[bool] = False
     steno_comment: Optional[str] = None
+    steno_last_updated_at: Optional[date] = None
+    provisional_complete: Optional[bool] = False
     remarks: Optional[str] = None
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
@@ -99,6 +101,8 @@ class TaskUpdate(BaseModel):
     is_pinned: Optional[bool] = None
     is_today: Optional[bool] = None
     steno_comment: Optional[str] = None
+    steno_last_updated_at: Optional[date] = None
+    provisional_complete: Optional[bool] = None
     remarks: Optional[str] = None
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
@@ -139,6 +143,20 @@ def _effective_task_status(task: models.Task, today: Optional[date] = None) -> s
     if raw_status in {"in progress", "in_progress", "progress"}:
         return "Pending"
     return "Pending"
+
+
+FOLLOW_UP_DAYS = 7
+
+
+def _is_follow_up_due(task: models.Task, today: Optional[date] = None) -> bool:
+    """True once 7+ days have passed since the last dated steno entry, for
+    any task that isn't already (effectively) completed."""
+    if not task.steno_last_updated_at:
+        return False
+    today = today or date.today()
+    if _effective_task_status(task, today) == "Completed":
+        return False
+    return (today - task.steno_last_updated_at).days >= FOLLOW_UP_DAYS
 
 
 def _coerce_date_field(value, field_name: str) -> Optional[date]:
@@ -388,6 +406,9 @@ def task_to_dict(t: models.Task) -> dict:
         "is_pinned": t.is_pinned or False,
         "is_today": t.is_today or False,
         "steno_comment": t.steno_comment,
+        "steno_last_updated_at": str(t.steno_last_updated_at) if t.steno_last_updated_at else None,
+        "follow_up_due": _is_follow_up_due(t),
+        "provisional_complete": t.provisional_complete or False,
         "remarks": t.remarks,
         "department_id": t.department_id,
         "source": t.source,
@@ -829,7 +850,7 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
 
                 if k == "status":
                     v = _normalize_task_status(v)
-                elif k in {"allocated_date", "deadline_date"}:
+                elif k in {"allocated_date", "deadline_date", "steno_last_updated_at"}:
                     v = _coerce_date_field(v, k)
                 elif k == "completion_date":
                     # completion_date is stored as string in this schema.
@@ -843,6 +864,7 @@ def bulk_update(data: BulkUpdateRequest, db: Session = Depends(get_db)):
             # Keep completion and status consistent.
             if item.get("completion_date") not in (None, "", "null", "None"):
                 task.status = "Completed"
+                task.provisional_complete = False
             elif item.get("status") in {"Pending", "Overdue"}:
                 task.completion_date = None
 
@@ -902,6 +924,7 @@ def update_task(
     if payload.get("status") == "Completed":
         if not task.completion_date:
             task.completion_date = str(date.today())
+        task.provisional_complete = False
     elif "status" in payload and payload.get("status") in {"Pending", "Overdue"}:
         task.completion_date = None
     elif "completion_date" in payload and payload.get("completion_date") is None and task.status == "Completed":

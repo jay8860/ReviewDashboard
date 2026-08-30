@@ -108,6 +108,8 @@ def apply_non_destructive_migrations():
             ("is_pinned", "BOOLEAN DEFAULT FALSE"),
             ("is_today", "BOOLEAN DEFAULT FALSE"),
             ("steno_comment", "TEXT"),
+            ("steno_last_updated_at", "DATE"),
+            ("provisional_complete", "BOOLEAN DEFAULT FALSE"),
             ("remarks", "TEXT"),
             ("department_id", "INTEGER"),
             ("source", "VARCHAR(50) DEFAULT 'manual'"),

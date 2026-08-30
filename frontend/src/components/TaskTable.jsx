@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
     MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin,
-    Paperclip, FileText, FileSpreadsheet, FileType2, File as FileIcon, Download
+    Paperclip, FileText, FileSpreadsheet, FileType2, File as FileIcon, Download,
+    Hourglass
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import EmployeeSearchSelect, { getEmployeeAssignmentLabel } from './EmployeeSearchSelect';
@@ -94,13 +95,17 @@ const StenoPopup = ({ value, onSave, onClose }) => {
     const [mode, setMode] = useState(entries.length === 0 ? 'edit' : 'list');
     const [newEntry, setNewEntry] = useState('');
     const [rawText, setRawText] = useState(value || '');
+    const [entryDateIso, setEntryDateIso] = useState(getTodayIso());
+    const [showDatePicker, setShowDatePicker] = useState(false);
+
+    const entryDateLabel = format(parseISO(entryDateIso), 'do MMMM');
 
     const handleAddEntry = () => {
         const trimmed = newEntry.trim();
         if (!trimmed) return;
-        const dated = `${todayStenoLabel()} - ${trimmed}`;
+        const dated = `${entryDateLabel} - ${trimmed}`;
         const updated = entries.length ? `${entries.join('\n')}\n${dated}` : dated;
-        onSave(updated);
+        onSave(updated, entryDateIso);
         setNewEntry('');
         onClose();
     };
@@ -149,9 +154,26 @@ const StenoPopup = ({ value, onSave, onClose }) => {
                         <p className="text-xs text-slate-400 mb-3">No follow-up notes yet.</p>
                     )}
                     <div className="border-t border-slate-100 dark:border-white/10 pt-3">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                            Add {todayStenoLabel()} update
-                        </p>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Add update</p>
+                            <button
+                                type="button"
+                                onClick={() => setShowDatePicker((prev) => !prev)}
+                                title="Change the date for this entry"
+                                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                            >
+                                <Calendar size={10} /> {entryDateLabel}
+                            </button>
+                        </div>
+                        {showDatePicker && (
+                            <input
+                                type="date"
+                                value={entryDateIso}
+                                max={getTodayIso()}
+                                onChange={(e) => { setEntryDateIso(e.target.value || getTodayIso()); setShowDatePicker(false); }}
+                                className="w-full mb-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-700 text-slate-700 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                        )}
                         <textarea value={newEntry} onChange={e => setNewEntry(e.target.value)} rows={2}
                             placeholder="What's the latest..."
                             className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none mb-2" />
@@ -538,8 +560,6 @@ const parseStenoEntries = (text) => {
         .map((line) => line.trim())
         .filter(Boolean);
 };
-
-const todayStenoLabel = () => format(new Date(), 'do MMMM');
 
 const ScheduleTaskMeetingPopover = ({ isOpen, task, departments = [], employees = [], allTasks = [], onClose, onSave }) => {
     const [form, setForm] = useState({
@@ -946,8 +966,10 @@ const TaskTable = ({
         setCalendarId(null);
     };
 
-    const handleSteno = async (id, text) => {
-        await onUpdate(id, { steno_comment: text });
+    const handleSteno = async (id, text, lastUpdatedAt) => {
+        const payload = { steno_comment: text };
+        if (lastUpdatedAt) payload.steno_last_updated_at = lastUpdatedAt;
+        await onUpdate(id, payload);
         setStenoId(null);
     };
 
@@ -1104,6 +1126,7 @@ const TaskTable = ({
                                             <div className="flex items-center gap-1 flex-wrap">
                                                 {(isImportant || isPinned) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Important</span>}
                                                 {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
+                                                {task.provisional_complete && !isCompleted && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 flex items-center gap-1"><Hourglass size={9} /> Provisional</span>}
                                             </div>
                                         </div>
                                     )}
@@ -1159,7 +1182,7 @@ const TaskTable = ({
                                                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
                                                         className="absolute left-0 top-full mt-1" ref={stenoRef}>
                                                         <StenoPopup value={task.steno_comment}
-                                                            onSave={(text) => handleSteno(task.id, text)}
+                                                            onSave={(text, dateIso) => handleSteno(task.id, text, dateIso)}
                                                             onClose={() => setStenoId(null)} />
                                                     </motion.div>
                                                 )}
@@ -1309,6 +1332,16 @@ const TaskTable = ({
                                             })} title={isCompleted ? 'Mark Pending' : 'Mark Complete'}
                                                 className={`p-1.5 rounded-lg border transition-colors ${isCompleted ? 'bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600' : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'}`}>
                                                 <CheckCircle2 size={13} />
+                                            </button>
+
+                                            {/* Provisional Complete — steno-level "done, pending your sign-off" flag */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleQuickAction(task.id, { provisional_complete: !task.provisional_complete })}
+                                                title={task.provisional_complete ? 'Undo provisional completion' : 'Mark provisional completion (pending final sign-off)'}
+                                                className={`p-1.5 rounded-lg border transition-colors ${task.provisional_complete ? 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600' : 'border-orange-300 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/10'}`}
+                                            >
+                                                <Hourglass size={13} />
                                             </button>
 
                                             {/* Edit inline */}
