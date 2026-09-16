@@ -397,24 +397,11 @@ const buildTaskWhatsAppMessage = (task, includeComments = false) => {
     const assignedTo = getTaskAssignedText(task) || 'Unassigned';
     let msg = `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
 
-    const base = window.location.origin;
-    const toAbsolute = (url) => (url && !url.startsWith('http') ? `${base}${url}` : url);
-
-    // Include direct image link if the task has a main image
+    // Only include the Telegram-sourced image (image_url column), not portal attachments
     if (task?.image_url) {
-        msg += `\n\nTask image: ${toAbsolute(task.image_url)}`;
-    }
-
-    const attachments = task?.attachments || [];
-    const imageAtts = attachments.filter((a) => a.file_type === 'image');
-    const otherAtts = attachments.filter((a) => a.file_type !== 'image');
-
-    if (imageAtts.length > 0) {
-        msg += `\n\nAttached image${imageAtts.length > 1 ? 's' : ''}:`;
-        imageAtts.forEach((a) => { msg += `\n${toAbsolute(a.file_url)}`; });
-    }
-    if (otherAtts.length > 0) {
-        msg += `\n\n${otherAtts.length} document${otherAtts.length > 1 ? 's' : ''} also attached – view on the task dashboard.`;
+        const base = window.location.origin;
+        const url = task.image_url.startsWith('http') ? task.image_url : `${base}${task.image_url}`;
+        msg += `\n\nTask image: ${url}`;
     }
 
     if (includeComments && task?.steno_comment) {
@@ -834,14 +821,11 @@ const TaskTable = ({
     const [scheduleTask, setScheduleTask] = useState(null);
     const [imageModalUrl, setImageModalUrl] = useState(null);
     const [descPopoverId, setDescPopoverId] = useState(null);
-    const [whatsappTaskId, setWhatsappTaskId] = useState(null);
-    const [waIncludeComments, setWaIncludeComments] = useState(false);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
     const attachmentsRef = useRef(null);
     const scheduleRef = useRef(null);
     const descRef = useRef(null);
-    const whatsappRef = useRef(null);
     const fileInputRef = useRef(null);
     const uploadTargetTaskId = useRef(null);
 
@@ -853,7 +837,6 @@ const TaskTable = ({
             if (attachmentsRef.current && !attachmentsRef.current.contains(e.target)) setAttachmentsTaskId(null);
             if (scheduleRef.current && !scheduleRef.current.contains(e.target)) setScheduleTask(null);
             if (descRef.current && !descRef.current.contains(e.target)) setDescPopoverId(null);
-            if (whatsappRef.current && !whatsappRef.current.contains(e.target)) setWhatsappTaskId(null);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -1404,80 +1387,41 @@ const TaskTable = ({
                                                 <Hourglass size={13} />
                                             </button>
 
-                                            {/* 3. WhatsApp — opens compose popover */}
-                                            <div className="relative" ref={whatsappTaskId === task.id ? whatsappRef : null}>
+                                            {/* 3. WhatsApp — task name only, direct send */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const msg = buildTaskWhatsAppMessage(task, false);
+                                                    if (quickRecipientNumbers.length) {
+                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
+                                                    } else {
+                                                        window.open(`https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`, '_blank', 'noopener,noreferrer');
+                                                    }
+                                                }}
+                                                title="WhatsApp follow-up"
+                                                className="p-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 transition-colors"
+                                            >
+                                                <WhatsAppIcon />
+                                            </button>
+
+                                            {/* 3b. WhatsApp with comments — asterisk badge, direct send */}
+                                            <div className="relative group/tip">
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        if (whatsappTaskId === task.id) {
-                                                            setWhatsappTaskId(null);
+                                                        const msg = buildTaskWhatsAppMessage(task, true);
+                                                        if (quickRecipientNumbers.length) {
+                                                            openWhatsAppToNumbers(quickRecipientNumbers, msg);
                                                         } else {
-                                                            setWaIncludeComments(false);
-                                                            setWhatsappTaskId(task.id);
+                                                            window.open(`https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`, '_blank', 'noopener,noreferrer');
                                                         }
                                                     }}
-                                                    title="WhatsApp follow-up"
-                                                    className={`p-1.5 rounded-lg border transition-colors ${whatsappTaskId === task.id ? 'bg-green-50 border-green-400 text-green-700 dark:bg-green-900/20' : 'border-green-300 text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10'}`}
+                                                    className="relative p-1.5 rounded-lg border border-green-400 bg-green-50 dark:bg-green-900/20 text-green-700 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
                                                 >
                                                     <WhatsAppIcon />
+                                                    <span className="absolute -top-1 -right-0.5 text-[10px] font-black text-green-700 leading-none select-none">✱</span>
                                                 </button>
-                                                <AnimatePresence>
-                                                    {whatsappTaskId === task.id && (
-                                                        <motion.div
-                                                            initial={{ opacity: 0, scale: 0.95, y: 6 }}
-                                                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                            exit={{ opacity: 0, scale: 0.95, y: 6 }}
-                                                            className="absolute left-0 top-full mt-2 z-[70] w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl overflow-hidden"
-                                                        >
-                                                            <div className="px-4 py-3 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-gradient-to-r from-green-50 to-white dark:from-green-900/20 dark:to-slate-800">
-                                                                <div>
-                                                                    <h3 className="text-sm font-black text-slate-800 dark:text-white">WhatsApp Follow-up</h3>
-                                                                    <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{task.description || 'No description'}</p>
-                                                                </div>
-                                                                <button type="button" onClick={() => setWhatsappTaskId(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 shrink-0">
-                                                                    <X size={13} className="text-slate-400" />
-                                                                </button>
-                                                            </div>
-                                                            <div className="p-4 space-y-3">
-                                                                {task.steno_comment ? (
-                                                                    <label className="flex items-start gap-2.5 cursor-pointer group/chk">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={waIncludeComments}
-                                                                            onChange={(e) => setWaIncludeComments(e.target.checked)}
-                                                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 text-green-600 accent-green-600 cursor-pointer shrink-0"
-                                                                        />
-                                                                        <div>
-                                                                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover/chk:text-green-700 transition-colors">Include follow-up comments</p>
-                                                                            <p className="text-[10px] text-slate-400 mt-0.5">Attach all recorded updates to the message</p>
-                                                                        </div>
-                                                                    </label>
-                                                                ) : (
-                                                                    <p className="text-[11px] text-slate-400 italic">No comments recorded for this task.</p>
-                                                                )}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        const msg = buildTaskWhatsAppMessage(task, waIncludeComments);
-                                                                        setWhatsappTaskId(null);
-                                                                        if (quickRecipientNumbers.length) {
-                                                                            openWhatsAppToNumbers(quickRecipientNumbers, msg);
-                                                                        } else {
-                                                                            window.open(
-                                                                                `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
-                                                                                '_blank',
-                                                                                'noopener,noreferrer'
-                                                                            );
-                                                                        }
-                                                                    }}
-                                                                    className="w-full py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
-                                                                >
-                                                                    <WhatsAppIcon /> Send on WhatsApp
-                                                                </button>
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">With comments</span>
                                             </div>
 
                                             {/* 4. Edit inline */}
