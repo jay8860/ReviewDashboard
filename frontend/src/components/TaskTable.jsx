@@ -1047,7 +1047,7 @@ const TaskTable = ({
 
                         return (
                             <tr key={task.id}
-                                className={`group transition-colors hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10
+                                className={`group transition-colors hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10 align-top
                                     ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}
                                     ${isCompleted ? 'opacity-60' : ''}
                                 `}>
@@ -1101,7 +1101,7 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Task Description */}
-                                <td className="px-3 py-3 min-w-[320px] align-middle">
+                                <td className="px-3 py-3 min-w-[320px] align-top">
                                     {isBulkEditable ? (
                                         <div className="space-y-1">
                                             <textarea
