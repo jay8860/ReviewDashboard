@@ -1117,7 +1117,7 @@ const TaskTable = ({
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="min-h-[64px] flex flex-col justify-center gap-0.5">
+                                        <div className="flex flex-col gap-0.5">
                                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
