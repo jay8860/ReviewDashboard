@@ -826,10 +826,12 @@ const TaskTable = ({
     const [savingCells, setSavingCells] = useState({});
     const [scheduleTask, setScheduleTask] = useState(null);
     const [imageModalUrl, setImageModalUrl] = useState(null);
+    const [descPopoverId, setDescPopoverId] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
     const attachmentsRef = useRef(null);
     const scheduleRef = useRef(null);
+    const descRef = useRef(null);
     const fileInputRef = useRef(null);
     const uploadTargetTaskId = useRef(null);
 
@@ -840,6 +842,7 @@ const TaskTable = ({
             if (stenoRef.current && !stenoRef.current.contains(e.target)) setStenoId(null);
             if (attachmentsRef.current && !attachmentsRef.current.contains(e.target)) setAttachmentsTaskId(null);
             if (scheduleRef.current && !scheduleRef.current.contains(e.target)) setScheduleTask(null);
+            if (descRef.current && !descRef.current.contains(e.target)) setDescPopoverId(null);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
@@ -1118,7 +1121,8 @@ const TaskTable = ({
                                 </td>
 
                                 {/* Task Description */}
-                                <td className="px-3 py-3 min-w-[320px] align-top">
+                                <td className="px-3 py-3 min-w-[320px] align-top"
+                                    ref={descPopoverId === task.id ? descRef : null}>
                                     {isBulkEditable ? (
                                         <div className="space-y-1">
                                             <textarea
@@ -1134,15 +1138,45 @@ const TaskTable = ({
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col gap-0.5">
-                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words line-clamp-4">
-                                                {task.description || <span className="text-slate-300 italic">No description</span>}
-                                            </p>
+                                        <div className="relative flex flex-col gap-0.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setDescPopoverId(descPopoverId === task.id ? null : task.id)}
+                                                className="text-left w-full"
+                                            >
+                                                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words line-clamp-4 hover:text-indigo-600 transition-colors">
+                                                    {task.description || <span className="text-slate-300 italic">No description</span>}
+                                                </p>
+                                            </button>
                                             <div className="flex items-center gap-1 flex-wrap">
                                                 {(isImportant || isPinned) && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">Important</span>}
                                                 {isToday && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Today</span>}
                                                 {task.provisional_complete && !isCompleted && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 flex items-center gap-1"><Hourglass size={9} /> Provisional</span>}
                                             </div>
+                                            <AnimatePresence>
+                                                {descPopoverId === task.id && task.description && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, scale: 0.97, y: 4 }}
+                                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                        exit={{ opacity: 0, scale: 0.97, y: 4 }}
+                                                        className="absolute left-0 top-full mt-1.5 z-[70] w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl p-4"
+                                                    >
+                                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Full description</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setDescPopoverId(null)}
+                                                                className="p-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 shrink-0"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed whitespace-normal break-words">
+                                                            {task.description}
+                                                        </p>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
                                     )}
                                 </td>
