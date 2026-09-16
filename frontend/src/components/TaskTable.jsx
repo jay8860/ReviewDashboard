@@ -396,10 +396,27 @@ const buildTaskWhatsAppMessage = (task) => {
     const taskName = (task?.description || '').trim() || 'Task';
     const assignedTo = getTaskAssignedText(task) || 'Unassigned';
     let msg = `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
-    const attCount = (task?.attachments || []).length;
-    if (attCount > 0) {
-        msg += `\n\nThis task has ${attCount} attachment${attCount > 1 ? 's' : ''} (images/documents) – please check the task dashboard for reference files.`;
+
+    const base = window.location.origin;
+    const toAbsolute = (url) => (url && !url.startsWith('http') ? `${base}${url}` : url);
+
+    // Include direct image link if the task has a main image
+    if (task?.image_url) {
+        msg += `\n\nTask image: ${toAbsolute(task.image_url)}`;
     }
+
+    const attachments = task?.attachments || [];
+    const imageAtts = attachments.filter((a) => a.file_type === 'image');
+    const otherAtts = attachments.filter((a) => a.file_type !== 'image');
+
+    if (imageAtts.length > 0) {
+        msg += `\n\nAttached image${imageAtts.length > 1 ? 's' : ''}:`;
+        imageAtts.forEach((a) => { msg += `\n${toAbsolute(a.file_url)}`; });
+    }
+    if (otherAtts.length > 0) {
+        msg += `\n\n${otherAtts.length} document${otherAtts.length > 1 ? 's' : ''} also attached – view on the task dashboard.`;
+    }
+
     return msg;
 };
 
