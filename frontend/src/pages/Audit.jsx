@@ -5,6 +5,73 @@ import { api } from '../services/api';
 import { useToast } from '../components/Toast';
 import { ensurePdfUnicodeFont } from '../utils/pdfFont';
 
+const formatTs = (ts) => {
+    if (!ts) return '-';
+    try {
+        return new Date(ts).toLocaleString(undefined, {
+            day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true,
+        });
+    } catch {
+        return ts;
+    }
+};
+
+const buildRemark = (r) => {
+    const ch = r.changes;
+    const action = r.action;
+
+    if (action === 'created') {
+        return r.summary || 'Task created';
+    }
+    if (action === 'deleted') {
+        return r.summary || 'Task deleted';
+    }
+
+    if (!ch || typeof ch !== 'object') {
+        return r.summary || '';
+    }
+
+    const parts = [];
+
+    if (ch.steno_comment) {
+        const newVal = ch.steno_comment.to || '';
+        const entries = String(newVal).split('\n').map((l) => l.trim()).filter(Boolean);
+        const last = entries[entries.length - 1] || '';
+        if (last) parts.push(`Comment: "${last.slice(0, 80)}${last.length > 80 ? '…' : ''}"`);
+    }
+    if (ch.status) {
+        parts.push(`Status → ${ch.status.to || ''}`);
+    }
+    if (ch.completion_date) {
+        parts.push(`Completed on ${ch.completion_date.to || ''}`);
+    }
+    if (ch.provisional_complete) {
+        parts.push(`Provisional → ${ch.provisional_complete.to ? 'Yes' : 'No'}`);
+    }
+    if (ch.deadline_date) {
+        parts.push(`Deadline → ${ch.deadline_date.to || ''}`);
+    }
+    if (ch.description) {
+        const d = String(ch.description.to || '');
+        parts.push(`Description → "${d.slice(0, 60)}${d.length > 60 ? '…' : ''}"`);
+    }
+    if (ch.priority) {
+        parts.push(`Priority → ${ch.priority.to || ''}`);
+    }
+    if (ch.is_today) {
+        parts.push(`Pinned to Today → ${ch.is_today.to ? 'Yes' : 'No'}`);
+    }
+    if (ch.is_pinned) {
+        parts.push(`Pinned → ${ch.is_pinned.to ? 'Yes' : 'No'}`);
+    }
+    if (ch.assigned_employee_id) {
+        parts.push(`Assigned to ID ${ch.assigned_employee_id.to ?? '—'}`);
+    }
+
+    return parts.length ? parts.join(' · ') : (r.summary || '');
+};
+
 const Audit = ({ user, onLogout }) => {
     const toast = useToast();
     const [loading, setLoading] = useState(true);
@@ -50,12 +117,13 @@ const Audit = ({ user, onLogout }) => {
 
             const body = rows.map((r, idx) => ([
                 idx + 1,
-                r.created_at || '',
+                formatTs(r.created_at),
                 r.action || '',
                 r.actor_username || '',
                 r.target_type || '',
                 r.target_id ?? '',
                 r.summary || '',
+                buildRemark(r),
             ]));
 
             const doc = new jsPDF({ orientation: 'landscape' });
@@ -72,18 +140,19 @@ const Audit = ({ user, onLogout }) => {
 
             autoTable(doc, {
                 startY: 24,
-                head: [['S.No', 'When', 'Action', 'Actor', 'Target', 'ID', 'Summary']],
+                head: [['S.No', 'When', 'Action', 'Actor', 'Target', 'ID', 'Summary', 'Remarks']],
                 body,
                 styles: { font: tableFont, fontSize: 8, cellPadding: 2, overflow: 'linebreak', valign: 'top' },
                 headStyles: { font: tableFont, fillColor: [79, 70, 229], textColor: [255, 255, 255] },
                 columnStyles: {
-                    0: { cellWidth: 12 },
-                    1: { cellWidth: 38 },
-                    2: { cellWidth: 22 },
-                    3: { cellWidth: 30 },
-                    4: { cellWidth: 34 },
-                    5: { cellWidth: 14 },
-                    6: { cellWidth: 125 },
+                    0: { cellWidth: 10 },
+                    1: { cellWidth: 36 },
+                    2: { cellWidth: 20 },
+                    3: { cellWidth: 28 },
+                    4: { cellWidth: 28 },
+                    5: { cellWidth: 12 },
+                    6: { cellWidth: 70 },
+                    7: { cellWidth: 86 },
                 },
                 theme: 'grid',
             });
@@ -186,16 +255,17 @@ const Audit = ({ user, onLogout }) => {
                                 <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400 w-36">Actor</th>
                                 <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400 w-24">Task ID</th>
                                 <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400">Summary</th>
+                                <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-400">Remarks</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                             {loading ? (
-                                <tr><td className="px-3 py-4 text-slate-400" colSpan={5}>Loading…</td></tr>
+                                <tr><td className="px-3 py-4 text-slate-400" colSpan={6}>Loading…</td></tr>
                             ) : rows.length === 0 ? (
-                                <tr><td className="px-3 py-4 text-slate-400" colSpan={5}>No audit entries.</td></tr>
+                                <tr><td className="px-3 py-4 text-slate-400" colSpan={6}>No audit entries.</td></tr>
                             ) : rows.map((r) => (
                                 <tr key={r.id}>
-                                    <td className="px-3 py-3 text-xs text-slate-500">{r.created_at || '-'}</td>
+                                    <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">{formatTs(r.created_at)}</td>
                                     <td className="px-3 py-3">
                                         <span className="text-[11px] font-black px-2 py-1 rounded-full bg-slate-100 text-slate-700">
                                             {r.action}
@@ -203,7 +273,8 @@ const Audit = ({ user, onLogout }) => {
                                     </td>
                                     <td className="px-3 py-3 text-xs text-slate-700 dark:text-slate-200">{r.actor_username || '-'}</td>
                                     <td className="px-3 py-3 text-xs font-mono text-slate-600">{r.target_id ?? '-'}</td>
-                                    <td className="px-3 py-3 text-slate-700 dark:text-slate-200">{r.summary || '-'}</td>
+                                    <td className="px-3 py-3 text-xs text-slate-700 dark:text-slate-200">{r.summary || '-'}</td>
+                                    <td className="px-3 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-xs">{buildRemark(r) || '-'}</td>
                                 </tr>
                             ))}
                         </tbody>

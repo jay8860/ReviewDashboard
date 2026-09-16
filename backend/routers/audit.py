@@ -23,7 +23,7 @@ def _row_to_dict(row: models.AuditLog) -> dict:
         "action": row.action,
         "summary": row.summary,
         "changes": json.loads(row.changes_json) if row.changes_json else None,
-        "created_at": str(row.created_at) if row.created_at else None,
+        "created_at": row.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') if row.created_at else None,
     }
 
 
