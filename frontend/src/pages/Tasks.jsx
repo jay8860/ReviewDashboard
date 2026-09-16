@@ -485,7 +485,7 @@ const Tasks = ({ user, onLogout }) => {
         }
     }, [applyTabFilter, buildFilters]);
 
-    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search]);
+    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, filterHasAttachments]);
 
     useEffect(() => {
         setCurrentPage(1);
