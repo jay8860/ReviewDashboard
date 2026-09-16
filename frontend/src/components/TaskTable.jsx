@@ -1118,7 +1118,7 @@ const TaskTable = ({
                                         </div>
                                     ) : (
                                         <div className="flex flex-col gap-0.5">
-                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words">
+                                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-snug whitespace-normal break-words line-clamp-4">
                                                 {task.description || <span className="text-slate-300 italic">No description</span>}
                                             </p>
                                             <div className="flex items-center gap-1 flex-wrap">
@@ -1154,15 +1154,15 @@ const TaskTable = ({
                                                 const earlierCount = stenoEntries.length - recentEntries.length;
                                                 return (
                                                     <button onClick={() => setStenoId(stenoId === task.id ? null : task.id)}
-                                                        className="text-left hover:text-indigo-600 transition-colors w-full">
+                                                        className="text-left hover:text-indigo-600 transition-colors w-full block overflow-hidden" style={{ maxHeight: '96px' }}>
                                                         {earlierCount > 0 && (
                                                             <p className="text-[10px] text-slate-400 mb-0.5">+{earlierCount} earlier update{earlierCount > 1 ? 's' : ''}</p>
                                                         )}
-                                                        <ul className="space-y-0.5 max-h-20 overflow-hidden">
+                                                        <ul className="space-y-0.5">
                                                             {recentEntries.map((entry, idx) => (
                                                                 <li key={idx} className="flex gap-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">
                                                                     <span className="text-indigo-400 shrink-0">•</span>
-                                                                    <span>{entry}</span>
+                                                                    <span className="line-clamp-3">{entry}</span>
                                                                 </li>
                                                             ))}
                                                         </ul>
