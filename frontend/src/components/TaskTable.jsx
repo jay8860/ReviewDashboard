@@ -395,7 +395,12 @@ const ColHeader = ({ label, sortKey, currentSort, onSort, className = '' }) => {
 const buildTaskWhatsAppMessage = (task) => {
     const taskName = (task?.description || '').trim() || 'Task';
     const assignedTo = getTaskAssignedText(task) || 'Unassigned';
-    return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
+    let msg = `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
+    const attCount = (task?.attachments || []).length;
+    if (attCount > 0) {
+        msg += `\n\nThis task has ${attCount} attachment${attCount > 1 ? 's' : ''} (images/documents) – please check the task dashboard for reference files.`;
+    }
+    return msg;
 };
 
 const getEmployeeSelectLabel = (employee) => {

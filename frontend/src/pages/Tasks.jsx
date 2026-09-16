@@ -422,6 +422,7 @@ const Tasks = ({ user, onLogout }) => {
     const [noCommentsOnly, setNoCommentsOnly] = useState(false);
     const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
     const [provisionalOnly, setProvisionalOnly] = useState(false);
+    const [filterHasAttachments, setFilterHasAttachments] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
     // Tabs: all | today | important
@@ -456,8 +457,9 @@ const Tasks = ({ user, onLogout }) => {
     const buildFilters = useCallback(() => {
         const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy, sortDir };
         if (tab === 'today') filters.is_today = true;
+        if (filterHasAttachments) filters.has_attachments = true;
         return filters;
-    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab]);
+    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab, filterHasAttachments]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -488,7 +490,7 @@ const Tasks = ({ user, onLogout }) => {
     useEffect(() => {
         setCurrentPage(1);
         setSelectedIds([]);
-    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly, filterHasAttachments]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -1133,6 +1135,18 @@ const Tasks = ({ user, onLogout }) => {
                         title="Tasks marked provisionally complete by steno, awaiting your final sign-off"
                     >
                         Provisional Complete{provisionalCount > 0 ? ` (${provisionalCount})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setFilterHasAttachments((prev) => !prev)}
+                        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-colors ${
+                            filterHasAttachments
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                        title="Show only tasks with attachments (images, PDFs, etc.)"
+                    >
+                        Has Attachments
                     </button>
 
                     <button onClick={load} className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors ml-1" title="Refresh">

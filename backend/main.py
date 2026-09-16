@@ -10,7 +10,7 @@ import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
-from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit, general_info
+from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit, general_info, telegram
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 BOOTSTRAP_STATE = {"status": "pending", "detail": ""}
@@ -159,6 +159,7 @@ app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(telegram.router, prefix="/api/telegram", tags=["telegram"])
 
 TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(__file__), "data", "task_uploads")
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)

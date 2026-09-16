@@ -653,6 +653,7 @@ def get_tasks(
     priority: Optional[str] = None,
     is_today: Optional[bool] = None,
     is_pinned: Optional[bool] = None,
+    has_attachments: Optional[bool] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
     sort_dir: Optional[str] = "asc",
@@ -681,6 +682,10 @@ def get_tasks(
         q = q.filter(models.Task.is_today == is_today)
     if is_pinned is not None:
         q = q.filter(models.Task.is_pinned == is_pinned)
+    if has_attachments is True:
+        q = q.filter(models.Task.attachments.any())
+    elif has_attachments is False:
+        q = q.filter(~models.Task.attachments.any())
     if search:
         search_term = _canonical_text(search) or search
         # Tasks where ANY assignee (via task_assignees) matches the term.

@@ -246,6 +246,11 @@ def apply_non_destructive_migrations():
             ("source", "VARCHAR DEFAULT 'manual'"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ],
+        "task_attachments": [
+            ("source", "VARCHAR DEFAULT 'portal'"),
+            ("telegram_file_id", "VARCHAR"),
+            ("caption", "TEXT"),
+        ],
         "audit_logs": [
             ("actor_user_id", "INTEGER"),
             ("actor_username", "VARCHAR"),

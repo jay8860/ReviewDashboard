@@ -263,6 +263,9 @@ class TaskAttachment(Base):
     file_type = Column(String, nullable=True)           # image | pdf | excel | word | ppt | other
     file_extension = Column(String, nullable=True)
     file_size = Column(Integer, nullable=True)
+    source = Column(String, nullable=True, default="portal")   # portal | telegram
+    telegram_file_id = Column(String, nullable=True)
+    caption = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, server_default=func.now())
 
     task = relationship("Task", back_populates="attachments")
