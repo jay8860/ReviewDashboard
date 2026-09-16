@@ -1,11 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit2, Trash2, CheckCircle2, Flag, Pin, Calendar, CalendarClock,
-    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin
+    MessageSquare, X, Save, ChevronUp, ChevronDown, ChevronsUpDown, MapPin,
+    Paperclip, Download, Upload, Eye
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import EmployeeSearchSelect, { getEmployeeAssignmentLabel } from './EmployeeSearchSelect';
+import { api } from '../services/api';
 
 // WhatsApp SVG icon
 const WhatsAppIcon = () => (
@@ -70,6 +72,152 @@ const StenoPopup = ({ value, onSave, onClose }) => {
             <div className="flex gap-2">
                 <button onClick={onClose} className="flex-1 py-2 text-xs rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:bg-slate-50">Cancel</button>
                 <button onClick={() => { onSave(text); onClose(); }} className="flex-1 py-2 text-xs rounded-xl bg-indigo-700 text-white font-bold hover:bg-indigo-800">Save</button>
+            </div>
+        </div>
+    );
+};
+
+// ── Attachment Viewer Modal ────────────────────────────────────────────────────
+const AttachmentViewerModal = ({ task, onClose }) => {
+    const [attachments, setAttachments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [uploading, setUploading] = useState(false);
+    const [previewAtt, setPreviewAtt] = useState(null);
+    const fileInputRef = useRef(null);
+
+    const load = useCallback(async () => {
+        if (!task) return;
+        setLoading(true);
+        try {
+            const list = await api.getTaskAttachments(task.id);
+            setAttachments(list);
+        } catch {
+            setAttachments([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [task]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        try {
+            await api.uploadTaskAttachment(task.id, file);
+            await load();
+        } catch {
+            // silent
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleDelete = async (att) => {
+        if (!window.confirm(`Delete "${att.original_filename}"?`)) return;
+        try {
+            await api.deleteTaskAttachment(task.id, att.id);
+            setAttachments(prev => prev.filter(a => a.id !== att.id));
+            if (previewAtt?.id === att.id) setPreviewAtt(null);
+        } catch {
+            // silent
+        }
+    };
+
+    const isImage = (att) => (att.mime_type || '').startsWith('image/');
+
+    if (!task) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                    <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-0.5">Attachments</p>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate max-w-xs">{task.task_number} — {task.description || 'Task'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 text-white text-xs font-bold hover:bg-indigo-800 disabled:opacity-60 transition-colors"
+                        >
+                            <Upload size={13} />
+                            {uploading ? 'Uploading…' : 'Upload'}
+                        </button>
+                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+                        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 transition-colors">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Image preview */}
+                {previewAtt && isImage(previewAtt) && (
+                    <div className="relative bg-slate-900 flex items-center justify-center" style={{ maxHeight: 320 }}>
+                        <img
+                            src={api.getTaskAttachmentDownloadUrl(task.id, previewAtt.id)}
+                            alt={previewAtt.original_filename}
+                            className="max-h-80 object-contain"
+                        />
+                        <a
+                            href={api.getTaskAttachmentDownloadUrl(task.id, previewAtt.id)}
+                            download={previewAtt.original_filename}
+                            className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-700 text-white text-xs font-bold rounded-lg hover:bg-indigo-800 transition-colors"
+                        >
+                            <Download size={13} /> Download
+                        </a>
+                    </div>
+                )}
+
+                {/* List */}
+                <div className="overflow-y-auto flex-1 p-4 space-y-2">
+                    {loading ? (
+                        <div className="text-center py-10 text-slate-400 text-sm">Loading…</div>
+                    ) : attachments.length === 0 ? (
+                        <div className="text-center py-10 text-slate-300 text-sm">No attachments yet. Upload one above.</div>
+                    ) : attachments.map(att => (
+                        <div key={att.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
+                            <Paperclip size={15} className="text-slate-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{att.original_filename}</p>
+                                <p className="text-xs text-slate-400">{att.source === 'telegram' ? '📱 Telegram' : '🌐 Portal'} · {att.file_size ? `${(att.file_size / 1024).toFixed(1)} KB` : ''}</p>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {isImage(att) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewAtt(previewAtt?.id === att.id ? null : att)}
+                                        className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
+                                        title="Preview"
+                                    >
+                                        <Eye size={13} />
+                                    </button>
+                                )}
+                                <a
+                                    href={api.getTaskAttachmentDownloadUrl(task.id, att.id)}
+                                    download={att.original_filename}
+                                    className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-600 transition-colors"
+                                    title="Download"
+                                >
+                                    <Download size={13} />
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => handleDelete(att)}
+                                    className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors"
+                                    title="Delete"
+                                >
+                                    <Trash2 size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -168,10 +316,14 @@ const ColHeader = ({ label, sortKey, currentSort, onSort, className = '' }) => {
     );
 };
 
-const buildTaskWhatsAppMessage = (task) => {
+const buildTaskWhatsAppMessage = (task, attachmentCount = 0) => {
     const taskName = (task?.description || '').trim() || 'Task';
     const assignedTo = getTaskAssignedText(task) || 'Unassigned';
-    return `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
+    let msg = `What's the status of this task? - '${taskName}' assigned to '${assignedTo}'`;
+    if (attachmentCount > 0) {
+        msg += `\n\nThis task has ${attachmentCount} attachment${attachmentCount > 1 ? 's' : ''} – please check the task dashboard for files.`;
+    }
+    return msg;
 };
 
 const getEmployeeSelectLabel = (employee) => {
@@ -539,6 +691,7 @@ const TaskTable = ({
     const [bulkDrafts, setBulkDrafts] = useState({});
     const [savingCells, setSavingCells] = useState({});
     const [scheduleTask, setScheduleTask] = useState(null);
+    const [attachmentTask, setAttachmentTask] = useState(null);
     const calendarRef = useRef(null);
     const stenoRef = useRef(null);
     const scheduleRef = useRef(null);
@@ -692,6 +845,7 @@ const TaskTable = ({
     if (tasks.length === 0) return null;
 
     return (
+        <>
         <div className="overflow-x-auto">
             <table className="w-full min-w-[1400px] text-sm">
                 <thead>
@@ -712,6 +866,9 @@ const TaskTable = ({
                         <ColHeader label="Alloc." sortKey="allocated_date" currentSort={sort} onSort={handleSort} className="w-24" />
                         <ColHeader label="Time" className="w-20" />
                         <ColHeader label="Deadline" sortKey="deadline_date" currentSort={sort} onSort={handleSort} className="w-24" />
+                        <th className="px-3 py-3 text-xs font-black uppercase tracking-widest text-slate-400 w-16">
+                            <Paperclip size={12} className="inline" />
+                        </th>
                         {isAdmin && <th className="px-3 py-3 text-xs font-black uppercase tracking-widest text-slate-400 w-48">Actions</th>}
                     </tr>
                 </thead>
@@ -944,6 +1101,19 @@ const TaskTable = ({
                                     )}
                                 </td>
 
+                                {/* Attachments */}
+                                <td className="px-3 py-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAttachmentTask(task)}
+                                        title={`Attachments (${task.attachment_count || 0})`}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${(task.attachment_count || 0) > 0 ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5'}`}
+                                    >
+                                        <Paperclip size={12} />
+                                        {(task.attachment_count || 0) > 0 && <span>{task.attachment_count}</span>}
+                                    </button>
+                                </td>
+
                                 {/* Actions */}
                                 {isAdmin && (
                                     <td className="px-3 py-3 relative" ref={scheduleTask?.id === task.id ? scheduleRef : null}>
@@ -952,7 +1122,7 @@ const TaskTable = ({
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const msg = buildTaskWhatsAppMessage(task);
+                                                    const msg = buildTaskWhatsAppMessage(task, task.attachment_count || 0);
                                                     if (quickRecipientNumbers.length) {
                                                         openWhatsAppToNumbers(quickRecipientNumbers, msg);
                                                     } else {
@@ -1057,6 +1227,15 @@ const TaskTable = ({
             </table>
 
         </div>
+
+        {/* Attachment Viewer Modal */}
+        {attachmentTask && (
+            <AttachmentViewerModal
+                task={attachmentTask}
+                onClose={() => setAttachmentTask(null)}
+            />
+        )}
+        </>
     );
 };
 

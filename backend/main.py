@@ -10,7 +10,7 @@ import models
 from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
-from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup
+from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, task_attachments, telegram
 
 # Startup environment validation
 _DEFAULT_SECRET_KEY = "governance-dashboard-secret-key-change-in-production"
@@ -69,6 +69,8 @@ app.include_router(field_visits.router, prefix="/api/field-visits", tags=["field
 app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
+app.include_router(task_attachments.router, prefix="/api/tasks", tags=["task-attachments"])
+app.include_router(telegram.router, prefix="/api/telegram", tags=["telegram"])
 
 
 @app.get("/healthz")

@@ -217,6 +217,28 @@ class Task(Base):
     department = relationship("Department", back_populates="tasks")
     action_points = relationship("ActionPoint", back_populates="linked_task")
     assigned_employee = relationship("Employee", back_populates="tasks")
+    attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan")
+
+
+# ─── Task Attachment ──────────────────────────────────────────────────────────
+# Files attached to a task – uploaded via portal or received via Telegram bot
+
+class TaskAttachment(Base):
+    __tablename__ = "task_attachments"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    original_filename = Column(String, nullable=False)
+    stored_filename = Column(String, nullable=False)
+    file_path = Column(Text, nullable=False)
+    mime_type = Column(String, nullable=True)
+    file_extension = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=False, default=0)
+    source = Column(String, default="portal")        # portal | telegram
+    telegram_file_id = Column(String, nullable=True)
+    caption = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    task = relationship("Task", back_populates="attachments")
 
 
 # ─── Personal To-do Items ─────────────────────────────────────────────────────

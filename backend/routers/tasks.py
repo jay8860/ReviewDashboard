@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, or_, case
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -216,6 +216,7 @@ def generate_task_number(db: Session, assigned_agency: Optional[str], department
 
 
 def task_to_dict(t: models.Task) -> dict:
+    att_count = len(t.attachments) if hasattr(t, 'attachments') and t.attachments is not None else 0
     return {
         "id": t.id,
         "task_number": t.task_number,
@@ -236,7 +237,8 @@ def task_to_dict(t: models.Task) -> dict:
         "assigned_employee_id": t.assigned_employee_id,
         "assigned_employee_name": t.assigned_employee.name if t.assigned_employee else None,
         "assigned_employee_display_username": t.assigned_employee.display_username if t.assigned_employee else None,
-        "created_at": str(t.created_at)
+        "created_at": str(t.created_at),
+        "attachment_count": att_count,
     }
 
 
@@ -278,6 +280,7 @@ def get_tasks(
     priority: Optional[str] = None,
     is_today: Optional[bool] = None,
     is_pinned: Optional[bool] = None,
+    has_attachments: Optional[bool] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
     sort_dir: Optional[str] = "asc",
@@ -289,7 +292,7 @@ def get_tasks(
     q = (
         db.query(models.Task)
         .outerjoin(models.Employee, models.Task.assigned_employee_id == models.Employee.id)
-        .options(joinedload(models.Task.assigned_employee))
+        .options(joinedload(models.Task.assigned_employee), selectinload(models.Task.attachments))
     )
     if department_id:
         q = q.filter(models.Task.department_id == department_id)
@@ -306,6 +309,10 @@ def get_tasks(
         q = q.filter(models.Task.is_today == is_today)
     if is_pinned is not None:
         q = q.filter(models.Task.is_pinned == is_pinned)
+    if has_attachments is True:
+        q = q.filter(models.Task.attachments.any())
+    elif has_attachments is False:
+        q = q.filter(~models.Task.attachments.any())
     if search:
         search_term = _canonical_text(search) or search
         q = q.filter(or_(

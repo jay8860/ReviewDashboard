@@ -356,6 +356,7 @@ export const api = {
         if (filters.sortDir) params.append('sort_dir', filters.sortDir);
         if (filters.is_today !== undefined) params.append('is_today', filters.is_today);
         if (filters.is_pinned !== undefined) params.append('is_pinned', filters.is_pinned);
+        if (filters.has_attachments !== undefined) params.append('has_attachments', filters.has_attachments);
         params.append('t', Date.now());
         const res = await axios.get(`${TASK_URL}/?${params.toString()}`);
         return res.data;
@@ -389,6 +390,24 @@ export const api = {
     },
     deleteTask: async (id) => {
         const res = await axios.delete(`${TASK_URL}/${id}`);
+        return res.data;
+    },
+    getTaskAttachments: async (taskId) => {
+        const res = await axios.get(`${TASK_URL}/${taskId}/attachments`);
+        return res.data;
+    },
+    uploadTaskAttachment: async (taskId, file) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await axios.post(`${TASK_URL}/${taskId}/attachments`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+    getTaskAttachmentDownloadUrl: (taskId, attId) =>
+        `${BASE_URL}/api/tasks/${taskId}/attachments/${attId}/download`,
+    deleteTaskAttachment: async (taskId, attId) => {
+        const res = await axios.delete(`${TASK_URL}/${taskId}/attachments/${attId}`);
         return res.data;
     },
 

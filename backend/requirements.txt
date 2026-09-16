@@ -12,3 +12,4 @@ python-pptx
 pypdf
 pdfplumber
 psycopg2-binary
+httpx
