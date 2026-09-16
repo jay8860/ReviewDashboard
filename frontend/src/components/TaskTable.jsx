@@ -1340,7 +1340,7 @@ const TaskTable = ({
                                 {isAdmin && (
                                     <td className="px-3 py-3 relative" ref={scheduleTask?.id === task.id ? scheduleRef : null}>
                                         <div className={`flex items-center gap-0.5 transition-opacity ${(scheduleTask?.id === task.id || attachmentsTaskId === task.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                            {/* Quick Complete */}
+                                            {/* 1. Quick Complete */}
                                             <button onClick={() => handleQuickAction(task.id, {
                                                 status: isCompleted ? 'Pending' : 'Completed',
                                                 completion_date: isCompleted ? null : new Date().toISOString().split('T')[0]
@@ -1349,7 +1349,7 @@ const TaskTable = ({
                                                 <CheckCircle2 size={13} />
                                             </button>
 
-                                            {/* Provisional Complete — steno-level "done, pending your sign-off" flag */}
+                                            {/* 2. Provisional Complete */}
                                             <button
                                                 type="button"
                                                 onClick={() => handleQuickAction(task.id, { provisional_complete: !task.provisional_complete })}
@@ -1359,36 +1359,64 @@ const TaskTable = ({
                                                 <Hourglass size={13} />
                                             </button>
 
-                                            {/* Edit inline */}
+                                            {/* 3. WhatsApp — same outlined circle style, green */}
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const msg = buildTaskWhatsAppMessage(task);
+                                                    if (quickRecipientNumbers.length) {
+                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
+                                                    } else {
+                                                        window.open(
+                                                            `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
+                                                            '_blank',
+                                                            'noopener,noreferrer'
+                                                        );
+                                                    }
+                                                }}
+                                                title="WhatsApp follow-up"
+                                                className="p-1.5 rounded-lg border border-green-300 text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 transition-colors"
+                                            >
+                                                <WhatsAppIcon />
+                                            </button>
+
+                                            {/* 4. Edit inline */}
                                             {!bulkMode && (
-                                                <button onClick={() => setEditId(task.id)} title="Edit"
-                                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors">
-                                                    <Edit2 size={13} />
-                                                </button>
+                                                <div className="relative group/tip">
+                                                    <button onClick={() => setEditId(task.id)}
+                                                        className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors">
+                                                        <Edit2 size={13} />
+                                                    </button>
+                                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">Edit task</span>
+                                                </div>
                                             )}
 
-                                            {/* Attachments / compliance proof upload */}
+                                            {/* 5. Attachments / compliance proof upload */}
                                             <div className="relative" ref={attachmentsTaskId === task.id ? attachmentsRef : null}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if ((task.attachments || []).length > 0) {
-                                                            setAttachmentsTaskId(attachmentsTaskId === task.id ? null : task.id);
-                                                        } else {
-                                                            triggerAttachmentUpload(task.id);
-                                                        }
-                                                    }}
-                                                    title={(task.attachments || []).length > 0 ? 'View attachments' : 'Upload file (compliance proof)'}
-                                                    className={`relative p-1.5 rounded-lg transition-colors ${(task.attachments || []).length > 0 ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600'}`}
-                                                    disabled={uploadingTaskId === task.id}
-                                                >
-                                                    <Paperclip size={13} className={uploadingTaskId === task.id ? 'animate-pulse' : ''} />
-                                                    {(task.attachments || []).length > 0 && (
-                                                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold flex items-center justify-center">
-                                                            {task.attachments.length}
-                                                        </span>
-                                                    )}
-                                                </button>
+                                                <div className="relative group/tip">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if ((task.attachments || []).length > 0) {
+                                                                setAttachmentsTaskId(attachmentsTaskId === task.id ? null : task.id);
+                                                            } else {
+                                                                triggerAttachmentUpload(task.id);
+                                                            }
+                                                        }}
+                                                        className={`relative p-1.5 rounded-lg transition-colors ${(task.attachments || []).length > 0 ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-600'}`}
+                                                        disabled={uploadingTaskId === task.id}
+                                                    >
+                                                        <Paperclip size={13} className={uploadingTaskId === task.id ? 'animate-pulse' : ''} />
+                                                        {(task.attachments || []).length > 0 && (
+                                                            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-bold flex items-center justify-center">
+                                                                {task.attachments.length}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">
+                                                        {(task.attachments || []).length > 0 ? 'Attachments' : 'Upload file'}
+                                                    </span>
+                                                </div>
                                                 <AnimatePresence>
                                                     {attachmentsTaskId === task.id && (
                                                         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
@@ -1406,74 +1434,68 @@ const TaskTable = ({
                                                 </AnimatePresence>
                                             </div>
 
-                                            {/* WhatsApp */}
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const msg = buildTaskWhatsAppMessage(task);
-                                                    if (quickRecipientNumbers.length) {
-                                                        openWhatsAppToNumbers(quickRecipientNumbers, msg);
-                                                    } else {
-                                                        window.open(
-                                                            `https://api.whatsapp.com/send/?text=${encodeURIComponent(msg)}&type=custom_url&app_absent=0`,
-                                                            '_blank',
-                                                            'noopener,noreferrer'
-                                                        );
-                                                    }
-                                                }}
-                                                title="WhatsApp follow-up"
-                                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-500/10 text-slate-400 hover:text-green-600 transition-colors"
-                                            >
-                                                <WhatsAppIcon />
-                                            </button>
+                                            {/* 6. Extend deadline */}
+                                            <div className="relative group/tip">
+                                                <button onClick={() => setCalendarId(calendarId === task.id ? null : task.id)}
+                                                    className="p-1.5 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-400 hover:text-violet-600 transition-colors">
+                                                    <Calendar size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">Change deadline</span>
+                                            </div>
 
-                                            {/* Extend deadline */}
-                                            <button onClick={() => setCalendarId(calendarId === task.id ? null : task.id)} title="Extend deadline"
-                                                className="p-1.5 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-400 hover:text-violet-600 transition-colors">
-                                                <Calendar size={13} />
-                                            </button>
+                                            {/* 7. Schedule task meeting */}
+                                            <div className="relative group/tip">
+                                                <button
+                                                    onClick={() => setScheduleTask(scheduleTask?.id === task.id ? null : task)}
+                                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
+                                                >
+                                                    <CalendarClock size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">Schedule meeting</span>
+                                            </div>
 
-                                            {/* Schedule task meeting */}
-                                            <button
-                                                onClick={() => setScheduleTask(scheduleTask?.id === task.id ? null : task)}
-                                                title="Schedule meeting in planner"
-                                                className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-colors"
-                                            >
-                                                <CalendarClock size={13} />
-                                            </button>
+                                            {/* 8. Field Visit notepad */}
+                                            <div className="relative group/tip">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onAddToFieldVisitNotepad?.(task)}
+                                                    className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-600 transition-colors"
+                                                >
+                                                    <MapPin size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">Field visit</span>
+                                            </div>
 
-                                            {/* Copy to field visit planning notepad */}
-                                            <button
-                                                type="button"
-                                                onClick={() => onAddToFieldVisitNotepad?.(task)}
-                                                title="Add to Field Visit notepad"
-                                                className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-600 transition-colors"
-                                            >
-                                                <MapPin size={13} />
-                                            </button>
+                                            {/* 9. Flag Important */}
+                                            <div className="relative group/tip">
+                                                <button onClick={() => handleQuickAction(task.id, { priority: isImportant ? 'Normal' : 'High' })}
+                                                    className={`p-1.5 rounded-lg transition-colors ${isImportant ? 'text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-500'}`}>
+                                                    <Flag size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">
+                                                    {isImportant ? 'Unflag' : 'Flag important'}
+                                                </span>
+                                            </div>
 
-                                            {/* Flag Important */}
-                                            <button onClick={() => handleQuickAction(task.id, {
-                                                priority: isImportant ? 'Normal' : 'High'
-                                            })} title={isImportant ? 'Unflag' : 'Flag Important'}
-                                                className={`p-1.5 rounded-lg transition-colors ${isImportant ? 'text-orange-500 hover:bg-orange-50' : 'text-slate-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:text-orange-500'}`}>
-                                                <Flag size={13} />
-                                            </button>
+                                            {/* 10. Pin to Today */}
+                                            <div className="relative group/tip">
+                                                <button onClick={() => handleQuickAction(task.id, { is_today: !isToday, is_pinned: false })}
+                                                    className={`p-1.5 rounded-lg transition-colors ${isToday ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-500'}`}>
+                                                    <Pin size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">
+                                                    {isToday ? 'Unpin today' : 'Pin to today'}
+                                                </span>
+                                            </div>
 
-                                            {/* Pin to Today */}
-                                            <button onClick={() => handleQuickAction(task.id, {
-                                                is_today: !isToday,
-                                                is_pinned: false
-                                            })} title={isToday ? 'Unmark Today' : 'Mark Today'}
-                                                className={`p-1.5 rounded-lg transition-colors ${isToday ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-500'}`}>
-                                                <Pin size={13} />
-                                            </button>
-
-                                            {/* Delete */}
-                                            <button onClick={() => onDelete(task.id)} title="Delete"
-                                                className="p-1.5 rounded-lg border border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors">
-                                                <Trash2 size={13} />
-                                            </button>
+                                            {/* 11. Delete */}
+                                            <div className="relative group/tip">
+                                                <button onClick={() => onDelete(task.id)}
+                                                    className="p-1.5 rounded-lg border border-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 hover:text-red-600 transition-colors">
+                                                    <Trash2 size={13} />
+                                                </button>
+                                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded-md bg-slate-800 text-white text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-[80]">Delete task</span>
+                                            </div>
                                         </div>
 
                                         <AnimatePresence>
