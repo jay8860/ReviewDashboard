@@ -18,70 +18,6 @@ import models
 
 router = APIRouter()
 
-# ─── Category inference ───────────────────────────────────────────────────────
-# A task is "citizen centric" when a specific individual's name appears
-# alongside a personal-matter keyword (complaint, pension, ration, etc.).
-# General village/infrastructure work stays in "task" even if it uses
-# words like "complaint" or "repair" without an individual name.
-
-# Common Indian name suffixes / surnames (first-name + any of these = a person)
-_NAME_SUFFIX_RE = re.compile(
-    r'\b[A-Za-z]+\s+(?:'
-    r'kumar|devi|singh|lal|prasad|bai|rao|bhai|bibi|begum|khatoon|sahu|'
-    r'yadav|patel|sharma|verma|gupta|nath|das|bano|tiwari|pandey|mishra|'
-    r'thakur|chauhan|rajput|baghel|gond|'
-    r'markam|netam|tekam|usendi|poyam|kawasi|vatti|korram|mandavi|dhurwa|'
-    r'nuruti|vedhi|oyam|portey|nag|watti|punem|sodhi|madavi'
-    r')\b',
-    re.IGNORECASE
-)
-
-# Hindi possessive: "[any word] ka / ki / ke [matter word]"
-_HINDI_POSSESSIVE_RE = re.compile(
-    r'\b\w+\s+k[aie]\s+\w+',
-    re.IGNORECASE
-)
-
-# Personal / individual matter keywords — these indicate an individual's issue
-_PERSONAL_KEYWORDS = frozenset({
-    'pension', 'ration', 'bpl', 'complaint', 'shikayat', 'avedan', 'application',
-    'claim', 'grievance', 'muavza', 'compensation', 'relief', 'petition',
-    'prarthana', 'nivedaan', 'aawas', 'awas', 'plot', 'pataa', 'patta',
-    'allowance', 'subsidy', 'benefit', 'aid', 'assistance',
-    'vridha', 'vidhwa', 'viklang', 'divyang', 'widow', 'disability',
-    'scholarship', 'chatravriti',
-})
-
-# Direct patterns that guarantee individual-matter regardless of name
-_DIRECT_CITIZEN_RE = re.compile(
-    r'\b(?:'
-    # Hindi possessive before personal noun
-    r'\w+\s+k[aie]\s+(?:avedan|shikayat|pension|muavza|claim|plot|patta|awas|aawas|prarthana)|'
-    # "application/complaint of/by/from [Word]"
-    r'(?:application|complaint|petition|avedan|shikayat|grievance)\s+(?:of|by|from|for)\s+\w+|'
-    # "pension/ration case/application/claim" — individual benefit
-    r'(?:vridha|vidhwa|viklang|divyang|old.?age|widow|disability)\s+pension'
-    r')\b',
-    re.IGNORECASE
-)
-
-
-def _infer_category(text: str) -> str:
-    """Classify as 'citizen' when an individual's name + personal matter keyword
-    appear together, or when a direct individual-matter pattern is found."""
-    if not text:
-        return "task"
-    # Fast path: direct individual-matter patterns
-    if _DIRECT_CITIZEN_RE.search(text):
-        return "citizen"
-    # Name detected + personal keyword anywhere in description
-    if _NAME_SUFFIX_RE.search(text):
-        words = set(re.findall(r'[a-z]+', text.lower()))
-        if words & _PERSONAL_KEYWORDS:
-            return "citizen"
-    return "task"
-
-
 TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "task_uploads")
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
 MAX_TASK_IMAGE_BYTES = int(os.getenv("MAX_TASK_IMAGE_BYTES", str(8 * 1024 * 1024)))
@@ -146,7 +82,6 @@ class TaskCreate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
-    category: Optional[str] = None  # task | citizen; auto-inferred from description if omitted
     # Unlimited assignees (ordered). When provided it overrides the legacy
     # assigned_employee_id / secondary_assigned_employee_id pair.
     assigned_employee_ids: Optional[List[int]] = None
@@ -172,7 +107,6 @@ class TaskUpdate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
-    category: Optional[str] = None  # task | citizen
     assigned_employee_ids: Optional[List[int]] = None
 
 
@@ -476,7 +410,6 @@ def task_to_dict(t: models.Task) -> dict:
         "remarks": t.remarks,
         "department_id": t.department_id,
         "source": t.source,
-        "category": t.category or "task",
         "assigned_employee_id": t.assigned_employee_id,
         "secondary_assigned_employee_id": t.secondary_assigned_employee_id,
         "assigned_employee_name": t.assigned_employee.name if t.assigned_employee else None,
@@ -724,7 +657,6 @@ def get_tasks(
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
     sort_dir: Optional[str] = "asc",
-    category: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     agency_expr = _effective_agency_expr()
@@ -754,8 +686,6 @@ def get_tasks(
         q = q.filter(models.Task.attachments.any())
     elif has_attachments is False:
         q = q.filter(~models.Task.attachments.any())
-    if category in ("task", "citizen"):
-        q = q.filter(models.Task.category == category)
     if search:
         search_term = _canonical_text(search) or search
         # Tasks where ANY assignee (via task_assignees) matches the term.
@@ -890,8 +820,6 @@ def create_task(
         task_data["allocated_date"] = date.today()
     if task_data.get("completion_date"):
         task_data["status"] = "Completed"
-    if not task_data.get("category"):
-        task_data["category"] = _infer_category(task_data.get("description") or "")
     task = models.Task(**task_data)
     db.add(task)
     db.flush()
@@ -1037,31 +965,3 @@ def delete_task(
     return {"message": "Deleted"}
 
 
-class BulkRecategorizeRequest(BaseModel):
-    ids: List[int]
-    category: str  # "task" | "citizen"
-
-
-@router.put("/bulk/recategorize")
-def bulk_recategorize(
-    data: BulkRecategorizeRequest,
-    db: Session = Depends(get_db),
-    current_user: Optional[models.User] = Depends(get_current_user_optional),
-):
-    if data.category not in ("task", "citizen"):
-        raise HTTPException(status_code=400, detail="category must be 'task' or 'citizen'")
-    if not data.ids:
-        return {"updated": []}
-    tasks = db.query(models.Task).filter(models.Task.id.in_(data.ids)).all()
-    updated = []
-    for task in tasks:
-        task.category = data.category
-        updated.append(task.id)
-    db.commit()
-    if current_user and updated:
-        _audit_log(
-            db, current_user, "updated", None,
-            f"Bulk recategorized {len(updated)} task(s) to '{data.category}'",
-        )
-        db.commit()
-    return {"updated": updated}

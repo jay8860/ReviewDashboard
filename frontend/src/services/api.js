@@ -406,7 +406,6 @@ export const api = {
         if (filters.is_today !== undefined) params.append('is_today', filters.is_today);
         if (filters.is_pinned !== undefined) params.append('is_pinned', filters.is_pinned);
         if (filters.has_attachments !== undefined) params.append('has_attachments', filters.has_attachments);
-        if (filters.category) params.append('category', filters.category);
         params.append('t', Date.now());
         const res = await axios.get(`${TASK_URL}/?${params.toString()}`);
         return res.data;
@@ -444,10 +443,6 @@ export const api = {
     },
     bulkUpdateTasks: async (updates) => {
         const res = await axios.put(`${TASK_URL}/bulk/update`, { updates });
-        return res.data;
-    },
-    bulkRecategorizeTasks: async (ids, category) => {
-        const res = await axios.put(`${TASK_URL}/bulk/recategorize`, { ids, category });
         return res.data;
     },
     deleteTask: async (id) => {

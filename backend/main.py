@@ -11,26 +11,6 @@ from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
 from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit, general_info, telegram
-from routers.tasks import _infer_category as _task_infer_category
-
-
-def _backfill_task_categories(db):
-    """Re-classify all tasks using the current inference logic.
-    Runs every startup so any logic change is picked up automatically."""
-    all_tasks = db.query(models.Task).all()
-    changed = 0
-    citizen_count = 0
-    for task in all_tasks:
-        inferred = _task_infer_category(task.description or "")
-        if inferred != (task.category or "task"):
-            task.category = inferred
-            changed += 1
-        if inferred == "citizen":
-            citizen_count += 1
-    if changed:
-        db.commit()
-    task_count = len(all_tasks) - citizen_count
-    print(f"✅ Task categories: {task_count} task/project, {citizen_count} citizen centric (changed {changed})")
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 BOOTSTRAP_STATE = {"status": "pending", "detail": ""}
@@ -145,7 +125,6 @@ def bootstrap_database():
             seed_admin(db)
             seed_departments_and_agenda(db)
             seed_special_employees(db)
-            _backfill_task_categories(db)
         finally:
             db.close()
         BOOTSTRAP_STATE["status"] = "ready"

@@ -4,8 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
     ClipboardList, Plus, X, Search, RefreshCw, FileDown,
     CheckCircle2, Clock, AlertTriangle, Flame, List, Calendar,
-    Trash2, CheckSquare, Check, ChevronRight, ChevronDown,
-    Users, Briefcase
+    Trash2, CheckSquare, Check, ChevronRight, ChevronDown
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import TaskTable from '../components/TaskTable';
@@ -105,8 +104,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
         // auto-filled / advanced
         task_number: '', allocated_date: todayStr, time_given: '7 days',
         completion_date: '', steno_comment: '', status: 'Pending', priority: 'Normal',
-        remarks: '', department_id: '', assigned_employee_id: '', secondary_assigned_employee_id: '',
-        is_pinned: false, is_today: false, category: '',
+        remarks: '', department_id: '', assigned_employee_id: '', secondary_assigned_employee_id: '', is_pinned: false, is_today: false,
     };
     const [form, setForm] = useState(blank);
     const [showAdvanced, setShowAdvanced] = useState(false);
@@ -132,7 +130,6 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                 secondary_assigned_employee_id: initial.secondary_assigned_employee_id || '',
                 is_pinned: initial.is_pinned || false,
                 is_today: initial.is_today || false,
-                category: initial.category || '',
             });
             setShowAdvanced(false);
         } else {
@@ -274,15 +271,6 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                                     </div>
 
                                     <div>
-                                        <label className={labelCls}>Category</label>
-                                        <select value={form.category} onChange={f('category')} className={inputCls}>
-                                            <option value="">Auto-detect</option>
-                                            <option value="task">Tasks &amp; Projects</option>
-                                            <option value="citizen">Citizen Centric Tasks</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
                                         <label className={labelCls}>Steno / Follow-up Note</label>
                                         <textarea value={form.steno_comment} onChange={f('steno_comment')} className={`${inputCls} min-h-[80px] resize-none`} placeholder="Notes for secretary/steno..." />
                                     </div>
@@ -337,7 +325,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
 };
 
 // ── Bulk Edit Panel ────────────────────────────────────────────────────────────
-const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClose, onExtendDeadline, onRecategorize }) => {
+const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClose, onExtendDeadline }) => {
     const [customDays, setCustomDays] = useState('7');
 
     return (
@@ -380,15 +368,6 @@ const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClose, onExtendDeadl
                         Apply
                     </button>
                 </div>
-                {/* Bulk Recategorize */}
-                <button onClick={() => onRecategorize?.('task')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 border border-indigo-200 transition-colors">
-                    <Briefcase size={12} /> → Task
-                </button>
-                <button onClick={() => onRecategorize?.('citizen')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-100 text-teal-700 text-xs font-bold hover:bg-teal-200 border border-teal-200 transition-colors">
-                    <Users size={12} /> → Citizen Centric
-                </button>
             </div>
             <span className="text-xs text-indigo-600/80 font-semibold">Edit selected rows inline below. Changes auto-save.</span>
 
@@ -446,9 +425,6 @@ const Tasks = ({ user, onLogout }) => {
     const [filterHasAttachments, setFilterHasAttachments] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Category filter: "" (all) | "task" | "citizen"
-    const [filterCategory, setFilterCategory] = useState('');
-
     // Tabs: all | today | important
     const [tab, setTab] = useState(initialTab);
 
@@ -482,9 +458,8 @@ const Tasks = ({ user, onLogout }) => {
         const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy, sortDir };
         if (tab === 'today') filters.is_today = true;
         if (filterHasAttachments) filters.has_attachments = true;
-        if (filterCategory) filters.category = filterCategory;
         return filters;
-    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab, filterHasAttachments, filterCategory]);
+    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab, filterHasAttachments]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -510,12 +485,12 @@ const Tasks = ({ user, onLogout }) => {
         }
     }, [applyTabFilter, buildFilters]);
 
-    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, filterHasAttachments, filterCategory]);
+    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, filterHasAttachments]);
 
     useEffect(() => {
         setCurrentPage(1);
         setSelectedIds([]);
-    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly, filterHasAttachments, filterCategory]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly, filterHasAttachments]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -642,8 +617,6 @@ const Tasks = ({ user, onLogout }) => {
             if (!payload.allocated_date) payload.allocated_date = null;
             // If no category manually chosen in the modal, pre-set to the current tab's category
             // (backend will auto-infer from description if still empty)
-            if (!payload.category && !editTask && filterCategory) payload.category = filterCategory;
-
             if (editTask) {
                 await api.updateTask(editTask.id, payload);
                 toast.success('Task updated successfully');
@@ -843,18 +816,6 @@ const Tasks = ({ user, onLogout }) => {
         } catch {
             setTasks(previousTasks);
             toast.error('Bulk delete failed');
-        }
-    };
-
-    const handleBulkRecategorize = async (category) => {
-        if (!selectedIds.length) return;
-        try {
-            await api.bulkRecategorizeTasks(selectedIds, category);
-            toast.success(`${selectedIds.length} task(s) moved to ${category === 'citizen' ? 'Citizen Centric Tasks' : 'Tasks & Projects'}`);
-            setSelectedIds([]);
-            load();
-        } catch {
-            toast.error('Bulk recategorize failed');
         }
     };
 
@@ -1125,19 +1086,6 @@ const Tasks = ({ user, onLogout }) => {
                         {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
 
-                    <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-                        className={`px-4 py-2.5 rounded-full border-none text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 cursor-pointer ${
-                            filterCategory === 'citizen'
-                                ? 'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
-                                : filterCategory === 'task'
-                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
-                                    : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
-                        }`}>
-                        <option value="">All Types</option>
-                        <option value="task">Tasks &amp; Projects</option>
-                        <option value="citizen">Citizen Centric</option>
-                    </select>
-
                     <button
                         type="button"
                         onClick={() => {
@@ -1217,7 +1165,6 @@ const Tasks = ({ user, onLogout }) => {
                         onDelete={handleBulkDelete}
                         onClose={() => setSelectedIds([])}
                         onExtendDeadline={handleBulkExtendDeadline}
-                        onRecategorize={handleBulkRecategorize}
                     />
                 )}
             </AnimatePresence>

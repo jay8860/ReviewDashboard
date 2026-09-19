@@ -220,8 +220,6 @@ class Task(Base):
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     # Source tracking
     source = Column(String, default="manual")          # manual | action_point | review
-    # Category: task (office work) or citizen (complaints, demands, grievances)
-    category = Column(String, default="task")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
