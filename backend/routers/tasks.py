@@ -18,6 +18,32 @@ import models
 
 router = APIRouter()
 
+# ─── Category inference ───────────────────────────────────────────────────────
+_CITIZEN_KEYWORDS = frozenset({
+    # English
+    "complaint", "complaints", "grievance", "grievances", "demand", "demands",
+    "petition", "petitions", "application", "request",
+    "road", "pothole", "water", "electricity", "drainage", "sewage",
+    "garbage", "sanitation", "toilet", "leak", "leakage",
+    "broken", "damaged", "repair", "encroachment",
+    "noise", "nuisance", "citizen", "public", "resident", "village",
+    "relief", "ration", "pension", "beneficiary",
+    # Hindi transliterated
+    "shikayat", "avedan", "maang", "pareshani", "samasya",
+    "sadak", "paani", "naali", "bijli", "kachra", "nali",
+})
+
+
+def _infer_category(text: str) -> str:
+    if not text:
+        return "task"
+    words = re.findall(r'[a-z]+', text.lower())
+    for word in words:
+        if word in _CITIZEN_KEYWORDS:
+            return "citizen"
+    return "task"
+
+
 TASK_UPLOAD_ROOT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "task_uploads")
 os.makedirs(TASK_UPLOAD_ROOT, exist_ok=True)
 MAX_TASK_IMAGE_BYTES = int(os.getenv("MAX_TASK_IMAGE_BYTES", str(8 * 1024 * 1024)))
@@ -82,6 +108,7 @@ class TaskCreate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
+    category: Optional[str] = None  # task | citizen; auto-inferred from description if omitted
     # Unlimited assignees (ordered). When provided it overrides the legacy
     # assigned_employee_id / secondary_assigned_employee_id pair.
     assigned_employee_ids: Optional[List[int]] = None
@@ -107,6 +134,7 @@ class TaskUpdate(BaseModel):
     department_id: Optional[int] = None
     assigned_employee_id: Optional[int] = None
     secondary_assigned_employee_id: Optional[int] = None
+    category: Optional[str] = None  # task | citizen
     assigned_employee_ids: Optional[List[int]] = None
 
 
@@ -410,6 +438,7 @@ def task_to_dict(t: models.Task) -> dict:
         "remarks": t.remarks,
         "department_id": t.department_id,
         "source": t.source,
+        "category": t.category or "task",
         "assigned_employee_id": t.assigned_employee_id,
         "secondary_assigned_employee_id": t.secondary_assigned_employee_id,
         "assigned_employee_name": t.assigned_employee.name if t.assigned_employee else None,
@@ -657,6 +686,7 @@ def get_tasks(
     search: Optional[str] = None,
     sort_by: Optional[str] = "deadline_date",
     sort_dir: Optional[str] = "asc",
+    category: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     agency_expr = _effective_agency_expr()
@@ -686,6 +716,8 @@ def get_tasks(
         q = q.filter(models.Task.attachments.any())
     elif has_attachments is False:
         q = q.filter(~models.Task.attachments.any())
+    if category in ("task", "citizen"):
+        q = q.filter(models.Task.category == category)
     if search:
         search_term = _canonical_text(search) or search
         # Tasks where ANY assignee (via task_assignees) matches the term.
@@ -820,6 +852,8 @@ def create_task(
         task_data["allocated_date"] = date.today()
     if task_data.get("completion_date"):
         task_data["status"] = "Completed"
+    if not task_data.get("category"):
+        task_data["category"] = _infer_category(task_data.get("description") or "")
     task = models.Task(**task_data)
     db.add(task)
     db.flush()
@@ -963,3 +997,33 @@ def delete_task(
         _audit_log(db, current_user, "deleted", task_id, f"Deleted task {tn}")
         db.commit()
     return {"message": "Deleted"}
+
+
+class BulkRecategorizeRequest(BaseModel):
+    ids: List[int]
+    category: str  # "task" | "citizen"
+
+
+@router.put("/bulk/recategorize")
+def bulk_recategorize(
+    data: BulkRecategorizeRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    if data.category not in ("task", "citizen"):
+        raise HTTPException(status_code=400, detail="category must be 'task' or 'citizen'")
+    if not data.ids:
+        return {"updated": []}
+    tasks = db.query(models.Task).filter(models.Task.id.in_(data.ids)).all()
+    updated = []
+    for task in tasks:
+        task.category = data.category
+        updated.append(task.id)
+    db.commit()
+    if current_user and updated:
+        _audit_log(
+            db, current_user, "updated", None,
+            f"Bulk recategorized {len(updated)} task(s) to '{data.category}'",
+        )
+        db.commit()
+    return {"updated": updated}

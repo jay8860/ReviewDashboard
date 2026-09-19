@@ -11,6 +11,23 @@ from seed_auth import seed_admin
 from seed_departments import seed_departments_and_agenda
 from seed_employees import seed_special_employees
 from routers import auth, departments, reviews, tasks, planner, employees, field_visits, todos, analytics, backup, audit, general_info, telegram
+from routers.tasks import _infer_category as _task_infer_category
+
+
+def _backfill_task_categories(db):
+    """One-time backfill: classify all tasks that have no category set yet."""
+    uncategorized = db.query(models.Task).filter(
+        (models.Task.category == None) | (models.Task.category == "task")
+    ).all()
+    changed = 0
+    for task in uncategorized:
+        inferred = _task_infer_category(task.description or "")
+        if inferred != (task.category or "task"):
+            task.category = inferred
+            changed += 1
+    if changed:
+        db.commit()
+        print(f"✅ Backfilled category for {changed} task(s)")
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 BOOTSTRAP_STATE = {"status": "pending", "detail": ""}
@@ -125,6 +142,7 @@ def bootstrap_database():
             seed_admin(db)
             seed_departments_and_agenda(db)
             seed_special_employees(db)
+            _backfill_task_categories(db)
         finally:
             db.close()
         BOOTSTRAP_STATE["status"] = "ready"

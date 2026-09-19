@@ -113,6 +113,7 @@ def apply_non_destructive_migrations():
             ("remarks", "TEXT"),
             ("department_id", "INTEGER"),
             ("source", "VARCHAR(50) DEFAULT 'manual'"),
+            ("category", "VARCHAR(20) DEFAULT 'task'"),
             ("assigned_employee_id", "INTEGER"),
             ("secondary_assigned_employee_id", "INTEGER"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
