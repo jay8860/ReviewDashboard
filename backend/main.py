@@ -15,19 +15,22 @@ from routers.tasks import _infer_category as _task_infer_category
 
 
 def _backfill_task_categories(db):
-    """One-time backfill: classify all tasks that have no category set yet."""
-    uncategorized = db.query(models.Task).filter(
-        (models.Task.category == None) | (models.Task.category == "task")
-    ).all()
+    """Re-classify all tasks using the current inference logic.
+    Runs every startup so any logic change is picked up automatically."""
+    all_tasks = db.query(models.Task).all()
     changed = 0
-    for task in uncategorized:
+    citizen_count = 0
+    for task in all_tasks:
         inferred = _task_infer_category(task.description or "")
         if inferred != (task.category or "task"):
             task.category = inferred
             changed += 1
+        if inferred == "citizen":
+            citizen_count += 1
     if changed:
         db.commit()
-        print(f"✅ Backfilled category for {changed} task(s)")
+    task_count = len(all_tasks) - citizen_count
+    print(f"✅ Task categories: {task_count} task/project, {citizen_count} citizen centric (changed {changed})")
 
 app = FastAPI(title="Governance Dashboard API", version="1.0.0")
 BOOTSTRAP_STATE = {"status": "pending", "detail": ""}

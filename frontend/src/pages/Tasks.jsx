@@ -278,7 +278,7 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
                                         <select value={form.category} onChange={f('category')} className={inputCls}>
                                             <option value="">Auto-detect</option>
                                             <option value="task">Tasks &amp; Projects</option>
-                                            <option value="citizen">Citizen Matters</option>
+                                            <option value="citizen">Citizen Centric Tasks</option>
                                         </select>
                                     </div>
 
@@ -387,7 +387,7 @@ const BulkEditPanel = ({ count, onMarkComplete, onDelete, onClose, onExtendDeadl
                 </button>
                 <button onClick={() => onRecategorize?.('citizen')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-100 text-teal-700 text-xs font-bold hover:bg-teal-200 border border-teal-200 transition-colors">
-                    <Users size={12} /> → Citizen
+                    <Users size={12} /> → Citizen Centric
                 </button>
             </div>
             <span className="text-xs text-indigo-600/80 font-semibold">Edit selected rows inline below. Changes auto-save.</span>
@@ -446,8 +446,8 @@ const Tasks = ({ user, onLogout }) => {
     const [filterHasAttachments, setFilterHasAttachments] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Category: task | citizen
-    const [categoryTab, setCategoryTab] = useState('task');
+    // Category filter: "" (all) | "task" | "citizen"
+    const [filterCategory, setFilterCategory] = useState('');
 
     // Tabs: all | today | important
     const [tab, setTab] = useState(initialTab);
@@ -479,11 +479,12 @@ const Tasks = ({ user, onLogout }) => {
     }, [tab]);
 
     const buildFilters = useCallback(() => {
-        const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy, sortDir, category: categoryTab };
+        const filters = { status: filterStatus, search, department_id: filterDept, agency: filterAgency, sortBy, sortDir };
         if (tab === 'today') filters.is_today = true;
         if (filterHasAttachments) filters.has_attachments = true;
+        if (filterCategory) filters.category = filterCategory;
         return filters;
-    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab, filterHasAttachments, categoryTab]);
+    }, [filterStatus, search, filterDept, filterAgency, sortBy, sortDir, tab, filterHasAttachments, filterCategory]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -509,12 +510,12 @@ const Tasks = ({ user, onLogout }) => {
         }
     }, [applyTabFilter, buildFilters]);
 
-    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, filterHasAttachments, categoryTab]);
+    useEffect(() => { load(); }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, filterHasAttachments, filterCategory]);
 
     useEffect(() => {
         setCurrentPage(1);
         setSelectedIds([]);
-    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly, filterHasAttachments, categoryTab]);
+    }, [filterStatus, filterDept, filterAgency, sortBy, sortDir, tab, search, noCommentsOnly, followUpDueOnly, provisionalOnly, filterHasAttachments, filterCategory]);
 
     useEffect(() => {
         const digest = JSON.stringify({
@@ -641,7 +642,7 @@ const Tasks = ({ user, onLogout }) => {
             if (!payload.allocated_date) payload.allocated_date = null;
             // If no category manually chosen in the modal, pre-set to the current tab's category
             // (backend will auto-infer from description if still empty)
-            if (!payload.category && !editTask) payload.category = categoryTab;
+            if (!payload.category && !editTask && filterCategory) payload.category = filterCategory;
 
             if (editTask) {
                 await api.updateTask(editTask.id, payload);
@@ -849,7 +850,7 @@ const Tasks = ({ user, onLogout }) => {
         if (!selectedIds.length) return;
         try {
             await api.bulkRecategorizeTasks(selectedIds, category);
-            toast.success(`${selectedIds.length} task(s) moved to ${category === 'citizen' ? 'Citizen Matters' : 'Tasks & Projects'}`);
+            toast.success(`${selectedIds.length} task(s) moved to ${category === 'citizen' ? 'Citizen Centric Tasks' : 'Tasks & Projects'}`);
             setSelectedIds([]);
             load();
         } catch {
@@ -977,41 +978,11 @@ const Tasks = ({ user, onLogout }) => {
 
     return (
         <Layout user={user} onLogout={onLogout}>
-            {/* Category Tabs */}
-            <div className="flex items-center gap-3 mb-6">
-                <button
-                    onClick={() => { setCategoryTab('task'); setTab('all'); }}
-                    className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-sm transition-all ${
-                        categoryTab === 'task'
-                            ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-500/30'
-                            : 'bg-white dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10 hover:border-indigo-300'
-                    }`}
-                >
-                    <Briefcase size={16} /> Tasks &amp; Projects
-                </button>
-                <button
-                    onClick={() => { setCategoryTab('citizen'); setTab('all'); }}
-                    className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-black text-sm transition-all ${
-                        categoryTab === 'citizen'
-                            ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/30'
-                            : 'bg-white dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10 hover:border-teal-300'
-                    }`}
-                >
-                    <Users size={16} /> Citizen Matters
-                </button>
-            </div>
-
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h1 className="text-4xl font-black dark:text-white tracking-tight">
-                        {categoryTab === 'citizen' ? 'Citizen Matters' : 'Tasks & Projects'}
-                    </h1>
-                    <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">
-                        {categoryTab === 'citizen'
-                            ? 'Complaints, demands and citizen grievances'
-                            : 'Manage and track all assigned tasks'}
-                    </p>
+                    <h1 className="text-4xl font-black dark:text-white tracking-tight">Tasks</h1>
+                    <p className="text-slate-500 dark:text-dark-muted mt-1 font-medium">Manage and track all assigned tasks</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="relative" ref={exportMenuRef}>
@@ -1061,13 +1032,8 @@ const Tasks = ({ user, onLogout }) => {
                                 <List size={16} /> Bulk Edit
                             </button>
                             <button onClick={() => { setEditTask(null); setModalOpen(true); }}
-                                className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold rounded-full shadow-lg transition-all hover:scale-105 transform ${
-                                    categoryTab === 'citizen'
-                                        ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/25'
-                                        : 'bg-indigo-700 hover:bg-indigo-800 shadow-indigo-500/25'
-                                }`}>
-                                <Plus size={18} strokeWidth={3} />
-                                {categoryTab === 'citizen' ? 'New Citizen Matter' : 'New Task'}
+                                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-700 text-white font-bold rounded-full shadow-lg shadow-indigo-500/25 hover:bg-indigo-800 transition-all hover:scale-105 transform">
+                                <Plus size={18} strokeWidth={3} /> New Task
                             </button>
                         </>
                     )}
@@ -1157,6 +1123,19 @@ const Tasks = ({ user, onLogout }) => {
                         className="px-4 py-2.5 rounded-full bg-slate-50 dark:bg-slate-900 border-none text-sm font-bold text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-indigo-500/20 cursor-pointer max-w-[150px] truncate">
                         <option value="">All Departments</option>
                         {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+
+                    <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                        className={`px-4 py-2.5 rounded-full border-none text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 cursor-pointer ${
+                            filterCategory === 'citizen'
+                                ? 'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
+                                : filterCategory === 'task'
+                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                    : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300'
+                        }`}>
+                        <option value="">All Types</option>
+                        <option value="task">Tasks &amp; Projects</option>
+                        <option value="citizen">Citizen Centric</option>
                     </select>
 
                     <button
@@ -1253,16 +1232,12 @@ const Tasks = ({ user, onLogout }) => {
             ) : displayedTasks.length === 0 ? (
                 <div className="glass-card rounded-3xl p-20 text-center">
                     <ClipboardList size={52} className="text-slate-200 mx-auto mb-4" />
-                    <p className="text-xl font-black text-slate-400 mb-2">
-                        {categoryTab === 'citizen' ? 'No citizen matters found' : 'No tasks found'}
-                    </p>
-                    <p className="text-slate-300 text-sm">Try adjusting your filters or add a new entry</p>
+                    <p className="text-xl font-black text-slate-400 mb-2">No tasks found</p>
+                    <p className="text-slate-300 text-sm">Try adjusting your filters or add a new task</p>
                     {canManageTasks && (
                         <button onClick={() => { setEditTask(null); setModalOpen(true); }}
-                            className={`mt-6 flex items-center gap-2 px-6 py-3 text-white rounded-2xl font-bold shadow-lg transition-colors mx-auto ${
-                                categoryTab === 'citizen' ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/20' : 'bg-indigo-700 hover:bg-indigo-800 shadow-indigo-500/20'
-                            }`}>
-                            <Plus size={18} /> {categoryTab === 'citizen' ? 'Add Citizen Matter' : 'Create First Task'}
+                            className="mt-6 flex items-center gap-2 px-6 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors mx-auto">
+                            <Plus size={18} /> Create First Task
                         </button>
                     )}
                 </div>
