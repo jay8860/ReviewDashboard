@@ -19,29 +19,65 @@ import models
 router = APIRouter()
 
 # ─── Category inference ───────────────────────────────────────────────────────
-# A task is "citizen centric" only when a specific individual's complaint,
-# application or claim is the subject — NOT general village/infrastructure work.
-_CITIZEN_PATTERNS = [
-    # "[Name] ka/ki/ke avedan/shikayat/pension/claim" (Hindi possessive)
-    re.compile(r'\b\w+\s+(ka|ki|ke)\s+(avedan|shikayat|pension|claim|prarthana|nivedaan|muavza)\b', re.IGNORECASE),
-    # "application/complaint/petition by / of / from [someone]"
-    re.compile(r'\b(application|complaint|petition|avedan|shikayat|prarthana|grievance)\s+(by|of|from|for)\b', re.IGNORECASE),
-    # pension / ration-card / BPL case/claim/application
-    re.compile(r'\b(pension|ration\s*card|bpl|aay\s*praman|jati\s*praman|niwas\s*praman|pm\s*awas|aawas|khatiyan|patta|vridha\s*pension|vidhwa\s*pension|viklang)\s+(claim|case|application|avedan|matter|hetu|ke\s*liye|problem|issue)\b', re.IGNORECASE),
-    # compensation / muavza / ex-gratia claim
-    re.compile(r'\b(muavza|compensation|ex.?gratia|relief)\s+(claim|case|application|avedan|hetu|ke\s*liye)\b', re.IGNORECASE),
-    # individual ration/card case — "ka ration card", "ki pension"
-    re.compile(r'\b\w+\s+(ka|ki|ke)\s+(ration|pension|plot|pataa|aawas|awas|ghar|makaan)\b', re.IGNORECASE),
-]
+# A task is "citizen centric" when a specific individual's name appears
+# alongside a personal-matter keyword (complaint, pension, ration, etc.).
+# General village/infrastructure work stays in "task" even if it uses
+# words like "complaint" or "repair" without an individual name.
+
+# Common Indian name suffixes / surnames (first-name + any of these = a person)
+_NAME_SUFFIX_RE = re.compile(
+    r'\b[A-Za-z]+\s+(?:'
+    r'kumar|devi|singh|lal|prasad|bai|rao|bhai|bibi|begum|khatoon|sahu|'
+    r'yadav|patel|sharma|verma|gupta|nath|das|bano|tiwari|pandey|mishra|'
+    r'thakur|chauhan|rajput|baghel|gond|'
+    r'markam|netam|tekam|usendi|poyam|kawasi|vatti|korram|mandavi|dhurwa|'
+    r'nuruti|vedhi|oyam|portey|nag|watti|punem|sodhi|madavi'
+    r')\b',
+    re.IGNORECASE
+)
+
+# Hindi possessive: "[any word] ka / ki / ke [matter word]"
+_HINDI_POSSESSIVE_RE = re.compile(
+    r'\b\w+\s+k[aie]\s+\w+',
+    re.IGNORECASE
+)
+
+# Personal / individual matter keywords — these indicate an individual's issue
+_PERSONAL_KEYWORDS = frozenset({
+    'pension', 'ration', 'bpl', 'complaint', 'shikayat', 'avedan', 'application',
+    'claim', 'grievance', 'muavza', 'compensation', 'relief', 'petition',
+    'prarthana', 'nivedaan', 'aawas', 'awas', 'plot', 'pataa', 'patta',
+    'allowance', 'subsidy', 'benefit', 'aid', 'assistance',
+    'vridha', 'vidhwa', 'viklang', 'divyang', 'widow', 'disability',
+    'scholarship', 'chatravriti',
+})
+
+# Direct patterns that guarantee individual-matter regardless of name
+_DIRECT_CITIZEN_RE = re.compile(
+    r'\b(?:'
+    # Hindi possessive before personal noun
+    r'\w+\s+k[aie]\s+(?:avedan|shikayat|pension|muavza|claim|plot|patta|awas|aawas|prarthana)|'
+    # "application/complaint of/by/from [Word]"
+    r'(?:application|complaint|petition|avedan|shikayat|grievance)\s+(?:of|by|from|for)\s+\w+|'
+    # "pension/ration case/application/claim" — individual benefit
+    r'(?:vridha|vidhwa|viklang|divyang|old.?age|widow|disability)\s+pension'
+    r')\b',
+    re.IGNORECASE
+)
 
 
 def _infer_category(text: str) -> str:
-    """Classify as 'citizen' only when an individual person's specific
-    complaint, application or claim is the subject of the task."""
+    """Classify as 'citizen' when an individual's name + personal matter keyword
+    appear together, or when a direct individual-matter pattern is found."""
     if not text:
         return "task"
-    for pattern in _CITIZEN_PATTERNS:
-        if pattern.search(text):
+    # Fast path: direct individual-matter patterns
+    if _DIRECT_CITIZEN_RE.search(text):
+        return "citizen"
+    # Name detected + personal keyword anywhere in description
+    if _NAME_SUFFIX_RE.search(text):
+        words = set(re.findall(r'[a-z]+', text.lower()))
+        if words & _PERSONAL_KEYWORDS:
             return "citizen"
     return "task"
 
