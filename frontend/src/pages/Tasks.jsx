@@ -156,6 +156,15 @@ const TaskModal = ({ isOpen, onClose, onSave, departments = [], employees = [], 
         }
         // Always set allocated_date to today for new tasks
         if (!initial) payload.allocated_date = todayStr;
+        // Prepend today's date to steno_comment for new tasks so follow-up tracking works
+        if (!initial && payload.steno_comment && payload.steno_comment.trim()) {
+            const dateLabel = format(new Date(), 'do MMMM');
+            const raw = payload.steno_comment.trim();
+            // Only prepend if the entry doesn't already start with a dated pattern (e.g. "5th July -")
+            if (!/^\d+(st|nd|rd|th)\s+\w/.test(raw)) {
+                payload.steno_comment = `${dateLabel} - ${raw}`;
+            }
+        }
         onSave(payload);
     };
 
