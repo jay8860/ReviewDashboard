@@ -943,7 +943,17 @@ const Tasks = ({ user, onLogout }) => {
             theme: 'grid',
         });
 
-        doc.save(`tasks_${new Date().toISOString().split('T')[0]}.pdf`);
+        const fileName = `tasks_${new Date().toISOString().split('T')[0]}.pdf`;
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
     };
 
     return (

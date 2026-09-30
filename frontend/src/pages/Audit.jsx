@@ -157,7 +157,17 @@ const Audit = ({ user, onLogout }) => {
                 theme: 'grid',
             });
 
-            doc.save(`audit_${new Date().toISOString().split('T')[0]}.pdf`);
+            const fileName = `audit_${new Date().toISOString().split('T')[0]}.pdf`;
+            const blob = doc.output('blob');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
         } catch (err) {
             toast.error(err?.message || 'PDF export failed');
         }
