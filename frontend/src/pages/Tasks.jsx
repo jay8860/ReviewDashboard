@@ -946,14 +946,21 @@ const Tasks = ({ user, onLogout }) => {
         const fileName = `tasks_${new Date().toISOString().split('T')[0]}.pdf`;
         const blob = doc.output('blob');
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (isIOS) {
+            // iOS Safari ignores the download attribute on blob URLs — open in new tab
+            window.open(url, '_blank');
+            toast.info('PDF opened in Safari. Tap the Share icon → "Save to Files" to save it.', 7000);
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }
     };
 
     return (
