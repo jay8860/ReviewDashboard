@@ -208,27 +208,20 @@ const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, onAddMore, i
     const [confirmId, setConfirmId] = useState(null);
 
     return (
-        <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-3 w-72 max-h-80 overflow-y-auto">
+        <div className="absolute z-50 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-3 w-72 max-h-96 overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Attachments</p>
-                <div className="flex items-center gap-1">
-                    <button
-                        type="button"
-                        onClick={onAddMore}
-                        title="Add more files"
-                        className="p-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-indigo-500 hover:text-indigo-700"
-                    >
-                        <Paperclip size={13} />
-                    </button>
-                    <button onClick={onClose} title="Close" className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400">
-                        <X size={13} />
-                    </button>
-                </div>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                    Attachments {attachments.length > 0 && <span className="text-slate-300">({attachments.length})</span>}
+                </p>
+                <button onClick={onClose} title="Close" className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400">
+                    <X size={13} />
+                </button>
             </div>
+
             {attachments.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4 text-center">No files uploaded yet.</p>
+                <p className="text-xs text-slate-400 py-2 text-center">No files uploaded yet.</p>
             ) : (
-                <div className="space-y-1">
+                <div className="space-y-1 mb-2">
                     {attachments.map((a) => (
                         confirmId === a.id ? (
                             <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl bg-red-50 dark:bg-red-500/10">
@@ -249,7 +242,7 @@ const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, onAddMore, i
                                 </button>
                             </div>
                         ) : (
-                            <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 group/att">
+                            <div key={a.id} className="flex items-center gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5">
                                 <button
                                     type="button"
                                     onClick={() => (a.file_type === 'image' ? onOpenImage(a.file_url) : window.open(a.file_url, '_blank', 'noopener,noreferrer'))}
@@ -257,25 +250,25 @@ const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, onAddMore, i
                                     title={a.original_filename}
                                 >
                                     <AttachmentIcon fileType={a.file_type} />
-                                    <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{a.original_filename}</span>
+                                    <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1">{a.original_filename}</span>
                                 </button>
                                 <a
                                     href={a.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     title="Open / download"
-                                    className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 transition-opacity"
+                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-500/10 text-slate-400 hover:text-indigo-600 shrink-0"
                                 >
-                                    <Download size={12} />
+                                    <Download size={13} />
                                 </a>
                                 {isAdmin && (
                                     <button
                                         type="button"
                                         onClick={() => setConfirmId(a.id)}
                                         title="Remove"
-                                        className="p-1 rounded-lg opacity-0 group-hover/att:opacity-100 hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-opacity"
+                                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 shrink-0"
                                     >
-                                        <Trash2 size={12} />
+                                        <Trash2 size={13} />
                                     </button>
                                 )}
                             </div>
@@ -283,6 +276,16 @@ const AttachmentsPopover = ({ task, onOpenImage, onDelete, onClose, onAddMore, i
                     ))}
                 </div>
             )}
+
+            {/* Always-visible Add Files button */}
+            <button
+                type="button"
+                onClick={onAddMore}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+            >
+                <Paperclip size={13} />
+                Add Files
+            </button>
         </div>
     );
 };
