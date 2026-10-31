@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Plus, Edit2, Trash2, Search, RefreshCw, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Users, Plus, Edit2, Trash2, Search, RefreshCw, X, FileDown, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Layout from '../components/Layout';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import { canAccessModule } from '../utils/access';
+import { format } from 'date-fns';
 
 const EmployeeModal = ({ isOpen, onClose, onSave, departments, initial }) => {
     const [form, setForm] = useState({
@@ -104,6 +105,71 @@ const Employees = ({ user, onLogout }) => {
 
     const [modalOpen, setModalOpen] = useState(false);
     const [editEmp, setEditEmp] = useState(null);
+    const [exportMenuOpen, setExportMenuOpen] = useState(false);
+    const exportMenuRef = useRef(null);
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setExportMenuOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const exportExcel = async () => {
+        setExportMenuOpen(false);
+        const XLSX = await import('xlsx');
+        const rows = employees.map((e, i) => ({
+            'S.No': i + 1,
+            'Name': e.name,
+            'Display Username': e.display_username,
+            'Mobile': e.mobile_number,
+            'Department': e.department_name || '',
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+        XLSX.writeFile(wb, `employees_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    const exportPdf = async () => {
+        setExportMenuOpen(false);
+        try {
+            const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+                import('jspdf'),
+                import('jspdf-autotable'),
+            ]);
+            const doc = new jsPDF({ orientation: 'landscape' });
+            doc.setFontSize(14);
+            doc.text('Employee List', 14, 14);
+            doc.setFontSize(9);
+            doc.text(`Generated: ${format(new Date(), 'd MMM yyyy, h:mm a')}`, 14, 20);
+            autoTable(doc, {
+                startY: 24,
+                head: [['S.No', 'Name', 'Display Username', 'Mobile', 'Department']],
+                body: employees.map((e, i) => [
+                    i + 1,
+                    e.name || '',
+                    e.display_username || '',
+                    e.mobile_number || '',
+                    e.department_name || '',
+                ]),
+                styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak', valign: 'top' },
+                headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+                columnStyles: {
+                    0: { cellWidth: 14 },
+                    1: { cellWidth: 60 },
+                    2: { cellWidth: 70 },
+                    3: { cellWidth: 40 },
+                    4: { cellWidth: 60 },
+                },
+                theme: 'grid',
+            });
+            doc.save(`employees_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (err) {
+            toast.error('PDF export failed');
+        }
+    };
 
     const sortEmployeesByName = (rows = []) => (
         [...rows].sort((a, b) => (
@@ -164,12 +230,35 @@ const Employees = ({ user, onLogout }) => {
                     <h1 className="text-4xl font-black dark:text-white tracking-tight">Employees</h1>
                     <p className="text-slate-500 dark:text-dark-muted mt-1">Manage personnel for task assignment</p>
                 </div>
-                {canManageEmployees && (
-                    <button onClick={() => { setEditEmp(null); setModalOpen(true); }}
-                        className="flex items-center gap-2 px-5 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors w-fit">
-                        <Plus size={18} /> Add Employee
-                    </button>
-                )}
+                <div className="flex items-center gap-3 flex-wrap">
+                    {/* Export dropdown */}
+                    <div className="relative" ref={exportMenuRef}>
+                        <button
+                            onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                            className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-white/10 transition-colors"
+                        >
+                            <FileDown size={16} /> Export <ChevronDown size={14} />
+                        </button>
+                        {exportMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1 z-30 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl py-1 min-w-[160px]">
+                                <button onClick={exportExcel}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                                    Download Excel (.xlsx)
+                                </button>
+                                <button onClick={exportPdf}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                                    Download PDF (.pdf)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    {canManageEmployees && (
+                        <button onClick={() => { setEditEmp(null); setModalOpen(true); }}
+                            className="flex items-center gap-2 px-5 py-3 bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/20 hover:bg-indigo-800 transition-colors w-fit">
+                            <Plus size={18} /> Add Employee
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Filters */}
